@@ -158,6 +158,10 @@ model BranchSettings {
   kdsSlaSeconds            Int          @default(600)
   receiptHeader            String?
   locale                   String       @default("en")
+  /// Which StockLocation recipe consumption deducts from on order payment. Not a DB relation
+  /// (deliberately soft) — src/server/recipes.ts falls back to the branch's oldest active
+  /// location, or skips deduction entirely, if this is unset or points at a deleted location.
+  defaultStockLocationId   String?
 
   @@index([tenantId])
 }
@@ -307,6 +311,7 @@ model MenuItem {
   variants        ItemVariant[]
   modifierGroups  MenuItemModifierGroup[]
   branchMenuItems BranchMenuItem[]
+  recipeLines     RecipeLine[]
 
   @@index([tenantId, categoryId])
 }
@@ -462,8 +467,28 @@ model InventoryItem {
   stockLevels    StockLevel[]
   movements      StockMovement[]
   lowStockAlerts LowStockAlert[]
+  recipeLines    RecipeLine[]
 
   @@index([tenantId])
+}
+
+/// Links a menu item to the inventory items it consumes per unit sold (e.g. "Chicken Karahi"
+/// consumes 0.4kg chicken, 0.05kg tomato). Deliberately item-level only, not variant/modifier-level
+/// — the fuller three-layer recipe system from the original brief is a later refinement once this
+/// basic version is proven out. See src/server/recipes.ts for consumption + costing logic.
+model RecipeLine {
+  id              String        @id @default(uuid())
+  tenantId        String
+  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id])
+  menuItemId      String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  inventoryItemId String
+  quantityPerUnit Float
+  createdAt       DateTime      @default(now())
+
+  @@unique([menuItemId, inventoryItemId])
+  @@index([tenantId])
+  @@index([menuItemId])
 }
 
 /// Derived current-quantity cache: kept in sync with StockMovement inside the same transaction
@@ -487,6 +512,7 @@ enum StockMovementType {
   ADJUSTMENT
   TRANSFER_OUT
   TRANSFER_IN
+  RECIPE_CONSUMPTION
 }
 
 /// Append-only ledger. A transfer writes two rows (TRANSFER_OUT at the source, TRANSFER_IN at the

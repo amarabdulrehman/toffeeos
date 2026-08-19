@@ -83,6 +83,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "StockLevel",
   "StockMovement",
   "LowStockAlert",
+  "RecipeLine",
 ]);
 
 const WHERE_OPERATIONS = new Set([

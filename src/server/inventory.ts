@@ -59,8 +59,10 @@ export async function stockReport(tenantId: string, branchId: string, opts: { be
 
 /** Upserts the StockLevel row and, if the resulting quantity crosses the item's threshold in
  * either direction, opens or resolves a LowStockAlert. Called from inside the same transaction as
- * the StockMovement write so the cache and the ledger never drift apart. */
-async function applyDelta(
+ * the StockMovement write so the cache and the ledger never drift apart. Exported so
+ * src/server/recipes.ts can reuse it for recipe-consumption deductions instead of re-implementing
+ * the StockLevel/LowStockAlert bookkeeping. */
+export async function applyStockDelta(
   tx: TenantTransactionClient,
   tenantId: string,
   branchId: string,
@@ -125,7 +127,7 @@ export async function recordGrn(tenantId: string, branchId: string, actorId: str
         actorId,
       },
     });
-    return applyDelta(tx, tenantId, branchId, input.locationId, input.itemId, input.quantity);
+    return applyStockDelta(tx, tenantId, branchId, input.locationId, input.itemId, input.quantity);
   });
 }
 
@@ -159,7 +161,7 @@ export async function recordAdjustment(
         actorId,
       },
     });
-    return applyDelta(tx, tenantId, branchId, input.locationId, input.itemId, input.quantityDelta);
+    return applyStockDelta(tx, tenantId, branchId, input.locationId, input.itemId, input.quantityDelta);
   });
 }
 
@@ -217,8 +219,8 @@ export async function recordTransfer(tenantId: string, actorId: string, input: R
     });
 
     const [fromLevel, toLevel] = await Promise.all([
-      applyDelta(tx, tenantId, fromLocation.branchId, input.fromLocationId, input.itemId, -input.quantity),
-      applyDelta(tx, tenantId, toLocation.branchId, input.toLocationId, input.itemId, input.quantity),
+      applyStockDelta(tx, tenantId, fromLocation.branchId, input.fromLocationId, input.itemId, -input.quantity),
+      applyStockDelta(tx, tenantId, toLocation.branchId, input.toLocationId, input.itemId, input.quantity),
     ]);
     return { fromLevel, toLevel, transferGroupId };
   });

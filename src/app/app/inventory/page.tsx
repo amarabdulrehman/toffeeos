@@ -190,7 +190,53 @@ function LocationsTab({ locations, onChanged }: { locations: Location[]; onChang
           ))}
         </div>
       </CardContent>
+      <CardContent className="border-t pt-4">
+        <DefaultConsumptionLocation locations={locations} />
+      </CardContent>
     </Card>
+  );
+}
+
+/** Which location recipe consumption (Phase 3) deducts from when an order is paid. Falls back to
+ * the branch's oldest location automatically if left unset — this is optional, not required. */
+function DefaultConsumptionLocation({ locations }: { locations: Location[] }) {
+  const [value, setValue] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/api/branch-settings")
+      .then((r) => r.json())
+      .then((d) => setValue(d.settings?.defaultStockLocationId ?? ""));
+  }, []);
+
+  async function save(locationId: string) {
+    setValue(locationId);
+    const res = await fetch("/api/branch-settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defaultStockLocationId: locationId }),
+    });
+    if (!res.ok) toast.error("Could not save.");
+  }
+
+  return (
+    <div className="space-y-1">
+      <Label>Recipe consumption location</Label>
+      <p className="text-xs text-muted-foreground">
+        When an order is paid, recipe ingredients are deducted from this location. Defaults to the oldest location if unset.
+      </p>
+      <Select value={value} onValueChange={(v) => v && save(v)}>
+        <SelectTrigger className="w-64">
+          <SelectValue placeholder="Auto (oldest location)" />
+        </SelectTrigger>
+        <SelectContent>
+          {locations.map((l) => (
+            <SelectItem key={l.id} value={l.id}>
+              {l.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 

@@ -19,9 +19,21 @@ interface ItemWise {
   items: { menuItemId: string; name: string; quantity: number; revenuePaisa: number }[];
 }
 
+interface RecipeCostRow {
+  menuItemId: string;
+  name: string;
+  basePricePaisa: number;
+  costPaisa: number | null;
+  marginPaisa: number | null;
+  marginPct: number | null;
+  hasRecipe: boolean;
+  missingCostIngredients: string[];
+}
+
 export default function ReportsPage() {
   const [summary, setSummary] = useState<SalesSummary | null>(null);
   const [itemWise, setItemWise] = useState<ItemWise | null>(null);
+  const [recipeCost, setRecipeCost] = useState<RecipeCostRow[]>([]);
 
   useEffect(() => {
     const to = new Date();
@@ -33,6 +45,9 @@ export default function ReportsPage() {
     fetch(`/api/reports/item-wise?${qs}`)
       .then((r) => r.json())
       .then(setItemWise);
+    fetch("/api/reports/recipe-cost")
+      .then((r) => r.json())
+      .then((d) => setRecipeCost(d.items ?? []));
   }, []);
 
   return (
@@ -93,6 +108,42 @@ export default function ReportsPage() {
                     <TableCell>{i.name}</TableCell>
                     <TableCell>{i.quantity}</TableCell>
                     <TableCell className="text-right">{formatPkr(i.revenuePaisa)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Recipe cost & margin</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Item</TableHead>
+                  <TableHead>Price</TableHead>
+                  <TableHead>Cost</TableHead>
+                  <TableHead>Margin</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recipeCost.map((r) => (
+                  <TableRow key={r.menuItemId}>
+                    <TableCell>{r.name}</TableCell>
+                    <TableCell>{formatPkr(r.basePricePaisa)}</TableCell>
+                    <TableCell>
+                      {r.costPaisa !== null
+                        ? formatPkr(r.costPaisa)
+                        : r.hasRecipe
+                          ? `Missing cost: ${r.missingCostIngredients.join(", ")}`
+                          : "No recipe"}
+                    </TableCell>
+                    <TableCell className={r.marginPct !== null && r.marginPct < 30 ? "text-destructive" : ""}>
+                      {r.marginPaisa !== null ? `${formatPkr(r.marginPaisa)} (${r.marginPct?.toFixed(0)}%)` : "—"}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

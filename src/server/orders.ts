@@ -3,6 +3,8 @@ import { Prisma } from "@/generated/prisma/client";
 import { runInTenantTransaction, tenantDb } from "@/server/db";
 import { newOrderId, newOrderLineId, newId } from "@/lib/ids";
 import { publish } from "@/server/realtime";
+import { HttpError } from "@/server/handler";
+import { deductForOrder } from "@/server/recipes";
 import {
   computeProvisionalTotal,
   finalizeOrder,
@@ -312,6 +314,12 @@ export async function takePayment(
     include: { lines: true, discounts: true },
   });
 
+  // Guards against double-deduction of recipe stock: without this, calling pay twice on the same
+  // order (a double-tap, a retried request) would deduct ingredients twice for one sale.
+  if (["PAID", "DELIVERED", "VOIDED", "CANCELLED"].includes(order.status)) {
+    throw new HttpError(409, `This order is already ${order.status.toLowerCase()} and cannot be paid again.`);
+  }
+
   const { settings, taxRules } = await getBranchPricingContext(tenantId, branchId, order.type);
   const pricingLines: PricingLineInput[] = order.lines.map((l) => ({
     id: l.id,
@@ -359,6 +367,12 @@ export async function takePayment(
     }
 
     await tx.orderEvent.create({ data: { tenantId, orderId, type: "PAID", actorId } });
+
+    // Recipe consumption happens here, not on order creation — a voided/cancelled order never
+    // reaches this point, and items with no recipe defined are silently skipped (see
+    // src/server/recipes.ts deductForOrder).
+    const soldLines = order.lines.filter((l) => !l.isVoided).map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity }));
+    await deductForOrder(tx, tenantId, branchId, soldLines, actorId);
 
     return updated;
   }).then(async (updated) => {
