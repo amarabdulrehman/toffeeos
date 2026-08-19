@@ -56,6 +56,12 @@ export interface CartLine {
   discount?: Discount;
 }
 
+export interface CustomerDto {
+  id: string;
+  name: string | null;
+  phone: string | null;
+}
+
 export interface RestaurantTableDto {
   id: string;
   label: string;

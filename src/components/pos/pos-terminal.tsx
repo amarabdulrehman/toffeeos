@@ -12,6 +12,7 @@ import { OrderQueuePanel } from "./order-queue-panel";
 import { TablesDialog, ResumedOrderPanel } from "./tables-dialog";
 import type {
   CartLine,
+  CustomerDto,
   MenuCategoryDto,
   MenuItemDto,
   OrderDto,
@@ -34,6 +35,7 @@ export function PosTerminal({
   const [lines, setLines] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<OrderType>("DINE_IN");
   const [table, setTable] = useState<RestaurantTableDto | null>(null);
+  const [customer, setCustomer] = useState<CustomerDto | null>(null);
   const [tablesOpen, setTablesOpen] = useState(false);
   const [resumed, setResumed] = useState<{ table: RestaurantTableDto; order: OrderDto } | null>(null);
   const [totals, setTotals] = useState<PreviewTotals | null>(null);
@@ -140,6 +142,7 @@ export function PosTerminal({
         body: JSON.stringify({
           type: orderType,
           tableId: orderType === "DINE_IN" ? table?.id : undefined,
+          customerId: customer?.id,
           lines: lines.map((l) => ({
             menuItemId: l.menuItemId,
             variantId: l.variantId,
@@ -159,6 +162,7 @@ export function PosTerminal({
       setLines([]);
       setTotals(null);
       setTable(null);
+      setCustomer(null);
       idempotencyKey.current = crypto.randomUUID();
       if (showQueue) loadQueue();
     } finally {
@@ -223,6 +227,9 @@ export function PosTerminal({
           onOrderTypeChange={setOrderType}
           tableLabel={table?.label}
           onOpenTables={() => setTablesOpen(true)}
+          customer={customer}
+          onSelectCustomer={setCustomer}
+          onClearCustomer={() => setCustomer(null)}
           lines={lines}
           onQuantityChange={handleQuantityChange}
           onRemoveLine={(key) => setLines((prev) => prev.filter((l) => l.key !== key))}

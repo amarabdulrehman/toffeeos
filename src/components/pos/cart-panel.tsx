@@ -4,7 +4,8 @@ import { MapPin, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatPkr } from "@/lib/money";
-import type { CartLine, OrderType, PreviewTotals } from "./types";
+import { CustomerPicker } from "./customer-picker";
+import type { CartLine, CustomerDto, OrderType, PreviewTotals } from "./types";
 
 const ORDER_TYPES: { value: OrderType; label: string }[] = [
   { value: "DINE_IN", label: "Dine-in" },
@@ -18,6 +19,9 @@ export function CartPanel({
   onOrderTypeChange,
   tableLabel,
   onOpenTables,
+  customer,
+  onSelectCustomer,
+  onClearCustomer,
   lines,
   onQuantityChange,
   onRemoveLine,
@@ -31,6 +35,9 @@ export function CartPanel({
   onOrderTypeChange: (t: OrderType) => void;
   tableLabel: string | undefined;
   onOpenTables: () => void;
+  customer: CustomerDto | null;
+  onSelectCustomer: (c: CustomerDto) => void;
+  onClearCustomer: () => void;
   lines: CartLine[];
   onQuantityChange: (key: string, delta: number) => void;
   onRemoveLine: (key: string) => void;
@@ -65,6 +72,8 @@ export function CartPanel({
             {tableLabel ? <span className="font-medium">Table {tableLabel}</span> : <span className="text-muted-foreground">Select a table</span>}
           </button>
         )}
+
+        <CustomerPicker customer={customer} onSelect={onSelectCustomer} onClear={onClearCustomer} />
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
