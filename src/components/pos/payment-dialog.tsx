@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Plus, X } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,13 +66,18 @@ export function PaymentDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Take payment — {formatPkr(totalPaisa)} due</DialogTitle>
+          <DialogTitle className="font-heading">Take payment</DialogTitle>
         </DialogHeader>
+
+        <div className="rounded-xl bg-primary/10 px-4 py-3 text-center">
+          <div className="text-xs font-medium text-muted-foreground">Amount due</div>
+          <div className="font-heading text-3xl font-bold tabular-nums text-primary">{formatPkr(totalPaisa)}</div>
+        </div>
 
         <div className="space-y-3">
           {tenders.map((t, i) => (
             <div key={i} className="flex items-center gap-2">
-              <Select value={t.method} onValueChange={(v) => updateTender(i, { method: v as PaymentMethod })}>
+              <Select value={t.method} onValueChange={(v) => v && updateTender(i, { method: v as PaymentMethod })}>
                 <SelectTrigger className="w-40">
                   <SelectValue />
                 </SelectTrigger>
@@ -88,36 +94,51 @@ export function PaymentDialog({
                 inputMode="decimal"
                 value={t.amountRs}
                 onChange={(e) => updateTender(i, { amountRs: e.target.value })}
-                className="flex-1"
+                className="flex-1 text-right font-medium tabular-nums"
               />
               {tenders.length > 1 && (
-                <Button variant="ghost" size="sm" onClick={() => removeTender(i)}>
-                  ✕
-                </Button>
+                <button
+                  onClick={() => removeTender(i)}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                >
+                  <X className="size-4" />
+                </button>
               )}
             </div>
           ))}
-          <Button variant="outline" size="sm" onClick={addTender}>
-            + Split payment
-          </Button>
+          <button
+            onClick={addTender}
+            className="flex items-center gap-1.5 rounded-full border border-dashed border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+          >
+            <Plus className="size-3.5" />
+            Split payment
+          </button>
 
           {tenders.some((t) => t.method === "CASH") && (
-            <div className="rounded-md border bg-muted/30 p-2 text-sm">
-              <div className="mb-1 flex items-center gap-2">
+            <div className="flex items-center justify-between rounded-xl border bg-muted/40 px-3 py-2.5 text-sm">
+              <div className="flex items-center gap-2">
                 <span className="text-muted-foreground">Cash given:</span>
                 <Input
                   type="number"
                   inputMode="decimal"
                   value={cashGiven}
                   onChange={(e) => setCashGiven(e.target.value)}
-                  className="h-7 w-28"
+                  className="h-8 w-24 tabular-nums"
                 />
               </div>
-              <div>Change due: <span className="font-semibold">{formatPkr(changePaisa)}</span></div>
+              <div>
+                Change: <span className="font-heading font-semibold text-success">{formatPkr(changePaisa)}</span>
+              </div>
             </div>
           )}
 
-          <div className={`text-sm font-medium ${remainingPaisa > 0 ? "text-destructive" : "text-emerald-600"}`}>
+          <div
+            className={`rounded-lg px-3 py-2 text-center text-sm font-semibold ${
+              remainingPaisa > 0
+                ? "bg-destructive/10 text-destructive"
+                : "bg-success/15 text-success"
+            }`}
+          >
             {remainingPaisa > 0 ? `${formatPkr(remainingPaisa)} remaining` : "Fully covered"}
           </div>
         </div>

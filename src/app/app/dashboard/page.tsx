@@ -2,6 +2,7 @@ import Link from "next/link";
 import { auth } from "@/server/auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { LowStockBanner } from "@/components/dashboard/low-stock-banner";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -12,6 +13,8 @@ export default async function DashboardPage() {
     <div className="p-8">
       <h1 className="text-2xl font-bold">Welcome back, {user.name.split(" ")[0]}</h1>
       <p className="text-muted-foreground">{user.tenantName} · {user.branchName}</p>
+
+      <LowStockBanner />
 
       <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>

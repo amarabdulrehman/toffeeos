@@ -61,6 +61,7 @@ model Tenant {
   modifierGroups ModifierGroup[]
   auditLogs      AuditLog[]
   orders         Order[]
+  inventoryItems InventoryItem[]
 }
 
 enum SubscriptionStatus {
@@ -133,6 +134,7 @@ model Branch {
   tables          RestaurantTable[]
   branchMenuItems BranchMenuItem[]
   orders          Order[]
+  stockLocations  StockLocation[]
 
   @@index([tenantId])
 }
@@ -186,12 +188,17 @@ model User {
   phone        String?
   passwordHash String?
   name         String
+  /// Rider-specific (nullable, unused by other roles) — kept on the generic staff table rather
+  /// than a separate Rider model since a rider is just a User with role "rider"; see
+  /// src/server/permissions/registry.ts SEED_ROLES.rider.
+  employeeId   String?
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
   memberships   Membership[]
   staffPin      StaffPin?
   ordersCreated Order[]      @relation("OrderCreatedBy")
+  ordersAsRider Order[]      @relation("OrderAssignedRider")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
@@ -417,6 +424,122 @@ model RestaurantTable {
 }
 
 // ============================================================================
+// Inventory (Phase 2 basics — recipe-based deduction against these arrives in Phase 3).
+// InventoryItem is tenant-wide (mirrors Category/MenuItem); stock is tracked per-branch via
+// StockLocation, so a multi-branch tenant sees one item master list but separate quantities per
+// location. StockMovement is the append-only ledger (mirrors OrderEvent) that GRN/adjustment/
+// transfer all write to; StockLevel is the derived current-quantity cache kept in sync alongside
+// it in the same transaction — same "event log + derived cache" shape as Order/OrderEvent.
+// ============================================================================
+
+model StockLocation {
+  id        String   @id @default(uuid())
+  tenantId  String
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  branchId  String
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  stockLevels    StockLevel[]
+  movements      StockMovement[]
+  lowStockAlerts LowStockAlert[]
+
+  @@unique([branchId, name])
+  @@index([tenantId])
+}
+
+model InventoryItem {
+  id                   String   @id @default(uuid())
+  tenant               Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId             String
+  name                 String
+  unitOfMeasure        String // free-text, e.g. "kg", "ltr", "pcs"
+  lowStockThresholdQty Float    @default(0)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+
+  stockLevels    StockLevel[]
+  movements      StockMovement[]
+  lowStockAlerts LowStockAlert[]
+
+  @@index([tenantId])
+}
+
+/// Derived current-quantity cache: kept in sync with StockMovement inside the same transaction
+/// (see src/server/inventory.ts) rather than recomputed by summing movements on every read.
+model StockLevel {
+  id         String        @id @default(uuid())
+  tenantId   String
+  location   StockLocation @relation(fields: [locationId], references: [id])
+  locationId String
+  item       InventoryItem @relation(fields: [itemId], references: [id])
+  itemId     String
+  quantity   Float         @default(0)
+  updatedAt  DateTime      @updatedAt
+
+  @@unique([locationId, itemId])
+  @@index([tenantId])
+}
+
+enum StockMovementType {
+  GRN
+  ADJUSTMENT
+  TRANSFER_OUT
+  TRANSFER_IN
+}
+
+/// Append-only ledger. A transfer writes two rows (TRANSFER_OUT at the source, TRANSFER_IN at the
+/// destination) sharing one transferGroupId so they can be displayed/audited as a single event.
+model StockMovement {
+  id              String            @id @default(uuid())
+  tenantId        String
+  branchId        String
+  item            InventoryItem     @relation(fields: [itemId], references: [id])
+  itemId          String
+  location        StockLocation     @relation(fields: [locationId], references: [id])
+  locationId      String
+  type            StockMovementType
+  quantityDelta   Float // positive for GRN/TRANSFER_IN, negative for ADJUSTMENT-down/TRANSFER_OUT
+  costPaisa       Int? // GRN only
+  supplierName    String? // GRN only, free-text — no Supplier module yet
+  reason          String? // required by the API for ADJUSTMENT, enforced there not in the schema
+  transferGroupId String?
+  actorId         String?
+  createdAt       DateTime          @default(now())
+
+  @@index([tenantId, branchId, createdAt])
+  @@index([itemId])
+  @@index([transferGroupId])
+}
+
+enum LowStockAlertStatus {
+  ACTIVE
+  RESOLVED
+}
+
+/// The "queue" for low-stock notifications: written synchronously whenever a stock movement drops
+/// an item below threshold (see src/server/inventory.ts), read by the dashboard badge now: a real
+/// worker can drain ACTIVE rows to WhatsApp/email in Phase 4 without any schema change.
+model LowStockAlert {
+  id                 String              @id @default(uuid())
+  tenantId           String
+  branchId           String
+  item               InventoryItem       @relation(fields: [itemId], references: [id])
+  itemId             String
+  location           StockLocation       @relation(fields: [locationId], references: [id])
+  locationId         String
+  quantityAtTrigger  Float
+  thresholdAtTrigger Float
+  status             LowStockAlertStatus @default(ACTIVE)
+  createdAt          DateTime            @default(now())
+  resolvedAt         DateTime?
+
+  @@index([tenantId, branchId, status])
+  @@index([itemId, locationId, status])
+}
+
+// ============================================================================
 // Customers
 // ============================================================================
 
@@ -472,8 +595,14 @@ enum OrderStatus {
   READY
   SERVED
   PAID
+  DELIVERED
   VOIDED
   CANCELLED
+}
+
+enum DeliveryProofMethod {
+  PHOTO
+  OTP
 }
 
 enum PaymentMethod {
@@ -512,6 +641,18 @@ model Order {
   type        OrderType
   status      OrderStatus @default(OPEN)
 
+  // Delivery & rider (DELIVERY-type orders only). See src/server/delivery.ts. `deliveryOtpCode`
+  // is a short-lived handoff code, not a security-critical secret — it exists purely so the
+  // customer can verify the rider at the door, so it is stored in plain text like a receipt code.
+  assignedRider       User?                @relation("OrderAssignedRider", fields: [assignedRiderId], references: [id])
+  assignedRiderId     String?
+  riderAssignedAt     DateTime?
+  pickedUpAt          DateTime?
+  deliveredAt         DateTime?
+  deliveryProofMethod DeliveryProofMethod?
+  deliveryProofUrl    String?
+  deliveryOtpCode     String?
+
   subtotalPaisa           Int @default(0)
   discountedSubtotalPaisa Int @default(0)
   serviceChargePaisa      Int @default(0)
@@ -541,6 +682,7 @@ model Order {
   @@unique([branchId, orderNumber])
   @@index([tenantId, branchId, createdAt])
   @@index([tenantId, branchId, status])
+  @@index([tenantId, assignedRiderId])
 }
 
 /// id is a client-generated ULID for the same offline-replay reason as Order.id.

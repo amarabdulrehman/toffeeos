@@ -8,5 +8,11 @@ export default async function PosPage() {
   if (!user || user.kind !== "tenant") redirect("/login");
   if (!user.permissions.includes("pos.access")) redirect("/app/dashboard");
 
-  return <PosTerminal canTakePayment={user.permissions.includes("pos.payment.take")} />;
+  return (
+    <PosTerminal
+      tenantId={user.tenantId}
+      branchId={user.branchId}
+      canTakePayment={user.permissions.includes("pos.payment.take")}
+    />
+  );
 }

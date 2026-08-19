@@ -162,7 +162,7 @@ export async function createOrder(
 
   for (let attempt = 0; attempt < MAX_ORDER_NUMBER_RETRIES; attempt++) {
     try {
-      return await runInTenantTransaction(tenantId, async (tx) => {
+      const order = await runInTenantTransaction(tenantId, async (tx) => {
         const last = await tx.order.aggregate({ where: { branchId }, _max: { orderNumber: true } });
         const orderNumber = (last._max.orderNumber ?? 0) + 1;
 
@@ -238,6 +238,14 @@ export async function createOrder(
 
         return order;
       });
+
+      if (input.tableId) {
+        await publish(tenantId, branchId, "tables", "table_status_changed", {
+          tableId: input.tableId,
+          status: "OCCUPIED",
+        });
+      }
+      return order;
     } catch (err) {
       const isOrderNumberClash = err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
       if (isOrderNumberClash && attempt < MAX_ORDER_NUMBER_RETRIES - 1) continue;
@@ -355,6 +363,12 @@ export async function takePayment(
     return updated;
   }).then(async (updated) => {
     await publish(tenantId, branchId, "orders", "order_paid", { orderId });
+    if (order.tableId) {
+      await publish(tenantId, branchId, "tables", "table_status_changed", {
+        tableId: order.tableId,
+        status: "AVAILABLE",
+      });
+    }
     return updated;
   });
 }
@@ -365,6 +379,10 @@ export async function voidOrder(tenantId: string, branchId: string, orderId: str
   await db.orderEvent.create({ data: { tenantId, orderId, type: "VOIDED", actorId, payload: { reason } } });
   if (order.tableId) {
     await db.restaurantTable.update({ where: { id: order.tableId }, data: { status: "AVAILABLE" } });
+    await publish(tenantId, branchId, "tables", "table_status_changed", {
+      tableId: order.tableId,
+      status: "AVAILABLE",
+    });
   }
   await publish(tenantId, branchId, "orders", "order_voided", { orderId });
   return order;

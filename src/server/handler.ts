@@ -38,7 +38,9 @@ export interface DefineHandlerOptions<TSchema extends ZodType> {
   audit?: (input: TSchema["_output"], result: unknown) => AuditInfo | null;
 }
 
-class HttpError extends Error {
+/** Exported so business-logic modules (e.g. src/server/delivery.ts's "not your order" check) can
+ * throw a specific status code instead of falling through to defineHandler's generic 500. */
+export class HttpError extends Error {
   constructor(public status: number, message: string, public issues?: unknown) {
     super(message);
   }
@@ -95,6 +97,10 @@ export function defineHandler<TSchema extends ZodType = ZodType<undefined>>(
         }
       }
 
+      // Lets a handler return a NextResponse directly (e.g. a route that needs to branch on
+      // content-type, like multipart file uploads) instead of always being wrapped in another
+      // NextResponse.json() call.
+      if (result instanceof NextResponse) return result;
       return NextResponse.json(result ?? { ok: true });
     } catch (err) {
       if (err instanceof HttpError) {

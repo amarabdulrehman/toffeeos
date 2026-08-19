@@ -73,6 +73,8 @@ export const PERMISSIONS: PermissionDef[] = [
 
   // ---- Inventory ----
   perm("inventory", "view", "View stock levels"),
+  perm("inventory", "location.manage", "Add/edit stock locations"),
+  perm("inventory", "item.manage", "Add/edit inventory items"),
   perm("inventory", "grn.create", "Create a goods-received note"),
   perm("inventory", "transfer.create", "Create a stock transfer between branches"),
   perm("inventory", "transfer.approve", "Approve a stock transfer"),

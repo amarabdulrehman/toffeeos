@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ProductGrid } from "./product-grid";
@@ -8,23 +9,33 @@ import { CartPanel } from "./cart-panel";
 import { VariantDialog } from "./variant-dialog";
 import { PaymentDialog } from "./payment-dialog";
 import { OrderQueuePanel } from "./order-queue-panel";
+import { TablesDialog, ResumedOrderPanel } from "./tables-dialog";
 import type {
   CartLine,
-  FloorDto,
   MenuCategoryDto,
   MenuItemDto,
   OrderDto,
   OrderType,
   PaymentMethod,
   PreviewTotals,
+  RestaurantTableDto,
 } from "./types";
 
-export function PosTerminal({ canTakePayment }: { canTakePayment: boolean }) {
+export function PosTerminal({
+  tenantId,
+  branchId,
+  canTakePayment,
+}: {
+  tenantId: string;
+  branchId: string;
+  canTakePayment: boolean;
+}) {
   const [categories, setCategories] = useState<MenuCategoryDto[]>([]);
-  const [floors, setFloors] = useState<FloorDto[]>([]);
   const [lines, setLines] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<OrderType>("DINE_IN");
-  const [tableId, setTableId] = useState<string | undefined>(undefined);
+  const [table, setTable] = useState<RestaurantTableDto | null>(null);
+  const [tablesOpen, setTablesOpen] = useState(false);
+  const [resumed, setResumed] = useState<{ table: RestaurantTableDto; order: OrderDto } | null>(null);
   const [totals, setTotals] = useState<PreviewTotals | null>(null);
   const [variantItem, setVariantItem] = useState<MenuItemDto | null>(null);
   const [sending, setSending] = useState(false);
@@ -39,10 +50,6 @@ export function PosTerminal({ canTakePayment }: { canTakePayment: boolean }) {
       .then((r) => r.json())
       .then((d) => setCategories(d.categories ?? []))
       .catch(() => toast.error("Could not load the menu."));
-    fetch("/api/tables")
-      .then((r) => r.json())
-      .then((d) => setFloors(d.floors ?? []))
-      .catch(() => {});
   }, []);
 
   const loadQueue = useCallback(() => {
@@ -121,7 +128,7 @@ export function PosTerminal({ canTakePayment }: { canTakePayment: boolean }) {
   }
 
   async function handleSendToKitchen() {
-    if (orderType === "DINE_IN" && !tableId) {
+    if (orderType === "DINE_IN" && !table) {
       toast.error("Select a table for this dine-in order.");
       return;
     }
@@ -132,7 +139,7 @@ export function PosTerminal({ canTakePayment }: { canTakePayment: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: orderType,
-          tableId: orderType === "DINE_IN" ? tableId : undefined,
+          tableId: orderType === "DINE_IN" ? table?.id : undefined,
           lines: lines.map((l) => ({
             menuItemId: l.menuItemId,
             variantId: l.variantId,
@@ -151,7 +158,7 @@ export function PosTerminal({ canTakePayment }: { canTakePayment: boolean }) {
       toast.success(`Order #${data.order.orderNumber} sent to kitchen.`);
       setLines([]);
       setTotals(null);
-      setTableId(undefined);
+      setTable(null);
       idempotencyKey.current = crypto.randomUUID();
       if (showQueue) loadQueue();
     } finally {
@@ -175,6 +182,7 @@ export function PosTerminal({ canTakePayment }: { canTakePayment: boolean }) {
       }
       toast.success(`Order #${payingOrder.orderNumber} paid.`);
       setPayingOrder(null);
+      setResumed(null);
       loadQueue();
     } finally {
       setPaying(false);
@@ -182,34 +190,39 @@ export function PosTerminal({ canTakePayment }: { canTakePayment: boolean }) {
   }
 
   return (
-    <div className="grid h-full grid-cols-[1fr_320px]">
+    <div className="grid h-full grid-cols-[1fr_340px]">
       <div className="relative min-h-0">
         <ProductGrid categories={categories} onSelectItem={handleSelectItem} />
         {canTakePayment && (
           <Button
             variant="outline"
             size="sm"
-            className="absolute right-4 top-4"
+            className="absolute right-5 top-5 rounded-full border-none bg-card shadow-sm"
             onClick={() => setShowQueue((s) => !s)}
           >
+            <ClipboardList className="size-4" />
             Order Queue
           </Button>
         )}
       </div>
 
-      {showQueue ? (
-        <OrderQueuePanel
-          orders={queue}
-          onPay={(o) => setPayingOrder(o)}
-          onClose={() => setShowQueue(false)}
-        />
+      {resumed ? (
+        <div className="border-l bg-muted/30 p-4">
+          <ResumedOrderPanel
+            table={resumed.table}
+            order={resumed.order}
+            onClose={() => setResumed(null)}
+            onTakePayment={() => setPayingOrder(resumed.order)}
+          />
+        </div>
+      ) : showQueue ? (
+        <OrderQueuePanel orders={queue} onPay={(o) => setPayingOrder(o)} onClose={() => setShowQueue(false)} />
       ) : (
         <CartPanel
           orderType={orderType}
           onOrderTypeChange={setOrderType}
-          floors={floors}
-          tableId={tableId}
-          onTableChange={setTableId}
+          tableLabel={table?.label}
+          onOpenTables={() => setTablesOpen(true)}
           lines={lines}
           onQuantityChange={handleQuantityChange}
           onRemoveLine={(key) => setLines((prev) => prev.filter((l) => l.key !== key))}
@@ -220,6 +233,22 @@ export function PosTerminal({ canTakePayment }: { canTakePayment: boolean }) {
           sending={sending}
         />
       )}
+
+      <TablesDialog
+        open={tablesOpen}
+        tenantId={tenantId}
+        branchId={branchId}
+        onClose={() => setTablesOpen(false)}
+        onStartOrder={(t) => {
+          setTable(t);
+          setResumed(null);
+          setTablesOpen(false);
+        }}
+        onResumeOrder={(t, order) => {
+          setResumed({ table: t, order });
+          setTablesOpen(false);
+        }}
+      />
 
       <VariantDialog
         item={variantItem}

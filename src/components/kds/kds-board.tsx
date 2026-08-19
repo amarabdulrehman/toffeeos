@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Search } from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,11 +29,11 @@ interface KdsOrder {
   lines: KdsLine[];
 }
 
-const TYPE_STYLE: Record<KdsOrder["type"], string> = {
-  DINE_IN: "border-t-4 border-t-blue-500",
-  TAKEAWAY: "border-t-4 border-t-amber-500",
-  DELIVERY: "border-t-4 border-t-purple-500",
-  SERVICE: "border-t-4 border-t-emerald-500",
+const TYPE_STYLE: Record<KdsOrder["type"], { border: string; chip: string }> = {
+  DINE_IN: { border: "border-t-primary", chip: "bg-primary/15 text-primary" },
+  TAKEAWAY: { border: "border-t-warning", chip: "bg-warning/20 text-warning-foreground" },
+  DELIVERY: { border: "border-t-sky-500", chip: "bg-sky-500/15 text-sky-400" },
+  SERVICE: { border: "border-t-success", chip: "bg-success/15 text-success" },
 };
 
 function useElapsedSeconds(since: string | null): number {
@@ -55,6 +55,7 @@ function formatElapsed(seconds: number): string {
 function OrderCard({ order, canMarkReady, onChanged }: { order: KdsOrder; canMarkReady: boolean; onChanged: () => void }) {
   const elapsed = useElapsedSeconds(order.sentToKitchenAt);
   const late = elapsed > SLA_SECONDS;
+  const style = TYPE_STYLE[order.type];
 
   async function toggleLine(lineId: string) {
     const res = await fetch(`/api/order-lines/${lineId}/ready`, { method: "POST" });
@@ -75,31 +76,35 @@ function OrderCard({ order, canMarkReady, onChanged }: { order: KdsOrder; canMar
   }
 
   return (
-    <div className={`flex flex-col rounded-lg bg-slate-900 shadow ${TYPE_STYLE[order.type]}`}>
-      <div className="flex items-center justify-between px-3 py-2">
+    <div className={`flex flex-col rounded-2xl border-t-4 bg-card shadow-md ${style.border} ${late ? "ring-1 ring-destructive/40" : ""}`}>
+      <div className="flex items-center justify-between px-4 py-3">
         <div>
-          <div className="font-bold">#{order.orderNumber}</div>
-          <div className="text-xs text-slate-400">
+          <div className="font-heading text-lg font-bold tabular-nums">#{order.orderNumber}</div>
+          <span className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${style.chip}`}>
             {order.type.replace("_", " ")}
             {order.table ? ` · ${order.table.label}` : ""}
-          </div>
+          </span>
         </div>
-        <div className={`rounded px-2 py-1 text-sm font-mono ${late ? "bg-red-600" : "bg-slate-700"}`}>
+        <div
+          className={`rounded-lg px-2.5 py-1.5 font-heading text-lg font-bold tabular-nums ${
+            late ? "animate-pulse bg-destructive text-white" : "bg-muted text-foreground"
+          }`}
+        >
           {formatElapsed(elapsed)}
         </div>
       </div>
-      <div className="flex-1 space-y-1 px-3 pb-2">
+      <div className="flex-1 space-y-1.5 px-4 pb-3">
         {order.lines.map((line) => (
-          <label key={line.id} className="flex items-center gap-2 text-sm">
+          <label key={line.id} className="flex items-center gap-2.5 text-sm">
             <Checkbox checked={line.kitchenReady} onCheckedChange={() => toggleLine(line.id)} />
-            <span className={line.kitchenReady ? "text-slate-500 line-through" : ""}>
+            <span className={line.kitchenReady ? "text-muted-foreground/60 line-through" : "font-medium"}>
               {line.quantity}× {line.nameSnapshot}
             </span>
           </label>
         ))}
       </div>
       {canMarkReady && (
-        <div className="flex gap-2 border-t border-slate-800 p-2">
+        <div className="flex gap-2 border-t p-2.5">
           <Button size="sm" variant="secondary" className="flex-1" onClick={() => window.print()}>
             Print
           </Button>
@@ -156,36 +161,44 @@ export function KdsBoard({
   ];
 
   return (
-    <div className="flex h-full flex-col p-4">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="Search order #"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-40 border-slate-700 bg-slate-900 text-white"
-        />
-        <Badge
-          variant={typeFilter === "ALL" ? "default" : "outline"}
-          className="cursor-pointer"
+    <div className="flex h-full flex-col p-5">
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search order #"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-44 rounded-full bg-card pl-9"
+          />
+        </div>
+        <div className="mx-1 h-6 w-px bg-border" />
+        <button
           onClick={() => setTypeFilter("ALL")}
+          className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+            typeFilter === "ALL" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground"
+          }`}
         >
           All
-        </Badge>
+        </button>
         {groups.map((g) => (
-          <Badge
+          <button
             key={g.type}
-            variant={typeFilter === g.type ? "default" : "outline"}
-            className="cursor-pointer"
             onClick={() => setTypeFilter(g.type)}
+            className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+              typeFilter === g.type
+                ? "bg-primary text-primary-foreground"
+                : "bg-card text-muted-foreground hover:text-foreground"
+            }`}
           >
             {g.label}
-          </Badge>
+          </button>
         ))}
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <div className="mt-20 text-center text-slate-500">No active kitchen orders.</div>
+          <div className="mt-20 text-center text-muted-foreground">No active kitchen orders.</div>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {filtered.map((o) => (

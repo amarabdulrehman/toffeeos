@@ -78,6 +78,11 @@ const TENANT_SCOPED_MODELS = new Set([
   "OrderEvent",
   "Subscription",
   "AuditLog",
+  "StockLocation",
+  "InventoryItem",
+  "StockLevel",
+  "StockMovement",
+  "LowStockAlert",
 ]);
 
 const WHERE_OPERATIONS = new Set([

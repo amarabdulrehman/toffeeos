@@ -1,11 +1,10 @@
 "use client";
 
-import { Minus, Plus, Trash2 } from "lucide-react";
+import { MapPin, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { formatPkr } from "@/lib/money";
-import type { CartLine, FloorDto, OrderType, PreviewTotals } from "./types";
+import type { CartLine, OrderType, PreviewTotals } from "./types";
 
 const ORDER_TYPES: { value: OrderType; label: string }[] = [
   { value: "DINE_IN", label: "Dine-in" },
@@ -17,9 +16,8 @@ const ORDER_TYPES: { value: OrderType; label: string }[] = [
 export function CartPanel({
   orderType,
   onOrderTypeChange,
-  floors,
-  tableId,
-  onTableChange,
+  tableLabel,
+  onOpenTables,
   lines,
   onQuantityChange,
   onRemoveLine,
@@ -31,9 +29,8 @@ export function CartPanel({
 }: {
   orderType: OrderType;
   onOrderTypeChange: (t: OrderType) => void;
-  floors: FloorDto[];
-  tableId: string | undefined;
-  onTableChange: (id: string) => void;
+  tableLabel: string | undefined;
+  onOpenTables: () => void;
   lines: CartLine[];
   onQuantityChange: (key: string, delta: number) => void;
   onRemoveLine: (key: string) => void;
@@ -44,10 +41,10 @@ export function CartPanel({
   sending: boolean;
 }) {
   return (
-    <div className="flex h-full flex-col border-l bg-muted/20">
-      <div className="space-y-2 border-b p-3">
+    <div className="flex h-full flex-col border-l bg-card">
+      <div className="space-y-2 border-b p-4">
         <Select value={orderType} onValueChange={(v) => v && onOrderTypeChange(v as OrderType)}>
-          <SelectTrigger>
+          <SelectTrigger className="w-full font-medium">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -60,67 +57,87 @@ export function CartPanel({
         </Select>
 
         {orderType === "DINE_IN" && (
-          <Select value={tableId} onValueChange={(v) => v && onTableChange(v)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select a table" />
-            </SelectTrigger>
-            <SelectContent>
-              {floors.flatMap((f) =>
-                f.tables.map((t) => (
-                  <SelectItem key={t.id} value={t.id} disabled={t.status === "OCCUPIED" && t.id !== tableId}>
-                    {f.name} · {t.label} ({t.seats} seats){t.status === "OCCUPIED" ? " — occupied" : ""}
-                  </SelectItem>
-                ))
-              )}
-            </SelectContent>
-          </Select>
+          <button
+            onClick={onOpenTables}
+            className="flex w-full items-center gap-2 rounded-md border bg-background px-3 py-2 text-left text-sm transition-colors hover:border-primary/50"
+          >
+            <MapPin className="size-4 text-muted-foreground" />
+            {tableLabel ? <span className="font-medium">Table {tableLabel}</span> : <span className="text-muted-foreground">Select a table</span>}
+          </button>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className="flex-1 overflow-y-auto p-4">
         {lines.length === 0 && (
-          <div className="mt-8 text-center text-sm text-muted-foreground">Tap items to add them to the order.</div>
+          <div className="mt-10 flex flex-col items-center gap-2 text-center text-sm text-muted-foreground">
+            <ShoppingBag className="size-8 opacity-40" />
+            Tap items to add them to the order.
+          </div>
         )}
-        <div className="space-y-3">
+        <div className="space-y-2">
           {lines.map((line) => (
-            <div key={line.key} className="rounded-lg border bg-background p-2">
+            <div
+              key={line.key}
+              className="rounded-xl border border-border/60 bg-background p-3 transition-colors hover:border-border"
+            >
               <div className="flex items-start justify-between gap-2">
-                <div className="text-sm font-medium">{line.name}</div>
-                <button onClick={() => onRemoveLine(line.key)} className="text-muted-foreground hover:text-destructive">
+                <div className="text-sm font-semibold leading-snug">{line.name}</div>
+                <button
+                  onClick={() => onRemoveLine(line.key)}
+                  className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
+                >
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
-              <div className="mt-1 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Button size="icon" variant="outline" className="h-6 w-6" onClick={() => onQuantityChange(line.key, -1)}>
+              <div className="mt-2 flex items-center justify-between">
+                <div className="flex items-center gap-1 rounded-full border bg-muted/50 p-0.5">
+                  <button
+                    onClick={() => onQuantityChange(line.key, -1)}
+                    className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                  >
                     <Minus className="h-3 w-3" />
-                  </Button>
-                  <span className="w-5 text-center text-sm">{line.quantity}</span>
-                  <Button size="icon" variant="outline" className="h-6 w-6" onClick={() => onQuantityChange(line.key, 1)}>
+                  </button>
+                  <span className="w-5 text-center text-sm font-medium tabular-nums">{line.quantity}</span>
+                  <button
+                    onClick={() => onQuantityChange(line.key, 1)}
+                    className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                  >
                     <Plus className="h-3 w-3" />
-                  </Button>
+                  </button>
                 </div>
-                <div className="text-sm font-semibold">{formatPkr(line.unitPricePaisa * line.quantity)}</div>
+                <div className="font-heading text-sm font-semibold tabular-nums">
+                  {formatPkr(line.unitPricePaisa * line.quantity)}
+                </div>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="space-y-1 border-t p-3 text-sm">
+      <div className="space-y-1.5 border-t bg-muted/30 p-4 text-sm">
         <Row label="Subtotal" value={totals?.discountedSubtotalPaisa} />
         {!!totals?.serviceChargePaisa && <Row label="Service charge" value={totals.serviceChargePaisa} />}
         <Row label={`Tax (${((totals?.appliedRateBasisPoints ?? 0) / 100).toFixed(0)}%)`} value={totals?.taxPaisa} />
-        <Separator className="my-2" />
-        <Row label="Total" value={totals?.totalPaisa} bold />
+        <div className="mt-2 flex items-center justify-between rounded-xl bg-primary/10 px-3 py-2.5">
+          <span className="font-heading text-sm font-semibold">Total</span>
+          <span className="font-heading text-xl font-bold tabular-nums text-primary">
+            {formatPkr(totals?.totalPaisa ?? 0)}
+          </span>
+        </div>
       </div>
 
-      <div className="space-y-2 border-t p-3">
-        <Button className="w-full" size="lg" disabled={lines.length === 0 || sending} onClick={onSendToKitchen}>
+      <div className="space-y-2 border-t p-4">
+        <Button
+          variant="outline"
+          className="w-full"
+          size="lg"
+          disabled={lines.length === 0 || sending}
+          onClick={onSendToKitchen}
+        >
           {sending ? "Sending…" : "Send to Kitchen"}
         </Button>
         {canTakePayment && (
-          <Button className="w-full" variant="secondary" disabled={lines.length === 0} onClick={onOpenPayment}>
+          <Button className="w-full" size="lg" disabled={lines.length === 0} onClick={onOpenPayment}>
             Take Payment
           </Button>
         )}
@@ -133,7 +150,7 @@ function Row({ label, value, bold }: { label: string; value?: number; bold?: boo
   return (
     <div className={`flex justify-between ${bold ? "text-base font-bold" : "text-muted-foreground"}`}>
       <span>{label}</span>
-      <span className={bold ? "text-foreground" : ""}>{formatPkr(value ?? 0)}</span>
+      <span className={bold ? "text-foreground" : "tabular-nums"}>{formatPkr(value ?? 0)}</span>
     </div>
   );
 }

@@ -13,7 +13,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "seed": "cross-env NODE_OPTIONS=--conditions=react-server tsx prisma/seed.ts"
+    "seed": "cross-env NODE_OPTIONS=--conditions=react-server tsx prisma/seed.ts",
+    "db:sync-roles": "tsx prisma/backfill-role-permissions.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

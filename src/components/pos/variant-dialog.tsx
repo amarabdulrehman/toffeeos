@@ -1,7 +1,6 @@
 "use client";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { formatPkr } from "@/lib/money";
 import type { MenuItemDto } from "./types";
 
@@ -18,19 +17,20 @@ export function VariantDialog({
     <Dialog open={!!item} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{item?.name} — choose an option</DialogTitle>
+          <DialogTitle className="font-heading">{item?.name} — choose an option</DialogTitle>
         </DialogHeader>
         <div className="grid gap-2">
           {item?.variants.map((v) => (
-            <Button
+            <button
               key={v.id}
-              variant="outline"
-              className="justify-between"
               onClick={() => onPick(v.id)}
+              className="flex items-center justify-between rounded-xl border border-border/70 bg-card px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-sm active:translate-y-0"
             >
-              <span>{v.name}</span>
-              <span className="font-semibold">{formatPkr(item.basePricePaisa + v.priceDeltaPaisa)}</span>
-            </Button>
+              <span className="font-medium">{v.name}</span>
+              <span className="font-heading font-semibold text-primary">
+                {formatPkr(item.basePricePaisa + v.priceDeltaPaisa)}
+              </span>
+            </button>
           ))}
         </div>
       </DialogContent>

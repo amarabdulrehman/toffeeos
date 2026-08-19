@@ -1,10 +1,26 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatPkr } from "@/lib/money";
 import type { MenuCategoryDto, MenuItemDto } from "./types";
+
+/** Deterministic accent per category (cycled), so the grid reads with variety even though menu
+ * data is fully tenant-defined and we can't know category names in advance. Deliberately excludes
+ * primary/purple — that's reserved for the active-category and action-button state, so an inactive
+ * pill never gets confused for the selected one. Written as complete, literal class strings (not
+ * composed at runtime) since Tailwind's compiler needs to see the full class name in source. */
+const CATEGORY_ACCENTS = [
+  { pill: "bg-warning/18 text-warning-foreground border-warning/30", stripe: "bg-warning" },
+  { pill: "bg-success/15 text-success border-success/25", stripe: "bg-success" },
+  { pill: "bg-sky-500/12 text-sky-600 border-sky-500/25 dark:text-sky-400", stripe: "bg-sky-500" },
+  { pill: "bg-rose-500/12 text-rose-600 border-rose-500/25 dark:text-rose-400", stripe: "bg-rose-500" },
+];
+
+function accentFor(index: number) {
+  return CATEGORY_ACCENTS[index % CATEGORY_ACCENTS.length];
+}
 
 export function ProductGrid({
   categories,
@@ -13,9 +29,16 @@ export function ProductGrid({
   categories: MenuCategoryDto[];
   onSelectItem: (categoryId: string, item: MenuItemDto) => void;
 }) {
-  const [activeCategoryId, setActiveCategoryId] = useState<string>(categories[0]?.id ?? "");
+  // Categories arrive async (fetched by the parent after mount), so a plain useState default of
+  // categories[0]?.id would freeze at "" forever — derive the effective selection instead, falling
+  // back to the first loaded category whenever the stored id doesn't (yet) match anything real.
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
+  const activeCategoryId =
+    selectedCategoryId && categories.some((c) => c.id === selectedCategoryId)
+      ? selectedCategoryId
+      : (categories[0]?.id ?? "");
   const activeCategory = categories.find((c) => c.id === activeCategoryId) ?? categories[0];
 
   const visibleItems = useMemo(() => {
@@ -27,44 +50,65 @@ export function ProductGrid({
   }, [categories, activeCategory, search]);
 
   return (
-    <div className="flex h-full flex-col gap-3 p-4">
-      <Input
-        placeholder="Search menu…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="max-w-sm"
-      />
+    <div className="flex h-full flex-col gap-4 bg-muted/25 p-5">
+      <div className="relative max-w-sm">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Search menu…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="rounded-full border-none bg-card pl-9 shadow-sm"
+        />
+      </div>
 
       {!search.trim() && (
-        <Tabs value={activeCategoryId} onValueChange={setActiveCategoryId}>
-          <TabsList className="flex h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
-            {categories.map((c) => (
-              <TabsTrigger
+        <div className="flex flex-wrap gap-2">
+          {categories.map((c, i) => {
+            const active = c.id === activeCategoryId;
+            return (
+              <button
                 key={c.id}
-                value={c.id}
-                className="rounded-full border data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                onClick={() => setSelectedCategoryId(c.id)}
+                className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-all ${
+                  active
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : `border-transparent ${accentFor(i).pill} hover:opacity-80`
+                }`}
               >
                 {c.name}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+              </button>
+            );
+          })}
+        </div>
       )}
 
       <div className="grid flex-1 auto-rows-min grid-cols-2 gap-3 overflow-y-auto pb-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {visibleItems.map((item) => {
-          const categoryId = categories.find((c) => c.items.includes(item))?.id ?? activeCategoryId;
+          const categoryIndex = categories.findIndex((c) => c.items.includes(item));
           return (
             <button
               key={item.id}
               disabled={!item.isAvailable}
-              onClick={() => onSelectItem(categoryId, item)}
-              className="flex flex-col items-start rounded-xl border bg-card p-3 text-left shadow-sm transition hover:border-primary hover:shadow-md disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={() => onSelectItem(categories[categoryIndex]?.id ?? activeCategoryId, item)}
+              className="group relative flex flex-col items-start overflow-hidden rounded-2xl border border-border/60 bg-card p-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-sm"
             >
-              <div className="flex h-20 w-full items-center justify-center rounded-lg bg-muted text-3xl">🍽️</div>
-              <div className="mt-2 line-clamp-2 text-sm font-medium">{item.name}</div>
-              <div className="mt-1 text-sm font-semibold text-primary">{formatPkr(item.basePricePaisa)}</div>
-              {!item.isAvailable && <div className="text-xs text-destructive">Unavailable</div>}
+              <span className={`absolute inset-x-0 top-0 h-1 ${accentFor(categoryIndex).stripe}`} />
+              <div className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-tight">{item.name}</div>
+              <div className="mt-2 flex w-full items-center justify-between">
+                <span className="font-heading text-base font-semibold text-primary">
+                  {formatPkr(item.basePricePaisa)}
+                </span>
+                {item.variants.length > 0 && (
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {item.variants.length} sizes
+                  </span>
+                )}
+              </div>
+              {!item.isAvailable && (
+                <span className="absolute right-2 top-2 rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-semibold text-destructive">
+                  Unavailable
+                </span>
+              )}
             </button>
           );
         })}
