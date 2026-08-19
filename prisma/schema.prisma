@@ -1,0 +1,628 @@
+// TableOS — multi-tenant restaurant management SaaS
+// See C:\Users\rpmmu\.claude\plans\build-prompt-for-claude-jiggly-origami.md for the design doc.
+//
+// Isolation strategy (two layers):
+//  1. App layer: every tenant-scoped model below carries a plain `tenantId` column (denormalized
+//     even onto line-item/child tables) so the Prisma Client Extension in src/server/db.ts can
+//     inject `where: { tenantId }` on every query without needing relation joins.
+//  2. DB layer: prisma/migrations/*_rls/migration.sql turns these same columns into Postgres RLS
+//     policies with FORCE ROW LEVEL SECURITY, as defense in depth.
+//
+// All money fields are integer paisa (Int, 1/100 PKR). All percentage/tax-rate fields are integer
+// basis points (1 bp = 0.01%, so 16.00% = 1600). See src/lib/money.ts and src/lib/pricing.ts.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// Platform (cross-tenant — only touched by signup, super-admin, and cron jobs)
+// ============================================================================
+
+model Plan {
+  id                       String   @id @default(uuid())
+  key                      String   @unique // "starter" | "growth" | "enterprise"
+  name                     String
+  maxBranches              Int
+  pricePaisaPerBranchMonth Int
+  createdAt                DateTime @default(now())
+
+  subscriptions Subscription[]
+}
+
+enum TenantStatus {
+  TRIALING
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+model Tenant {
+  id        String       @id @default(uuid())
+  name      String
+  slug      String       @unique
+  status    TenantStatus @default(TRIALING)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  branches       Branch[]
+  users          User[]
+  roles          Role[]
+  memberships    Membership[]
+  subscription   Subscription?
+  customers      Customer[]
+  categories     Category[]
+  menuItems      MenuItem[]
+  modifierGroups ModifierGroup[]
+  auditLogs      AuditLog[]
+  orders         Order[]
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+}
+
+model Subscription {
+  id               String             @id @default(uuid())
+  tenant           Tenant             @relation(fields: [tenantId], references: [id])
+  tenantId         String             @unique
+  plan             Plan               @relation(fields: [planId], references: [id])
+  planId           String
+  status           SubscriptionStatus @default(TRIALING)
+  branchLimit      Int                @default(1)
+  trialEndsAt      DateTime?
+  currentPeriodEnd DateTime?
+  paymentMethod    String? // "jazzcash" | "easypaisa" | "bank_transfer" | "stripe"
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+}
+
+model PlatformUser {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+}
+
+/// Append-only. tenantId is nullable to allow platform-wide entries (e.g. platform-user login)
+/// that aren't about one tenant.
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id])
+  tenantId   String?
+  branchId   String?
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+}
+
+// ============================================================================
+// Tenant core
+// ============================================================================
+
+model Branch {
+  id        String   @id @default(uuid())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  name      String
+  address   String?
+  phone     String?
+  timezone  String   @default("Asia/Karachi")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  settings        BranchSettings?
+  taxRules        TaxRule[]
+  memberships     Membership[]
+  floors          Floor[]
+  tables          RestaurantTable[]
+  branchMenuItems BranchMenuItem[]
+  orders          Order[]
+
+  @@index([tenantId])
+}
+
+enum RoundingMode {
+  NONE
+  NEAREST_1
+  NEAREST_5
+}
+
+model BranchSettings {
+  id                       String       @id @default(uuid())
+  branch                   Branch       @relation(fields: [branchId], references: [id])
+  branchId                 String       @unique
+  tenantId                 String
+  currency                 String       @default("PKR")
+  serviceChargeBasisPoints Int          @default(0)
+  serviceChargeAppliesTo   OrderType[]  @default([DINE_IN])
+  serviceChargeTaxable     Boolean      @default(true)
+  roundingMode             RoundingMode @default(NEAREST_1)
+  kdsSlaSeconds            Int          @default(600)
+  receiptHeader            String?
+  locale                   String       @default("en")
+
+  @@index([tenantId])
+}
+
+/// Rate depends on payment method (Punjab PRA: 16% cash / 5% card & digital). Empty
+/// `paymentMethods` array = matches every method. See src/lib/pricing.ts effectiveRate().
+model TaxRule {
+  id              String          @id @default(uuid())
+  branch          Branch          @relation(fields: [branchId], references: [id])
+  branchId        String
+  tenantId        String
+  name            String
+  paymentMethods  PaymentMethod[] @default([])
+  rateBasisPoints Int
+  effectiveFrom   DateTime        @default(now())
+  effectiveTo     DateTime?
+  isActive        Boolean         @default(true)
+
+  @@index([branchId])
+  @@index([tenantId])
+}
+
+model User {
+  id           String   @id @default(uuid())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  email        String?
+  phone        String?
+  passwordHash String?
+  name         String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  memberships   Membership[]
+  staffPin      StaffPin?
+  ordersCreated Order[]      @relation("OrderCreatedBy")
+
+  @@unique([tenantId, email])
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+/// Roles are per-tenant so owners can define their own; the 7 standard roles from the brief
+/// are seeded with isSystem = true. `permissions` holds keys from
+/// src/server/permissions/registry.ts.
+model Role {
+  id          String   @id @default(uuid())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId    String
+  key         String
+  name        String
+  permissions String[] @default([])
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  memberships Membership[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+
+/// A user's assignment to one branch with one role, plus per-branch permission overrides.
+/// Deny always wins over grant, and both win over the role's base permission set.
+model Membership {
+  id        String   @id @default(uuid())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  branchId  String
+  role      Role     @relation(fields: [roleId], references: [id])
+  roleId    String
+  grants    String[] @default([])
+  denies    String[] @default([])
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, branchId])
+  @@index([tenantId, branchId])
+}
+
+model Invite {
+  id         String    @id @default(uuid())
+  tenantId   String
+  branchId   String
+  roleId     String
+  email      String?
+  phone      String?
+  token      String    @unique
+  acceptedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  @@index([tenantId])
+}
+
+/// PIN-based clock-in / quick switch at the POS. pinHash uses the same bcrypt hashing as
+/// passwords; the raw PIN is never stored.
+model StaffPin {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String   @unique
+  tenantId  String
+  pinHash   String
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+// ============================================================================
+// Menu
+// ============================================================================
+
+model Category {
+  id        String  @id @default(uuid())
+  tenant    Tenant  @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  name      String
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  items MenuItem[]
+
+  @@index([tenantId])
+}
+
+model MenuItem {
+  id             String   @id @default(uuid())
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId       String
+  category       Category @relation(fields: [categoryId], references: [id])
+  categoryId     String
+  name           String
+  description    String?
+  imageUrl       String?
+  basePricePaisa Int
+  allergens      String[] @default([])
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  variants        ItemVariant[]
+  modifierGroups  MenuItemModifierGroup[]
+  branchMenuItems BranchMenuItem[]
+
+  @@index([tenantId, categoryId])
+}
+
+model ItemVariant {
+  id              String   @id @default(uuid())
+  tenantId        String
+  menuItem        MenuItem @relation(fields: [menuItemId], references: [id])
+  menuItemId      String
+  name            String
+  priceDeltaPaisa Int      @default(0)
+  isDefault       Boolean  @default(false)
+  sortOrder       Int      @default(0)
+
+  @@index([menuItemId])
+  @@index([tenantId])
+}
+
+model ModifierGroup {
+  id        String @id @default(uuid())
+  tenant    Tenant @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  name      String
+  minSelect Int    @default(0)
+  maxSelect Int    @default(1)
+
+  modifiers Modifier[]
+  menuItems MenuItemModifierGroup[]
+
+  @@index([tenantId])
+}
+
+model Modifier {
+  id              String        @id @default(uuid())
+  tenantId        String
+  group           ModifierGroup @relation(fields: [groupId], references: [id])
+  groupId         String
+  name            String
+  priceDeltaPaisa Int           @default(0)
+  sortOrder       Int           @default(0)
+
+  @@index([groupId])
+  @@index([tenantId])
+}
+
+model MenuItemModifierGroup {
+  tenantId   String
+  menuItem   MenuItem      @relation(fields: [menuItemId], references: [id])
+  menuItemId String
+  group      ModifierGroup @relation(fields: [groupId], references: [id])
+  groupId    String
+
+  @@id([menuItemId, groupId])
+  @@index([tenantId])
+}
+
+/// An item exists once centrally; each branch can hide it or override its price.
+model BranchMenuItem {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  branch             Branch   @relation(fields: [branchId], references: [id])
+  branchId           String
+  menuItem           MenuItem @relation(fields: [menuItemId], references: [id])
+  menuItemId         String
+  isAvailable        Boolean  @default(true)
+  priceOverridePaisa Int?
+
+  @@unique([branchId, menuItemId])
+  @@index([tenantId])
+}
+
+// ============================================================================
+// Floor & table (schema now, UI in Phase 2)
+// ============================================================================
+
+model Floor {
+  id        String @id @default(uuid())
+  tenantId  String
+  branch    Branch @relation(fields: [branchId], references: [id])
+  branchId  String
+  name      String
+  sortOrder Int    @default(0)
+
+  tables RestaurantTable[]
+
+  @@index([branchId])
+  @@index([tenantId])
+}
+
+enum TableStatus {
+  AVAILABLE
+  RESERVED
+  BOOKED
+  OCCUPIED
+}
+
+model RestaurantTable {
+  id       String      @id @default(uuid())
+  tenantId String
+  branch   Branch      @relation(fields: [branchId], references: [id])
+  branchId String
+  floor    Floor       @relation(fields: [floorId], references: [id])
+  floorId  String
+  label    String
+  seats    Int         @default(4)
+  status   TableStatus @default(AVAILABLE)
+  posX     Int         @default(0)
+  posY     Int         @default(0)
+
+  orders Order[]
+
+  @@unique([branchId, label])
+  @@index([branchId, floorId])
+  @@index([tenantId])
+}
+
+// ============================================================================
+// Customers
+// ============================================================================
+
+model Customer {
+  id            String   @id @default(uuid())
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId      String
+  name          String?
+  phone         String?
+  email         String?
+  allergens     String[] @default([])
+  loyaltyPoints Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  addresses CustomerAddress[]
+  orders    Order[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+model CustomerAddress {
+  id         String   @id @default(uuid())
+  tenantId   String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  customerId String
+  label      String?
+  line1      String
+  line2      String?
+  city       String?
+  lat        Float?
+  lng        Float?
+
+  @@index([customerId])
+  @@index([tenantId])
+}
+
+// ============================================================================
+// Orders — Order.status is a derived cache; OrderEvent is the append-only source of truth
+// used by offline replay (Phase 4), the KDS timeline, and the cancellation report.
+// ============================================================================
+
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+  SERVICE
+}
+
+enum OrderStatus {
+  OPEN
+  SENT_TO_KITCHEN
+  READY
+  SERVED
+  PAID
+  VOIDED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  JAZZCASH
+  EASYPAISA
+  BANK_TRANSFER
+  OTHER
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+/// id is a client-generated ULID (not @default) so an offline POS tablet can mint the real
+/// order ID before it ever reaches the server and replay it safely on reconnect. See ulid()
+/// in src/lib/ids.ts. idempotencyKey guards against duplicate submission of the same order.
+model Order {
+  id             String @id
+  idempotencyKey String
+  tenant         Tenant @relation(fields: [tenantId], references: [id])
+  tenantId       String
+  branch         Branch @relation(fields: [branchId], references: [id])
+  branchId       String
+
+  table       RestaurantTable? @relation(fields: [tableId], references: [id])
+  tableId     String?
+  customer    Customer?        @relation(fields: [customerId], references: [id])
+  customerId  String?
+  createdBy   User?            @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  createdById String?
+
+  orderNumber Int
+  type        OrderType
+  status      OrderStatus @default(OPEN)
+
+  subtotalPaisa           Int @default(0)
+  discountedSubtotalPaisa Int @default(0)
+  serviceChargePaisa      Int @default(0)
+  taxPaisa                Int @default(0)
+  deliveryFeePaisa        Int @default(0)
+  roundingAdjustmentPaisa Int @default(0)
+  totalPaisa              Int @default(0)
+  paidPaisa               Int @default(0)
+
+  fiscalInvoiceNumber String?
+  fiscalPushedAt      DateTime?
+
+  sentToKitchenAt DateTime?
+  readyAt         DateTime?
+  servedAt        DateTime?
+  paidAt          DateTime?
+  voidedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  lines     OrderLine[]
+  discounts OrderDiscount[]
+  payments  Payment[]
+  events    OrderEvent[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([branchId, orderNumber])
+  @@index([tenantId, branchId, createdAt])
+  @@index([tenantId, branchId, status])
+}
+
+/// id is a client-generated ULID for the same offline-replay reason as Order.id.
+model OrderLine {
+  id             String        @id
+  tenantId       String
+  order          Order         @relation(fields: [orderId], references: [id])
+  orderId        String
+  menuItemId     String
+  variantId      String?
+  nameSnapshot   String
+  unitPricePaisa Int
+  quantity       Int
+  discountType   DiscountType?
+  discountValue  Int?
+  lineTotalPaisa Int
+  isVoided       Boolean       @default(false)
+  kitchenReady   Boolean       @default(false)
+  notes          String?
+
+  modifiers OrderLineModifier[]
+
+  @@index([orderId])
+  @@index([tenantId])
+}
+
+model OrderLineModifier {
+  id              String    @id @default(uuid())
+  tenantId        String
+  orderLine       OrderLine @relation(fields: [orderLineId], references: [id])
+  orderLineId     String
+  modifierId      String
+  nameSnapshot    String
+  priceDeltaPaisa Int
+
+  @@index([orderLineId])
+  @@index([tenantId])
+}
+
+model OrderDiscount {
+  id          String       @id @default(uuid())
+  tenantId    String
+  order       Order        @relation(fields: [orderId], references: [id])
+  orderId     String
+  type        DiscountType
+  value       Int
+  reason      String?
+  appliedById String?
+
+  @@index([orderId])
+  @@index([tenantId])
+}
+
+/// One row per tender in a (possibly split) payment. taxRateBasisPoints records the rate
+/// actually applied to this tender's apportioned slice — see effectiveRate() in pricing.ts.
+model Payment {
+  id                 String        @id @default(uuid())
+  tenantId           String
+  order              Order         @relation(fields: [orderId], references: [id])
+  orderId            String
+  method             PaymentMethod
+  amountPaisa        Int
+  tenderedPaisa      Int?
+  changePaisa        Int?
+  taxRateBasisPoints Int
+  receivedById       String?
+  createdAt          DateTime      @default(now())
+
+  @@index([orderId])
+  @@index([tenantId])
+}
+
+model OrderEvent {
+  id        String   @id @default(uuid())
+  tenantId  String
+  order     Order    @relation(fields: [orderId], references: [id])
+  orderId   String
+  type      String
+  payload   Json?
+  actorId   String?
+  createdAt DateTime @default(now())
+
+  @@index([orderId, createdAt])
+  @@index([tenantId])
+}

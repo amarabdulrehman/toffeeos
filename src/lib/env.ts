@@ -1,0 +1,34 @@
+import { z } from "zod";
+
+/**
+ * Validates process.env once at import time so a missing/malformed env var fails fast and loud
+ * at boot instead of surfacing as a confusing runtime error deep in a request handler.
+ */
+const envSchema = z.object({
+  DATABASE_URL: z.string().min(1),
+  DIRECT_URL: z.string().min(1),
+  PLATFORM_DATABASE_URL: z.string().min(1),
+
+  NEXT_PUBLIC_SUPABASE_URL: z.string().min(1),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+
+  AUTH_SECRET: z.string().min(1),
+  AUTH_URL: z.string().min(1).optional(),
+
+  NEXT_PUBLIC_APP_URL: z.string().min(1),
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+});
+
+export type Env = z.infer<typeof envSchema>;
+
+function loadEnv(): Env {
+  const parsed = envSchema.safeParse(process.env);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
+    throw new Error(`Invalid environment variables:\n${issues}\n\nCheck .env against .env.example.`);
+  }
+  return parsed.data;
+}
+
+export const env = loadEnv();
