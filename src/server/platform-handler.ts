@@ -11,6 +11,8 @@ export interface PlatformHandlerContext<TInput> {
   session: PlatformSessionUser;
   input: TInput;
   req: NextRequest;
+  /** Dynamic route segments, e.g. { tenantId: "..." } for /api/platform/tenants/[tenantId]/... */
+  params: Record<string, string>;
 }
 
 class HttpError extends Error {
@@ -19,12 +21,15 @@ class HttpError extends Error {
   }
 }
 
+type RouteContext = { params: Promise<Record<string, string>> };
+
 export function definePlatformHandler<TSchema extends ZodType = ZodType<undefined>>(
   options: { input?: TSchema },
   fn: (ctx: PlatformHandlerContext<TSchema["_output"]>) => Promise<unknown>
 ) {
-  return async (req: NextRequest) => {
+  return async (req: NextRequest, routeCtx?: RouteContext) => {
     try {
+      const params = (await routeCtx?.params) ?? {};
       const session = await auth();
       if (!session?.user || session.user.kind !== "platform") {
         throw new HttpError(401, "Unauthorized");
@@ -41,7 +46,7 @@ export function definePlatformHandler<TSchema extends ZodType = ZodType<undefine
         input = parsed.data;
       }
 
-      const result = await fn({ session: session.user, input, req });
+      const result = await fn({ session: session.user, input, req, params });
       return NextResponse.json(result ?? { ok: true });
     } catch (err) {
       if (err instanceof HttpError) {

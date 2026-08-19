@@ -48,7 +48,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <SignOutButton />
         </div>
       </aside>
-      <main className="flex-1 overflow-auto">{children}</main>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {user.impersonatedByPlatformUserId && (
+          <div className="flex items-center justify-between bg-amber-500/90 px-4 py-2 text-sm font-medium text-amber-950">
+            <span>
+              Viewing as {user.tenantName} — impersonated by {user.impersonatedByPlatformUserEmail}
+            </span>
+            <SignOutButton label="Exit impersonation" callbackUrl="/platform/login" className="border-amber-950/30 text-amber-950 hover:bg-amber-950/10" />
+          </div>
+        )}
+        <main className="flex-1 overflow-auto">{children}</main>
+      </div>
     </div>
   );
 }

@@ -12,6 +12,10 @@ export interface TenantSessionUser {
   roleId: string;
   roleKey: string;
   permissions: string[];
+  /** Set only when this session came from the platform admin's Impersonate action — drives the
+   * "Viewing as..." banner in the tenant app shell. Absent for a normal staff login. */
+  impersonatedByPlatformUserId?: string;
+  impersonatedByPlatformUserEmail?: string;
 }
 
 export interface PlatformSessionUser {

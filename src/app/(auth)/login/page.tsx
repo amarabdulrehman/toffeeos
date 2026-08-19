@@ -31,7 +31,13 @@ function LoginForm() {
     });
     setLoading(false);
     if (result?.error) {
-      toast.error("Invalid restaurant, email, or password.");
+      const statusRes = await fetch(`/api/tenants/${encodeURIComponent(tenantSlug)}/status`);
+      const { status } = await statusRes.json();
+      if (status === "SUSPENDED" || status === "CANCELLED") {
+        toast.error("This restaurant's account is suspended. Contact support to reactivate it.");
+      } else {
+        toast.error("Invalid restaurant, email, or password.");
+      }
       return;
     }
     router.push(next);

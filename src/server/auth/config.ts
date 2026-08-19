@@ -7,6 +7,7 @@ import { verifyPassword, verifyPin } from "@/lib/password";
 import { edgeAuthConfig } from "./edge-config";
 import { buildTenantSessionUser, findTenantBySlug, tenantAcceptsLogin } from "./session-user";
 import { verifyOtp } from "./otp-store";
+import { consumeImpersonationToken } from "./impersonation-store";
 import type { PlatformSessionUser, SessionUser } from "./types";
 
 // NextAuth's `authorize()` return type is nominally `User`, but our sessions carry a much richer,
@@ -37,6 +38,8 @@ const platformCredentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
+
+const impersonateSchema = z.object({ token: z.string().min(1) });
 
 export const authConfig = {
   ...edgeAuthConfig,
@@ -150,6 +153,28 @@ export const authConfig = {
         return sessionUser as unknown as LooseUser;
       },
     }),
+
+    // Hand-off from POST /api/platform/tenants/[tenantId]/impersonate: the platform admin's
+    // browser is redirected to /impersonate?token=... which immediately calls signIn("impersonate",
+    // {token}). The token is single-use and 60s-lived (impersonation-store.ts) — it only exists to
+    // avoid putting a raw userId in a URL, not as a standing credential.
+    Credentials({
+      id: "impersonate",
+      name: "Impersonation",
+      credentials: { token: { label: "Token", type: "text" } },
+      async authorize(raw): Promise<LooseUser | null> {
+        const parsed = impersonateSchema.safeParse(raw);
+        if (!parsed.success) return null;
+        const grant = consumeImpersonationToken(parsed.data.token);
+        if (!grant) return null;
+
+        const sessionUser = await buildTenantSessionUser(grant.tenantId, grant.targetUserId);
+        if (!sessionUser) return null;
+        sessionUser.impersonatedByPlatformUserId = grant.platformUserId;
+        sessionUser.impersonatedByPlatformUserEmail = grant.platformUserEmail;
+        return sessionUser as unknown as LooseUser;
+      },
+    }),
   ],
   callbacks: {
     ...edgeAuthConfig.callbacks,
@@ -163,7 +188,11 @@ export const authConfig = {
         const requestedBranchId = (session as { branchId?: string } | undefined)?.branchId;
         if (requestedBranchId) {
           const rebuilt = await buildTenantSessionUser(token.user.tenantId, token.user.id, requestedBranchId);
-          if (rebuilt) token.user = rebuilt;
+          if (rebuilt) {
+            rebuilt.impersonatedByPlatformUserId = token.user.impersonatedByPlatformUserId;
+            rebuilt.impersonatedByPlatformUserEmail = token.user.impersonatedByPlatformUserEmail;
+            token.user = rebuilt;
+          }
         }
       }
       return token;

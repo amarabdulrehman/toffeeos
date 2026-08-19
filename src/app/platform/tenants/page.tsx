@@ -1,13 +1,22 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { signOut } from "next-auth/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatPkr } from "@/lib/money";
 import { BRAND_NAME } from "@/config/brand";
+
+interface Metrics {
+  tenantCount: number;
+  byStatus: { TRIALING: number; ACTIVE: number; SUSPENDED: number; CANCELLED: number };
+  totalBranches: number;
+  mrrPaisa: number;
+}
 
 interface TenantRow {
   id: string;
@@ -31,17 +40,22 @@ const STATUS_VARIANT: Record<TenantRow["status"], "default" | "secondary" | "des
 
 export default function PlatformTenantsPage() {
   const [tenants, setTenants] = useState<TenantRow[]>([]);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/platform/tenants");
-    if (!res.ok) {
+    const [tenantsRes, metricsRes] = await Promise.all([
+      fetch("/api/platform/tenants"),
+      fetch("/api/platform/metrics"),
+    ]);
+    if (!tenantsRes.ok) {
       toast.error("Could not load tenants.");
       setLoading(false);
       return;
     }
-    const data = await res.json();
+    const data = await tenantsRes.json();
     setTenants(data.tenants);
+    if (metricsRes.ok) setMetrics(await metricsRes.json());
     setLoading(false);
   }, []);
 
@@ -69,23 +83,27 @@ export default function PlatformTenantsPage() {
     load();
   }
 
-  const mrrPaisa = tenants
-    .filter((t) => t.status === "ACTIVE")
-    .reduce((a, t) => a + t.branchCount * 399900, 0); // rough MRR estimate, Growth-tier default
-
   return (
     <div className="min-h-screen bg-muted/30 p-6">
       <header className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">{BRAND_NAME} Platform</h1>
-          <p className="text-sm text-muted-foreground">
-            {tenants.length} tenants · est. MRR {formatPkr(mrrPaisa)}
-          </p>
+          <p className="text-sm text-muted-foreground">{tenants.length} tenants, platform-wide</p>
         </div>
         <Button variant="outline" onClick={() => signOut({ callbackUrl: "/platform/login" })}>
           Sign out
         </Button>
       </header>
+
+      {metrics && (
+        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
+          <MetricCard label="Trialing" value={metrics.byStatus.TRIALING} />
+          <MetricCard label="Active" value={metrics.byStatus.ACTIVE} />
+          <MetricCard label="Suspended" value={metrics.byStatus.SUSPENDED} />
+          <MetricCard label="Total branches" value={metrics.totalBranches} />
+          <MetricCard label="MRR" value={formatPkr(metrics.mrrPaisa)} />
+        </div>
+      )}
 
       <div className="rounded-lg border bg-background">
         <Table>
@@ -121,7 +139,10 @@ export default function PlatformTenantsPage() {
                   <Badge variant={STATUS_VARIANT[t.status]}>{t.status}</Badge>
                 </TableCell>
                 <TableCell>{t.trialEndsAt ? new Date(t.trialEndsAt).toLocaleDateString() : "—"}</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right space-x-2">
+                  <Button size="sm" variant="outline" render={<Link href={`/platform/tenants/${t.id}`} />} nativeButton={false}>
+                    View
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => toggleSuspend(t)}>
                     {t.status === "SUSPENDED" ? "Reactivate" : "Suspend"}
                   </Button>
@@ -132,5 +153,16 @@ export default function PlatformTenantsPage() {
         </Table>
       </div>
     </div>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <Card>
+      <CardContent className="pt-4">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="text-xl font-bold">{value}</div>
+      </CardContent>
+    </Card>
   );
 }
