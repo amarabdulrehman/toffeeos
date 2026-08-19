@@ -195,6 +195,7 @@ export async function createOrder(
               orderId,
               type: input.orderDiscount.type,
               value: input.orderDiscount.value,
+              appliedById: actorId,
             },
           });
         }

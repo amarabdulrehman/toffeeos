@@ -1,56 +1,18 @@
 import { z } from "zod";
 import { defineHandler } from "@/server/handler";
+import { resolveReportBranchIds, salesReport } from "@/server/reports";
 
 const querySchema = z.object({
   from: z.string().datetime(),
   to: z.string().datetime(),
+  branchId: z.string().min(1).optional(),
 });
 
-// GET /api/reports/sales-summary?from=...&to=... — paid-order totals for the range, plus a
-// per-day breakdown for a simple trend chart.
-export const GET = defineHandler({ permission: "reports.sales.view", input: querySchema }, async ({ session, db, input }) => {
-  const orders = await db.order.findMany({
-    where: {
-      branchId: session.branchId,
-      status: "PAID",
-      paidAt: { gte: new Date(input.from), lte: new Date(input.to) },
-    },
-    select: {
-      paidAt: true,
-      subtotalPaisa: true,
-      serviceChargePaisa: true,
-      taxPaisa: true,
-      discountedSubtotalPaisa: true,
-      totalPaisa: true,
-    },
-  });
-
-  const byDay = new Map<string, { orders: number; totalPaisa: number }>();
-  let totalPaisa = 0;
-  let subtotalPaisa = 0;
-  let taxPaisa = 0;
-  let serviceChargePaisa = 0;
-
-  for (const o of orders) {
-    totalPaisa += o.totalPaisa;
-    subtotalPaisa += o.discountedSubtotalPaisa;
-    taxPaisa += o.taxPaisa;
-    serviceChargePaisa += o.serviceChargePaisa;
-    const day = (o.paidAt ?? new Date()).toISOString().slice(0, 10);
-    const entry = byDay.get(day) ?? { orders: 0, totalPaisa: 0 };
-    entry.orders += 1;
-    entry.totalPaisa += o.totalPaisa;
-    byDay.set(day, entry);
-  }
-
-  return {
-    orderCount: orders.length,
-    totalPaisa,
-    subtotalPaisa,
-    taxPaisa,
-    serviceChargePaisa,
-    byDay: Array.from(byDay.entries())
-      .map(([day, v]) => ({ day, ...v }))
-      .sort((a, b) => a.day.localeCompare(b.day)),
-  };
+// GET /api/reports/sales-summary?from=...&to=...[&branchId=...] — by day, by branch, by category,
+// by payment method, with a comparison to the immediately-preceding equivalent period. Owners (or
+// anyone with orders.viewAllBranches) see every branch unless one is requested; everyone else is
+// restricted to their own branch regardless of what's requested.
+export const GET = defineHandler({ permission: "reports.sales.view", input: querySchema }, async ({ session, input }) => {
+  const branchIds = await resolveReportBranchIds(session, input.branchId);
+  return salesReport(session.tenantId, branchIds, { from: new Date(input.from), to: new Date(input.to) });
 });

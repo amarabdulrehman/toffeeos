@@ -106,6 +106,9 @@ export const PERMISSIONS: PermissionDef[] = [
   perm("reports", "sales.view", "View sales reports"),
   perm("reports", "profit.view", "View gross profit / P&L reports"),
   perm("reports", "cancellation.view", "View cancellation report"),
+  perm("reports", "discountVoid.view", "View the discount & void audit report"),
+  perm("reports", "inventoryValuation.view", "View the inventory valuation report"),
+  perm("reports", "riderPerformance.view", "View the rider performance report"),
   perm("reports", "staff.view", "View staff/waiter performance reports"),
   perm("reports", "export", "Export reports (CSV)"),
 
@@ -166,8 +169,15 @@ export const SEED_ROLES: Record<string, { name: string; permissions: string[] }>
   },
   branch_manager: {
     name: "Branch Manager",
+    // Full operational control within their own branch, but never cross-branch visibility —
+    // that's what makes them a Branch (not Restaurant) Manager. See resolveReportBranchIds in
+    // src/server/reports.ts, the only place this permission is checked.
     permissions: PERMISSION_KEYS.filter(
-      (k) => !k.startsWith("billing.") && k !== "staff.roles.manage" && k !== "branch.manage"
+      (k) =>
+        !k.startsWith("billing.") &&
+        k !== "staff.roles.manage" &&
+        k !== "branch.manage" &&
+        k !== "orders.viewAllBranches"
     ),
   },
   cashier: {
