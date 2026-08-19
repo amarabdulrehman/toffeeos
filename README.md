@@ -72,7 +72,7 @@ Creates:
 - 3 subscription plans (Starter/Growth/Enterprise)
 - A platform admin: `admin@tableos.app` / `ChangeMe123!` → sign in at `/platform/login`
 - A demo tenant **"Karachi Karahi House"** (slug `karachi-karahi`) with 2 branches, ~35 menu items,
-  the Punjab PRA split-rate tax seed (16% cash / 5% card & digital), a floor of 8 tables, and staff
+  the Punjab PRA split-rate tax seed (16% cash / 8% card & digital), a floor of 8 tables, and staff
   for all 6 roles — password `Passw0rd!` for everyone, PIN `1234` for cashier/waiter/kitchen. Sign
   in at `/login` with restaurant URL `karachi-karahi`.
 

@@ -160,7 +160,7 @@ model BranchSettings {
   @@index([tenantId])
 }
 
-/// Rate depends on payment method (Punjab PRA: 16% cash / 5% card & digital). Empty
+/// Rate depends on payment method (Punjab PRA: 16% cash / 8% card & digital). Empty
 /// `paymentMethods` array = matches every method. See src/lib/pricing.ts effectiveRate().
 model TaxRule {
   id              String          @id @default(uuid())

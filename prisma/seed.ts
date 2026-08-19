@@ -175,7 +175,7 @@ async function seedTaxAndSettings(db: PrismaClient, tenantId: string, branchId: 
         branchId,
         name: "Card & digital (PRA)",
         paymentMethods: ["CARD", "JAZZCASH", "EASYPAISA", "BANK_TRANSFER"],
-        rateBasisPoints: 500,
+        rateBasisPoints: 800,
       },
     ],
   });

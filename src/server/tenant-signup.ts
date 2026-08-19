@@ -67,7 +67,7 @@ export async function signupTenant(input: SignupInput): Promise<{ tenantId: stri
       data: { tenantId, branchId, serviceChargeBasisPoints: 0, roundingMode: "NEAREST_1" },
     });
 
-    // Punjab PRA split-rate seed (16% cash / 5% card & digital) — see the plan doc's tax decision.
+    // Punjab PRA split-rate seed (16% cash / 8% card & digital) — see the plan doc's tax decision.
     // Fully editable per-branch afterward in Settings; this is just the day-one default.
     await tx.taxRule.createMany({
       data: [
@@ -77,7 +77,7 @@ export async function signupTenant(input: SignupInput): Promise<{ tenantId: stri
           branchId,
           name: "Card & digital (PRA)",
           paymentMethods: ["CARD", "JAZZCASH", "EASYPAISA", "BANK_TRANSFER"],
-          rateBasisPoints: 500,
+          rateBasisPoints: 800,
         },
       ],
     });

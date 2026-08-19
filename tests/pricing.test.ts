@@ -12,10 +12,10 @@ import {
   type TaxRuleInput,
 } from "@/lib/pricing";
 
-// Punjab PRA split-rate: 16% cash, 5% card & digital — the default seed for the product.
+// Punjab PRA split-rate: 16% cash, 8% card & digital — the default seed for the product.
 const PUNJAB_TAX_RULES: TaxRuleInput[] = [
   { paymentMethods: ["CASH"], rateBasisPoints: 1600 },
-  { paymentMethods: ["CARD", "JAZZCASH", "EASYPAISA", "BANK_TRANSFER"], rateBasisPoints: 500 },
+  { paymentMethods: ["CARD", "JAZZCASH", "EASYPAISA", "BANK_TRANSFER"], rateBasisPoints: 800 },
 ];
 
 const BASE_SETTINGS: PricingSettings = {
@@ -102,7 +102,7 @@ describe("resolveTaxRate", () => {
   });
 
   it("picks the Punjab PRA digital rate for CARD", () => {
-    expect(resolveTaxRate(PUNJAB_TAX_RULES, "CARD")).toBe(500);
+    expect(resolveTaxRate(PUNJAB_TAX_RULES, "CARD")).toBe(800);
   });
 
   it("falls back to a catch-all rule when present", () => {
@@ -168,15 +168,15 @@ describe("finalizeOrder — split payments and split-rate tax", () => {
       undefined,
       PUNJAB_TAX_RULES,
       { ...BASE_SETTINGS, serviceChargeApplies: false },
-      [{ method: "CARD", amountPaisa: 105_000 }]
+      [{ method: "CARD", amountPaisa: 108_000 }]
     );
-    expect(result.tenders[0].rateBasisPoints).toBe(500);
-    expect(result.taxPaisa).toBe(5000); // 5% of 100_000
-    expect(result.totalPaisa).toBe(105_000);
+    expect(result.tenders[0].rateBasisPoints).toBe(800);
+    expect(result.taxPaisa).toBe(8000); // 8% of 100_000
+    expect(result.totalPaisa).toBe(108_000);
   });
 
   it("blends the rate across a cash+card split, apportioning the taxable base by tender amount", () => {
-    // Rs 1000 taxable base, split 600/400 between cash (16%) and card (5%).
+    // Rs 1000 taxable base, split 600/400 between cash (16%) and card (8%).
     const lines: PricingLineInput[] = [{ id: "a", unitPricePaisa: 100_000, quantity: 1 }];
     const settings: PricingSettings = { ...BASE_SETTINGS, serviceChargeApplies: false };
     const result = finalizeOrder(lines, undefined, PUNJAB_TAX_RULES, settings, [
@@ -186,8 +186,8 @@ describe("finalizeOrder — split payments and split-rate tax", () => {
     // base apportioned 600/400 (weights = tender amounts, same ratio) => 60_000 / 40_000 exactly
     expect(result.tenders[0].taxableBasePaisa + result.tenders[1].taxableBasePaisa).toBe(100_000);
     expect(result.tenders[0].taxPaisa).toBe(9600); // 16% of 60_000
-    expect(result.tenders[1].taxPaisa).toBe(2000); // 5% of 40_000
-    expect(result.taxPaisa).toBe(11_600);
+    expect(result.tenders[1].taxPaisa).toBe(3200); // 8% of 40_000
+    expect(result.taxPaisa).toBe(12_800);
   });
 
   it("apportions the taxable base across an uneven 3-way split with slices summing exactly", () => {
