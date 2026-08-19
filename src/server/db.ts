@@ -86,6 +86,10 @@ const TENANT_SCOPED_MODELS = new Set([
   "RecipeLine",
   "SyncActionLog",
   "SyncConflict",
+  "WhatsAppSettings",
+  "WhatsAppRecipient",
+  "WhatsAppTemplate",
+  "WhatsAppMessageLog",
 ]);
 
 const WHERE_OPERATIONS = new Set([

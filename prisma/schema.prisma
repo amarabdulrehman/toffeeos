@@ -578,6 +578,7 @@ model Customer {
   email         String?
   allergens     String[] @default([])
   loyaltyPoints Int      @default(0)
+  whatsappOptOut Boolean @default(false)
   createdAt     DateTime @default(now())
 
   addresses CustomerAddress[]
@@ -601,6 +602,93 @@ model CustomerAddress {
 
   @@index([customerId])
   @@index([tenantId])
+}
+
+// ============================================================================
+// WhatsApp Business (Cloud API) — built against a dev-stub adapter (no live Meta
+// credentials configured yet; see src/server/whatsapp/adapter.ts). Never mandatory: `enabled` and
+// the per-message-type flags are per-tenant opt-in, and Customer.whatsappOptOut is per-customer.
+// ============================================================================
+
+model WhatsAppSettings {
+  id                     String   @id @default(uuid())
+  tenantId               String   @unique
+  enabled                Boolean  @default(false)
+  lowStockAlertsEnabled  Boolean  @default(true)
+  dailySummaryEnabled    Boolean  @default(true)
+  winBackEnabled         Boolean  @default(true)
+  deliveryUpdatesEnabled Boolean  @default(true)
+  businessPhoneNumberId  String? // Cloud API phone_number_id — unused until a real adapter replaces the stub
+  businessAccountId      String? // Cloud API WhatsApp Business Account id — unused until a real adapter replaces the stub
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+/// Staff phone numbers that receive low-stock alerts and the daily summary for a branch — these
+/// are internal notification targets, not customers, so they carry no opt-out (a manager who
+/// doesn't want alerts is removed from the list, not "opted out" of their own job).
+model WhatsAppRecipient {
+  id        String   @id @default(uuid())
+  tenantId  String
+  branchId  String
+  label     String
+  phone     String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, branchId])
+}
+
+enum WhatsAppTemplateStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+/// WhatsApp requires a pre-approved template for any message sent outside a 24-hour
+/// customer-initiated window — this models that real submission/approval lifecycle rather than
+/// assuming free-text sending will work. sendWhatsApp() in src/server/whatsapp/send.ts refuses to
+/// send against anything but an APPROVED template.
+model WhatsAppTemplate {
+  id              String                  @id @default(uuid())
+  tenantId        String
+  key             String // "low_stock_alert" | "daily_summary" | "win_back_30d" | "delivery_picked_up" | "delivery_delivered"
+  name            String
+  language        String                  @default("en")
+  bodyText        String // Meta template syntax: {{1}}, {{2}}, ... placeholders
+  status          WhatsAppTemplateStatus  @default(DRAFT)
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@unique([tenantId, key])
+}
+
+enum WhatsAppMessageStatus {
+  SENT
+  FAILED
+  SKIPPED_DISABLED
+  SKIPPED_OPTOUT
+  SKIPPED_NO_TEMPLATE
+}
+
+/// Append-only send log — every attempt, sent or skipped, with the reason, so "did the win-back
+/// batch actually go out" is answerable without checking Meta's dashboard.
+model WhatsAppMessageLog {
+  id           String                 @id @default(uuid())
+  tenantId     String
+  branchId     String?
+  customerId   String?
+  toPhone      String
+  templateKey  String
+  renderedBody String?
+  status       WhatsAppMessageStatus
+  createdAt    DateTime               @default(now())
+
+  @@index([tenantId, createdAt])
 }
 
 // ============================================================================

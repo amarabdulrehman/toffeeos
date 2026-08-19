@@ -1,6 +1,6 @@
 import "server-only";
 import { tenantDb, type TenantTransactionClient } from "@/server/db";
-import { applyStockDelta } from "@/server/inventory";
+import { applyStockDelta, type NewLowStockAlert } from "@/server/inventory";
 
 export async function setRecipeLine(
   tenantId: string,
@@ -180,9 +180,9 @@ export async function deductForOrder(
   branchId: string,
   orderLines: { menuItemId: string; quantity: number }[],
   actorId: string
-): Promise<void> {
+): Promise<NewLowStockAlert[]> {
   const locationId = await resolveConsumptionLocation(tx, tenantId, branchId);
-  if (!locationId) return; // no stock location configured yet for this branch — nothing to deduct against
+  if (!locationId) return []; // no stock location configured yet for this branch — nothing to deduct against
 
   const menuItemIds = [...new Set(orderLines.map((l) => l.menuItemId))];
   const recipeLines = await tx.recipeLine.findMany({ where: { menuItemId: { in: menuItemIds }, tenantId } });
@@ -193,6 +193,7 @@ export async function deductForOrder(
     linesByMenuItem.set(line.menuItemId, arr);
   }
 
+  const newAlerts: NewLowStockAlert[] = [];
   for (const orderLine of orderLines) {
     const recipe = linesByMenuItem.get(orderLine.menuItemId);
     if (!recipe || recipe.length === 0) continue; // no recipe defined — skip, don't block the sale
@@ -210,7 +211,9 @@ export async function deductForOrder(
           actorId,
         },
       });
-      await applyStockDelta(tx, tenantId, branchId, locationId, ingredient.inventoryItemId, delta);
+      const { newAlert } = await applyStockDelta(tx, tenantId, branchId, locationId, ingredient.inventoryItemId, delta);
+      if (newAlert) newAlerts.push(newAlert);
     }
   }
+  return newAlerts;
 }

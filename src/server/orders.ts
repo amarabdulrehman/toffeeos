@@ -6,6 +6,7 @@ import { publish } from "@/server/realtime";
 import { HttpError } from "@/server/handler";
 import { deductForOrder } from "@/server/recipes";
 import { recordConflict } from "@/server/sync-conflicts";
+import { notifyLowStock } from "@/server/whatsapp/triggers";
 import {
   computeProvisionalTotal,
   finalizeOrder,
@@ -517,12 +518,12 @@ export async function takePayment(
       // src/server/recipes.ts deductForOrder). Queued the same way as the payment itself: if the
       // "pay" action is offline, this only runs once the action replays and actually commits.
       const soldLines = order.lines.filter((l) => !l.isVoided).map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity }));
-      await deductForOrder(tx, tenantId, branchId, soldLines, actorId);
+      const newAlerts = await deductForOrder(tx, tenantId, branchId, soldLines, actorId);
 
-      return { ok: true as const, order: updated };
+      return { ok: true as const, order: updated, newAlerts };
     },
     (result) => result.ok,
-    () => db.order.findUniqueOrThrow({ where: { id: orderId } }).then((o) => ({ ok: true as const, order: o }))
+    () => db.order.findUniqueOrThrow({ where: { id: orderId } }).then((o) => ({ ok: true as const, order: o, newAlerts: [] }))
   );
 
   if (!result.ok) {
@@ -536,6 +537,7 @@ export async function takePayment(
   if (order.tableId) {
     await publish(tenantId, branchId, "tables", "table_status_changed", { tableId: order.tableId, status: "AVAILABLE" });
   }
+  await Promise.all(result.newAlerts.map((alert) => notifyLowStock(tenantId, alert)));
   return result.order;
 }
 

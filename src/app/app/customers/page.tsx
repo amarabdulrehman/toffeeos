@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import { formatPkr } from "@/lib/money";
 
 interface CustomerRow {
@@ -30,7 +33,7 @@ interface CustomerOrder {
 }
 
 interface CustomerDetail {
-  customer: { id: string; name: string | null; phone: string | null; email: string | null };
+  customer: { id: string; name: string | null; phone: string | null; email: string | null; whatsappOptOut: boolean };
   orders: CustomerOrder[];
   totalOrders: number;
   totalSpendPaisa: number;
@@ -155,6 +158,26 @@ function CustomerDetailDialog({ customerId, onClose }: { customerId: string | nu
                 <div className="text-muted-foreground">Total spend</div>
                 <div className="font-medium">{formatPkr(detail.totalSpendPaisa)}</div>
               </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <Label htmlFor="opt-out">Opted out of WhatsApp messages</Label>
+              <Switch
+                id="opt-out"
+                checked={detail.customer.whatsappOptOut}
+                onCheckedChange={async (v: boolean) => {
+                  const res = await fetch(`/api/customers/${detail.customer.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ whatsappOptOut: v }),
+                  });
+                  if (!res.ok) {
+                    toast.error("Could not update.");
+                    return;
+                  }
+                  setDetail((d) => (d ? { ...d, customer: { ...d.customer, whatsappOptOut: v } } : d));
+                }}
+              />
             </div>
 
             <Table>

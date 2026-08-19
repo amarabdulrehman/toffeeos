@@ -143,6 +143,9 @@ export const PERMISSIONS: PermissionDef[] = [
   // ---- Online ordering & QR ----
   perm("online", "menu.manage", "Manage the online ordering menu"),
   perm("online", "qr.manage", "Manage QR table-ordering"),
+
+  // ---- WhatsApp ----
+  perm("whatsapp", "manage", "Manage WhatsApp settings, recipients, and templates"),
 ];
 
 export const PERMISSION_KEYS: string[] = PERMISSIONS.map((p) => p.key);

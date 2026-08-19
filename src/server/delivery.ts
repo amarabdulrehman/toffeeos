@@ -3,6 +3,7 @@ import { tenantDb } from "@/server/db";
 import { publish } from "@/server/realtime";
 import { uploadDeliveryProof, getDeliveryProofSignedUrl } from "@/server/storage";
 import { HttpError } from "@/server/handler";
+import { notifyDeliveryPickedUp, notifyDeliveryDelivered } from "@/server/whatsapp/triggers";
 
 /** Riders can only ever be assigned to DELIVERY-type orders — enforced here, not just in the UI. */
 export async function assignRider(
@@ -45,6 +46,7 @@ export async function markPickedUp(tenantId: string, branchId: string, orderId: 
   const updated = await db.order.update({ where: { id: orderId }, data: { pickedUpAt: new Date() } });
   await db.orderEvent.create({ data: { tenantId, orderId, type: "PICKED_UP", actorId: riderId } });
   await publish(tenantId, branchId, "orders", "order_picked_up", { orderId });
+  await notifyDeliveryPickedUp(tenantId, branchId, orderId);
   return updated;
 }
 
@@ -86,6 +88,7 @@ export async function markDelivered(
     data: { tenantId, orderId, type: "DELIVERED", actorId: riderId, payload: { method: proof.method } },
   });
   await publish(tenantId, branchId, "orders", "order_delivered", { orderId });
+  await notifyDeliveryDelivered(tenantId, branchId, orderId);
   return updated;
 }
 

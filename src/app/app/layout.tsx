@@ -13,6 +13,7 @@ const NAV = [
   { href: "/app/inventory", label: "Inventory" },
   { href: "/app/delivery", label: "Delivery" },
   { href: "/app/customers", label: "Customers" },
+  { href: "/app/whatsapp", label: "WhatsApp" },
   { href: "/app/reports", label: "Reports" },
   { href: "/app/sync-conflicts", label: "Sync Conflicts" },
 ];

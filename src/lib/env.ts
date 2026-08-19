@@ -18,6 +18,11 @@ const envSchema = z.object({
 
   NEXT_PUBLIC_APP_URL: z.string().min(1),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+
+  // Shared secret an external scheduler (Vercel Cron, cron-job.org, etc.) sends as
+  // `Authorization: Bearer <secret>` to /api/cron/*. Optional — unset means those endpoints
+  // reject every request rather than running unauthenticated.
+  CRON_SECRET: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

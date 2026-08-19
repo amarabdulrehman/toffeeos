@@ -1,6 +1,7 @@
 import "server-only";
 import { runInTenantTransaction, tenantDb, type TenantTransactionClient } from "@/server/db";
 import { HttpError } from "@/server/handler";
+import { notifyLowStock } from "@/server/whatsapp/triggers";
 
 export async function createLocation(tenantId: string, branchId: string, name: string) {
   const db = tenantDb(tenantId);
@@ -57,11 +58,26 @@ export async function stockReport(tenantId: string, branchId: string, opts: { be
   return opts.belowThresholdOnly ? rows.filter((r) => r.belowThreshold) : rows;
 }
 
+export interface NewLowStockAlert {
+  itemId: string;
+  itemName: string;
+  unitOfMeasure: string;
+  locationId: string;
+  branchId: string;
+  quantityAtTrigger: number;
+  thresholdAtTrigger: number;
+}
+
 /** Upserts the StockLevel row and, if the resulting quantity crosses the item's threshold in
  * either direction, opens or resolves a LowStockAlert. Called from inside the same transaction as
  * the StockMovement write so the cache and the ledger never drift apart. Exported so
  * src/server/recipes.ts can reuse it for recipe-consumption deductions instead of re-implementing
- * the StockLevel/LowStockAlert bookkeeping. */
+ * the StockLevel/LowStockAlert bookkeeping.
+ *
+ * Returns `newAlert` (non-null only when an alert was newly opened, not on every call while an
+ * alert stays active) so callers can fire the WhatsApp low-stock notification exactly once per
+ * threshold crossing, after their own transaction commits — never from inside this function, since
+ * a WhatsApp send is not something a stock-level write should ever roll back for. */
 export async function applyStockDelta(
   tx: TenantTransactionClient,
   tenantId: string,
@@ -69,7 +85,7 @@ export async function applyStockDelta(
   locationId: string,
   itemId: string,
   delta: number
-) {
+): Promise<{ level: Awaited<ReturnType<TenantTransactionClient["stockLevel"]["upsert"]>>; newAlert: NewLowStockAlert | null }> {
   const item = await tx.inventoryItem.findUniqueOrThrow({ where: { id: itemId, tenantId } });
   const level = await tx.stockLevel.upsert({
     where: { locationId_itemId: { locationId, itemId }, tenantId },
@@ -82,6 +98,7 @@ export async function applyStockDelta(
     where: { tenantId, itemId, locationId, status: "ACTIVE" },
   });
 
+  let newAlert: NewLowStockAlert | null = null;
   if (isBelow && !activeAlert) {
     await tx.lowStockAlert.create({
       data: {
@@ -93,6 +110,15 @@ export async function applyStockDelta(
         thresholdAtTrigger: item.lowStockThresholdQty,
       },
     });
+    newAlert = {
+      itemId,
+      itemName: item.name,
+      unitOfMeasure: item.unitOfMeasure,
+      locationId,
+      branchId,
+      quantityAtTrigger: level.quantity,
+      thresholdAtTrigger: item.lowStockThresholdQty,
+    };
   } else if (!isBelow && activeAlert) {
     await tx.lowStockAlert.update({
       where: { id: activeAlert.id },
@@ -100,7 +126,7 @@ export async function applyStockDelta(
     });
   }
 
-  return level;
+  return { level, newAlert };
 }
 
 export interface RecordGrnInput {
@@ -113,7 +139,7 @@ export interface RecordGrnInput {
 
 export async function recordGrn(tenantId: string, branchId: string, actorId: string, input: RecordGrnInput) {
   if (input.quantity <= 0) throw new HttpError(400, "Quantity received must be positive.");
-  return runInTenantTransaction(tenantId, async (tx) => {
+  const { level, newAlert } = await runInTenantTransaction(tenantId, async (tx) => {
     await tx.stockMovement.create({
       data: {
         tenantId,
@@ -129,6 +155,8 @@ export async function recordGrn(tenantId: string, branchId: string, actorId: str
     });
     return applyStockDelta(tx, tenantId, branchId, input.locationId, input.itemId, input.quantity);
   });
+  if (newAlert) await notifyLowStock(tenantId, newAlert);
+  return level;
 }
 
 export interface RecordAdjustmentInput {
@@ -148,7 +176,7 @@ export async function recordAdjustment(
 ) {
   if (!input.reason.trim()) throw new HttpError(400, "A reason is required for stock adjustments.");
   if (input.quantityDelta === 0) throw new HttpError(400, "Adjustment quantity cannot be zero.");
-  return runInTenantTransaction(tenantId, async (tx) => {
+  const { level, newAlert } = await runInTenantTransaction(tenantId, async (tx) => {
     await tx.stockMovement.create({
       data: {
         tenantId,
@@ -163,6 +191,8 @@ export async function recordAdjustment(
     });
     return applyStockDelta(tx, tenantId, branchId, input.locationId, input.itemId, input.quantityDelta);
   });
+  if (newAlert) await notifyLowStock(tenantId, newAlert);
+  return level;
 }
 
 export interface RecordTransferInput {
@@ -178,7 +208,7 @@ export async function recordTransfer(tenantId: string, actorId: string, input: R
   if (input.quantity <= 0) throw new HttpError(400, "Transfer quantity must be positive.");
   if (input.fromLocationId === input.toLocationId) throw new HttpError(400, "Source and destination must differ.");
 
-  return runInTenantTransaction(tenantId, async (tx) => {
+  const result = await runInTenantTransaction(tenantId, async (tx) => {
     const [fromLocation, toLocation] = await Promise.all([
       tx.stockLocation.findUniqueOrThrow({ where: { id: input.fromLocationId, tenantId } }),
       tx.stockLocation.findUniqueOrThrow({ where: { id: input.toLocationId, tenantId } }),
@@ -218,12 +248,14 @@ export async function recordTransfer(tenantId: string, actorId: string, input: R
       },
     });
 
-    const [fromLevel, toLevel] = await Promise.all([
+    const [from, to] = await Promise.all([
       applyStockDelta(tx, tenantId, fromLocation.branchId, input.fromLocationId, input.itemId, -input.quantity),
       applyStockDelta(tx, tenantId, toLocation.branchId, input.toLocationId, input.itemId, input.quantity),
     ]);
-    return { fromLevel, toLevel, transferGroupId };
+    return { fromLevel: from.level, toLevel: to.level, transferGroupId, newAlerts: [from.newAlert, to.newAlert].filter((a) => a !== null) };
   });
+  await Promise.all(result.newAlerts.map((alert) => notifyLowStock(tenantId, alert)));
+  return result;
 }
 
 export async function listActiveLowStockAlerts(tenantId: string, branchId: string) {

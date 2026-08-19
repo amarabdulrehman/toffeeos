@@ -109,6 +109,31 @@ export async function salesReport(tenantId: string, branchIds: string[], range: 
   };
 }
 
+/** Quantity sold and revenue per menu item across paid orders in the range, highest revenue
+ * first — shared by the Item-wise report route and the WhatsApp daily summary's "top items" line
+ * (src/server/whatsapp/triggers.ts), so the two never compute it differently. */
+export async function itemWiseReport(tenantId: string, branchIds: string[], range: DateRange) {
+  const db = tenantDb(tenantId);
+  const orders = await db.order.findMany({
+    where: { branchId: { in: branchIds }, status: "PAID", paidAt: { gte: range.from, lte: range.to } },
+    select: { lines: { where: { isVoided: false }, select: { menuItemId: true, nameSnapshot: true, quantity: true, lineTotalPaisa: true } } },
+  });
+
+  const byItem = new Map<string, { name: string; quantity: number; revenuePaisa: number }>();
+  for (const order of orders) {
+    for (const line of order.lines) {
+      const entry = byItem.get(line.menuItemId) ?? { name: line.nameSnapshot, quantity: 0, revenuePaisa: 0 };
+      entry.quantity += line.quantity;
+      entry.revenuePaisa += line.lineTotalPaisa;
+      byItem.set(line.menuItemId, entry);
+    }
+  }
+
+  return Array.from(byItem.entries())
+    .map(([menuItemId, v]) => ({ menuItemId, ...v }))
+    .sort((a, b) => b.revenuePaisa - a.revenuePaisa);
+}
+
 // ============================================================================
 // Staff performance — orders handled, avg order value, discounts/voids, per
 // staff member per day (a "shift" concept doesn't exist yet — see the note in
