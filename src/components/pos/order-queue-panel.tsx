@@ -17,10 +17,14 @@ const STATUS_STYLE: Record<string, string> = {
 export function OrderQueuePanel({
   orders,
   onPay,
+  onVoid,
+  canVoid,
   onClose,
 }: {
   orders: OrderDto[];
   onPay: (order: OrderDto) => void;
+  onVoid?: (order: OrderDto) => void;
+  canVoid?: boolean;
   onClose: () => void;
 }) {
   return (
@@ -52,10 +56,17 @@ export function OrderQueuePanel({
               </span>
               <span className="font-heading text-sm font-semibold tabular-nums">{formatPkr(o.totalPaisa)}</span>
             </div>
-            {o.status !== "PAID" && (
-              <Button size="sm" className="mt-2.5 w-full" onClick={() => onPay(o)}>
-                Payment
-              </Button>
+            {o.status !== "PAID" && o.status !== "VOIDED" && (
+              <div className="mt-2.5 flex gap-2">
+                <Button size="sm" className="flex-1" onClick={() => onPay(o)}>
+                  Payment
+                </Button>
+                {canVoid && onVoid && (
+                  <Button size="sm" variant="outline" className="text-destructive" onClick={() => onVoid(o)}>
+                    Void
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         ))}

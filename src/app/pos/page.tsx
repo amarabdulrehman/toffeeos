@@ -13,6 +13,8 @@ export default async function PosPage() {
       tenantId={user.tenantId}
       branchId={user.branchId}
       canTakePayment={user.permissions.includes("pos.payment.take")}
+      canApplyDiscount={user.permissions.includes("pos.discount.applyOrder")}
+      canVoid={user.permissions.includes("pos.order.void")}
     />
   );
 }

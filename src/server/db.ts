@@ -84,6 +84,8 @@ const TENANT_SCOPED_MODELS = new Set([
   "StockMovement",
   "LowStockAlert",
   "RecipeLine",
+  "SyncActionLog",
+  "SyncConflict",
 ]);
 
 const WHERE_OPERATIONS = new Set([

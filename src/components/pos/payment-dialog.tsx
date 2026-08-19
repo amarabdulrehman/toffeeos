@@ -35,6 +35,9 @@ export function PaymentDialog({
   onConfirm: (tenders: { method: PaymentMethod; amountPaisa: number }[]) => void;
   submitting: boolean;
 }) {
+  // Defaulting the cash tender to the full amount only works if this component remounts for
+  // every new order — the caller passes key={order.id} on <PaymentDialog> for exactly that
+  // reason, so this initializer runs fresh each time instead of only on the very first render.
   const [tenders, setTenders] = useState<Tender[]>([{ method: "CASH", amountRs: (totalPaisa / 100).toFixed(2) }]);
   const [cashGiven, setCashGiven] = useState("");
 

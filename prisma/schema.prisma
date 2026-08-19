@@ -699,6 +699,13 @@ model Order {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  // Optimistic-concurrency counter for the offline sync engine (src/lib/offline). Bumped on every
+  // state-changing action after creation (send-to-kitchen, pay, void). A queued offline action
+  // carries the version it last saw; if the server's version has moved on by the time the action
+  // replays, another device got there first — that's a genuine conflict, not something to
+  // silently overwrite. See src/server/sync-conflicts.ts.
+  version Int @default(1)
+
   lines     OrderLine[]
   discounts OrderDiscount[]
   payments  Payment[]
@@ -709,6 +716,56 @@ model Order {
   @@index([tenantId, branchId, createdAt])
   @@index([tenantId, branchId, status])
   @@index([tenantId, assignedRiderId])
+}
+
+/// Records every client-generated actionId a mutating order action (send-to-kitchen, pay, void)
+/// has already applied, so replaying an offline-queued action after a flaky reconnect — or the
+/// client and server briefly disagreeing about whether a request landed — is a safe no-op instead
+/// of double-applying. See withActionIdempotency in src/server/orders.ts.
+model SyncActionLog {
+  id         String   @id @default(uuid())
+  tenantId   String
+  actionId   String
+  actionType String
+  orderId    String?
+  createdAt  DateTime @default(now())
+
+  @@unique([tenantId, actionId])
+  @@index([tenantId, orderId])
+}
+
+enum SyncConflictKind {
+  TABLE_DOUBLE_ORDER
+  STALE_ORDER_ACTION
+}
+
+enum SyncConflictStatus {
+  OPEN
+  RESOLVED
+}
+
+/// A conflict the offline sync engine detected and refused to resolve automatically — e.g. two
+/// devices both offline, both starting an order for the same table, or a queued pay/void replaying
+/// against an order another device already changed. Surfaced to a manager (sync.conflict.resolve)
+/// rather than silently picked with last-write-wins. See src/server/sync-conflicts.ts.
+model SyncConflict {
+  id                 String              @id @default(uuid())
+  tenantId           String
+  branchId           String
+  kind               SyncConflictKind
+  tableId            String?
+  orderId            String?
+  conflictingOrderId String?
+  actionType         String?
+  devicePayload      Json?
+  serverSnapshot     Json?
+  status             SyncConflictStatus  @default(OPEN)
+  resolutionNote     String?
+  resolvedById       String?
+  resolvedAt         DateTime?
+  createdAt          DateTime            @default(now())
+
+  @@index([tenantId, branchId, status])
 }
 
 /// id is a client-generated ULID for the same offline-replay reason as Order.id.

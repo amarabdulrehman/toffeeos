@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatPkr } from "@/lib/money";
 import { CustomerPicker } from "./customer-picker";
-import type { CartLine, CustomerDto, OrderType, PreviewTotals } from "./types";
+import { DiscountPicker } from "./discount-picker";
+import type { CartLine, CustomerDto, Discount, OrderType, PreviewTotals } from "./types";
 
 const ORDER_TYPES: { value: OrderType; label: string }[] = [
   { value: "DINE_IN", label: "Dine-in" },
@@ -22,6 +23,10 @@ export function CartPanel({
   customer,
   onSelectCustomer,
   onClearCustomer,
+  discount,
+  onApplyDiscount,
+  onClearDiscount,
+  canApplyDiscount,
   lines,
   onQuantityChange,
   onRemoveLine,
@@ -38,6 +43,10 @@ export function CartPanel({
   customer: CustomerDto | null;
   onSelectCustomer: (c: CustomerDto) => void;
   onClearCustomer: () => void;
+  discount: Discount | null;
+  onApplyDiscount: (d: Discount) => void;
+  onClearDiscount: () => void;
+  canApplyDiscount: boolean;
   lines: CartLine[];
   onQuantityChange: (key: string, delta: number) => void;
   onRemoveLine: (key: string) => void;
@@ -74,6 +83,7 @@ export function CartPanel({
         )}
 
         <CustomerPicker customer={customer} onSelect={onSelectCustomer} onClear={onClearCustomer} />
+        {canApplyDiscount && <DiscountPicker discount={discount} onApply={onApplyDiscount} onClear={onClearDiscount} />}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">

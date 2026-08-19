@@ -14,6 +14,9 @@ const lineSchema = z.object({
 });
 
 const createOrderSchema = z.object({
+  // Client-generated (src/lib/ids.ts newOrderId()) so the offline POS knows the order's final id
+  // before it ever reaches the network — see the note on CreateOrderInput in src/server/orders.ts.
+  id: z.string().min(1).optional(),
   type: z.enum(["DINE_IN", "TAKEAWAY", "DELIVERY", "SERVICE"]),
   tableId: z.string().min(1).optional(),
   customerId: z.string().min(1).optional(),

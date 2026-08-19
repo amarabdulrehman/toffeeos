@@ -95,5 +95,8 @@ export interface OrderDto {
   paidPaisa: number;
   tableId: string | null;
   createdAt: string;
+  /** Optimistic-concurrency counter (src/lib/offline) — absent on locally-created orders that
+   * haven't synced yet, since there's no server state to have a version of. */
+  version?: number;
   lines: { id: string; nameSnapshot: string; quantity: number; lineTotalPaisa: number; kitchenReady: boolean }[];
 }

@@ -63,6 +63,9 @@ export const PERMISSIONS: PermissionDef[] = [
   perm("orders", "markPaid", "Mark an order paid"),
   perm("orders", "cancel", "Cancel an order"),
 
+  // ---- Offline sync ----
+  perm("sync", "conflict.resolve", "View and resolve offline-sync conflicts"),
+
   // ---- Delivery & riders ----
   perm("delivery", "view", "View delivery dispatch board"),
   perm("delivery", "assignRider", "Assign an order to a rider"),

@@ -1,10 +1,11 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
-import { runInTenantTransaction, tenantDb } from "@/server/db";
+import { runInTenantTransaction, tenantDb, type TenantTransactionClient } from "@/server/db";
 import { newOrderId, newOrderLineId, newId } from "@/lib/ids";
 import { publish } from "@/server/realtime";
 import { HttpError } from "@/server/handler";
 import { deductForOrder } from "@/server/recipes";
+import { recordConflict } from "@/server/sync-conflicts";
 import {
   computeProvisionalTotal,
   finalizeOrder,
@@ -16,6 +17,60 @@ import {
   type TenderInput,
 } from "@/lib/pricing";
 
+/** Statuses where the order is done — never occupying its table, never payable/voidable again.
+ * Shared by createOrder's table-conflict check, takePayment's double-pay guard, and voidOrder's
+ * double-void guard, so the definition of "closed" can't drift between the three. */
+export const TERMINAL_ORDER_STATUSES = ["PAID", "DELIVERED", "VOIDED", "CANCELLED"] as const;
+
+/**
+ * Makes a mutating order action (send-to-kitchen, pay, void) safe to replay: the offline sync
+ * queue retries an action whenever it's unsure the previous attempt landed (a flaky reconnect, a
+ * response that never arrived). Without this, a retried "pay" or "void" would run its business
+ * logic — and its realtime publish, and its stock deduction — a second time.
+ *
+ * actionId is claimed with its own small write, deliberately outside the transaction fn() runs
+ * in: catching a unique-constraint error inside an interactive transaction leaves the underlying
+ * Postgres transaction in an aborted state until COMMIT, which is easy to get subtly wrong. The
+ * tradeoff is a narrow window — a crash between claiming actionId and fn() completing — where a
+ * retried action would be (wrongly) treated as already-applied. Acceptable for this feature: a
+ * server crash mid-request is rare, and the discrepancy is visible in the order queue / Sync
+ * Conflicts screen for a manager to catch, rather than silently corrupting state on every retry.
+ */
+async function withActionIdempotency<T>(
+  tenantId: string,
+  actionId: string | undefined,
+  actionType: string,
+  orderId: string,
+  fn: (tx: TenantTransactionClient) => Promise<T>,
+  /** Distinguishes "the action actually applied" from "a conflict was recorded instead, nothing
+   * changed" — takePayment/voidOrder return {ok: false} for the latter. If the action didn't
+   * apply, its actionId claim is released, so a later replay re-attempts (and can re-evaluate the
+   * conflict against then-current state) instead of being told it already succeeded. */
+  isApplied: (result: T) => boolean,
+  onAlreadyApplied: () => Promise<T>
+): Promise<T> {
+  if (!actionId) {
+    // No actionId supplied (a normal online call, not an offline-queue replay) — run once, no
+    // idempotency bookkeeping needed.
+    return runInTenantTransaction(tenantId, fn);
+  }
+
+  try {
+    await tenantDb(tenantId).syncActionLog.create({ data: { tenantId, actionId, actionType, orderId } });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return onAlreadyApplied();
+    }
+    throw err;
+  }
+
+  const result = await runInTenantTransaction(tenantId, fn);
+  if (!isApplied(result)) {
+    await tenantDb(tenantId).syncActionLog.deleteMany({ where: { tenantId, actionId } });
+  }
+  return result;
+}
+
 export interface CreateOrderLineInput {
   menuItemId: string;
   variantId?: string;
@@ -26,6 +81,11 @@ export interface CreateOrderLineInput {
 }
 
 export interface CreateOrderInput {
+  /** Client-generated ULID (src/lib/ids.ts newOrderId()) — the whole point is that the offline POS
+   * knows the order's final id before it ever reaches the network, so later queued actions (pay,
+   * void) can target it immediately. Falls back to server generation for any caller that doesn't
+   * supply one (e.g. a future non-POS integration). */
+  id?: string;
   type: "DINE_IN" | "TAKEAWAY" | "DELIVERY" | "SERVICE";
   tableId?: string;
   customerId?: string;
@@ -160,11 +220,35 @@ export async function createOrder(
   const { settings, taxRules } = await getBranchPricingContext(tenantId, branchId, input.type);
   const totals = computeProvisionalTotal(toPricingLines(resolvedLines), input.orderDiscount, taxRules, settings);
 
-  const orderId = newOrderId();
+  const orderId = input.id ?? newOrderId();
 
   for (let attempt = 0; attempt < MAX_ORDER_NUMBER_RETRIES; attempt++) {
     try {
-      const order = await runInTenantTransaction(tenantId, async (tx) => {
+      const result = await runInTenantTransaction(tenantId, async (tx) => {
+        // The offline-sync conflict this guards against: two devices, both offline, both start a
+        // dine-in order for the same table without realizing the other already has. Checked and
+        // resolved inside this transaction (not before it) so it's atomic with orderNumber
+        // allocation — a genuinely simultaneous request from two devices can't both pass this
+        // check and then also both win the orderNumber race.
+        if (input.tableId && input.type === "DINE_IN") {
+          const conflicting = await tx.order.findFirst({
+            where: { tableId: input.tableId, status: { notIn: [...TERMINAL_ORDER_STATUSES] }, NOT: { idempotencyKey: input.idempotencyKey } },
+          });
+          if (conflicting) {
+            await recordConflict(tx, {
+              tenantId,
+              branchId,
+              kind: "TABLE_DOUBLE_ORDER",
+              tableId: input.tableId,
+              conflictingOrderId: conflicting.id,
+              actionType: "createOrder",
+              devicePayload: { idempotencyKey: input.idempotencyKey, attemptedOrderId: orderId, lines: input.lines },
+              serverSnapshot: { conflictingOrderId: conflicting.id, conflictingOrderNumber: conflicting.orderNumber, conflictingOrderStatus: conflicting.status },
+            });
+            return { ok: false as const };
+          }
+        }
+
         const last = await tx.order.aggregate({ where: { branchId }, _max: { orderNumber: true } });
         const orderNumber = (last._max.orderNumber ?? 0) + 1;
 
@@ -239,8 +323,16 @@ export async function createOrder(
           await tx.restaurantTable.update({ where: { id: input.tableId, tenantId }, data: { status: "OCCUPIED" } });
         }
 
-        return order;
+        return { ok: true as const, order };
       });
+
+      if (!result.ok) {
+        throw new HttpError(
+          409,
+          "This table already has an open order from another device. A manager needs to resolve this before a new order can be placed.",
+          { code: "SYNC_CONFLICT", kind: "TABLE_DOUBLE_ORDER" }
+        );
+      }
 
       if (input.tableId) {
         await publish(tenantId, branchId, "tables", "table_status_changed", {
@@ -248,7 +340,7 @@ export async function createOrder(
           status: "OCCUPIED",
         });
       }
-      return order;
+      return result.order;
     } catch (err) {
       const isOrderNumberClash = err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
       if (isOrderNumberClash && attempt < MAX_ORDER_NUMBER_RETRIES - 1) continue;
@@ -258,14 +350,30 @@ export async function createOrder(
   throw new Error("Could not allocate an order number — please retry.");
 }
 
-export async function sendToKitchen(tenantId: string, branchId: string, orderId: string, actorId: string) {
-  const db = tenantDb(tenantId);
-  const order = await db.order.update({
-    where: { id: orderId },
-    data: { status: "SENT_TO_KITCHEN", sentToKitchenAt: new Date() },
-    include: { lines: { include: { modifiers: true } } },
-  });
-  await db.orderEvent.create({ data: { tenantId, orderId, type: "SENT_TO_KITCHEN", actorId } });
+export async function sendToKitchen(
+  tenantId: string,
+  branchId: string,
+  orderId: string,
+  actorId: string,
+  actionId?: string
+) {
+  const order = await withActionIdempotency(
+    tenantId,
+    actionId,
+    "sendToKitchen",
+    orderId,
+    async (tx) => {
+      const order = await tx.order.update({
+        where: { id: orderId },
+        data: { status: "SENT_TO_KITCHEN", sentToKitchenAt: new Date(), version: { increment: 1 } },
+        include: { lines: { include: { modifiers: true } } },
+      });
+      await tx.orderEvent.create({ data: { tenantId, orderId, type: "SENT_TO_KITCHEN", actorId } });
+      return order;
+    },
+    () => true,
+    () => tenantDb(tenantId).order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: { include: { modifiers: true } } } })
+  );
   await publish(tenantId, branchId, "kds", "order_sent_to_kitchen", { orderId });
   return order;
 }
@@ -301,25 +409,28 @@ export interface TakePaymentInput {
 
 /** Authoritative final pricing pass (see finalizeOrder in pricing.ts) — this is where a split
  * cash+card order actually gets its blended Punjab PRA tax rate, not just the provisional cash-rate
- * estimate the cart showed while building. */
+ * estimate the cart showed while building.
+ *
+ * actionId/expectedVersion are only ever sent by the offline sync queue (src/lib/offline) replaying
+ * a payment taken while disconnected — a normal online tap-to-pay omits both, and this behaves
+ * exactly as it did before Phase 4. expectedVersion is the order's version as last seen by the
+ * device that queued this payment; if the server's version has since moved on, something else
+ * (another device, another action) touched this order first, and that's a conflict for a manager,
+ * not something to silently overwrite. */
 export async function takePayment(
   tenantId: string,
   branchId: string,
   orderId: string,
   actorId: string,
-  input: TakePaymentInput
+  input: TakePaymentInput,
+  actionId?: string,
+  expectedVersion?: number
 ) {
   const db = tenantDb(tenantId);
   const order = await db.order.findUniqueOrThrow({
     where: { id: orderId },
     include: { lines: true, discounts: true },
   });
-
-  // Guards against double-deduction of recipe stock: without this, calling pay twice on the same
-  // order (a double-tap, a retried request) would deduct ingredients twice for one sale.
-  if (["PAID", "DELIVERED", "VOIDED", "CANCELLED"].includes(order.status)) {
-    throw new HttpError(409, `This order is already ${order.status.toLowerCase()} and cannot be paid again.`);
-  }
 
   const { settings, taxRules } = await getBranchPricingContext(tenantId, branchId, order.type);
   const pricingLines: PricingLineInput[] = order.lines.map((l) => ({
@@ -334,71 +445,166 @@ export async function takePayment(
 
   const totals = finalizeOrder(pricingLines, orderDiscount, taxRules, settings, input.tenders);
 
-  return runInTenantTransaction(tenantId, async (tx) => {
-    const updated = await tx.order.update({
-      where: { id: orderId, tenantId },
-      data: {
-        status: "PAID",
-        paidAt: new Date(),
-        subtotalPaisa: totals.subtotalPaisa,
-        discountedSubtotalPaisa: totals.discountedSubtotalPaisa,
-        serviceChargePaisa: totals.serviceChargePaisa,
-        taxPaisa: totals.taxPaisa,
-        roundingAdjustmentPaisa: totals.roundingAdjustmentPaisa,
-        totalPaisa: totals.totalPaisa,
-        paidPaisa: totals.tenders.reduce((a, t) => a + t.amountPaisa, 0),
-      },
-    });
+  const result = await withActionIdempotency(
+    tenantId,
+    actionId,
+    "pay",
+    orderId,
+    async (tx) => {
+      // Re-read inside the transaction rather than trusting the `order` fetched above — that read
+      // happened before this transaction opened, so it can't be what decides whether this payment
+      // is safe to apply.
+      const fresh = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
+      const isTerminal = (TERMINAL_ORDER_STATUSES as readonly string[]).includes(fresh.status);
+      const isStale = expectedVersion !== undefined && fresh.version !== expectedVersion;
 
-    for (const t of totals.tenders) {
-      await tx.payment.create({
+      if (isTerminal || isStale) {
+        if (expectedVersion !== undefined) {
+          // This is an offline replay landing on an order that moved on without it — genuine
+          // conflict, not a user-facing "already paid" notice.
+          await recordConflict(tx, {
+            tenantId,
+            branchId,
+            kind: "STALE_ORDER_ACTION",
+            orderId,
+            actionType: "pay",
+            devicePayload: { expectedVersion, tenders: input.tenders },
+            serverSnapshot: { status: fresh.status, version: fresh.version },
+          });
+          return { ok: false as const };
+        }
+        // Plain online double-tap / retried request — the original Phase 3 guard, unchanged.
+        throw new HttpError(409, `This order is already ${fresh.status.toLowerCase()} and cannot be paid again.`);
+      }
+
+      const updated = await tx.order.update({
+        where: { id: orderId, tenantId },
         data: {
-          tenantId,
-          orderId,
-          method: t.method,
-          amountPaisa: t.amountPaisa,
-          taxRateBasisPoints: t.rateBasisPoints,
-          receivedById: actorId,
+          status: "PAID",
+          paidAt: new Date(),
+          version: { increment: 1 },
+          subtotalPaisa: totals.subtotalPaisa,
+          discountedSubtotalPaisa: totals.discountedSubtotalPaisa,
+          serviceChargePaisa: totals.serviceChargePaisa,
+          taxPaisa: totals.taxPaisa,
+          roundingAdjustmentPaisa: totals.roundingAdjustmentPaisa,
+          totalPaisa: totals.totalPaisa,
+          paidPaisa: totals.tenders.reduce((a, t) => a + t.amountPaisa, 0),
         },
       });
-    }
 
-    if (order.tableId) {
-      await tx.restaurantTable.update({ where: { id: order.tableId, tenantId }, data: { status: "AVAILABLE" } });
-    }
+      for (const t of totals.tenders) {
+        await tx.payment.create({
+          data: {
+            tenantId,
+            orderId,
+            method: t.method,
+            amountPaisa: t.amountPaisa,
+            taxRateBasisPoints: t.rateBasisPoints,
+            receivedById: actorId,
+          },
+        });
+      }
 
-    await tx.orderEvent.create({ data: { tenantId, orderId, type: "PAID", actorId } });
+      if (order.tableId) {
+        await tx.restaurantTable.update({ where: { id: order.tableId, tenantId }, data: { status: "AVAILABLE" } });
+      }
 
-    // Recipe consumption happens here, not on order creation — a voided/cancelled order never
-    // reaches this point, and items with no recipe defined are silently skipped (see
-    // src/server/recipes.ts deductForOrder).
-    const soldLines = order.lines.filter((l) => !l.isVoided).map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity }));
-    await deductForOrder(tx, tenantId, branchId, soldLines, actorId);
+      await tx.orderEvent.create({ data: { tenantId, orderId, type: "PAID", actorId } });
 
-    return updated;
-  }).then(async (updated) => {
-    await publish(tenantId, branchId, "orders", "order_paid", { orderId });
-    if (order.tableId) {
-      await publish(tenantId, branchId, "tables", "table_status_changed", {
-        tableId: order.tableId,
-        status: "AVAILABLE",
-      });
-    }
-    return updated;
-  });
-}
+      // Recipe consumption happens here, not on order creation — a voided/cancelled order never
+      // reaches this point, and items with no recipe defined are silently skipped (see
+      // src/server/recipes.ts deductForOrder). Queued the same way as the payment itself: if the
+      // "pay" action is offline, this only runs once the action replays and actually commits.
+      const soldLines = order.lines.filter((l) => !l.isVoided).map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity }));
+      await deductForOrder(tx, tenantId, branchId, soldLines, actorId);
 
-export async function voidOrder(tenantId: string, branchId: string, orderId: string, actorId: string, reason?: string) {
-  const db = tenantDb(tenantId);
-  const order = await db.order.update({ where: { id: orderId }, data: { status: "VOIDED", voidedAt: new Date() } });
-  await db.orderEvent.create({ data: { tenantId, orderId, type: "VOIDED", actorId, payload: { reason } } });
-  if (order.tableId) {
-    await db.restaurantTable.update({ where: { id: order.tableId }, data: { status: "AVAILABLE" } });
-    await publish(tenantId, branchId, "tables", "table_status_changed", {
-      tableId: order.tableId,
-      status: "AVAILABLE",
+      return { ok: true as const, order: updated };
+    },
+    (result) => result.ok,
+    () => db.order.findUniqueOrThrow({ where: { id: orderId } }).then((o) => ({ ok: true as const, order: o }))
+  );
+
+  if (!result.ok) {
+    throw new HttpError(409, "Another device already changed this order — a manager needs to resolve this before payment can be retried.", {
+      code: "SYNC_CONFLICT",
+      kind: "STALE_ORDER_ACTION",
     });
   }
+
+  await publish(tenantId, branchId, "orders", "order_paid", { orderId });
+  if (order.tableId) {
+    await publish(tenantId, branchId, "tables", "table_status_changed", { tableId: order.tableId, status: "AVAILABLE" });
+  }
+  return result.order;
+}
+
+/** actionId/expectedVersion: see the note on takePayment — only ever sent by the offline sync
+ * queue. Prior to Phase 4 this had no terminal-status guard at all, which meant voiding an
+ * already-PAID order would silently succeed and flip it back to VOIDED — a real bug, fixed here
+ * alongside the offline-replay support (a retried void is exactly the kind of double-call that
+ * would have hit it). */
+export async function voidOrder(
+  tenantId: string,
+  branchId: string,
+  orderId: string,
+  actorId: string,
+  reason?: string,
+  actionId?: string,
+  expectedVersion?: number
+) {
+  const db = tenantDb(tenantId);
+
+  const result = await withActionIdempotency(
+    tenantId,
+    actionId,
+    "void",
+    orderId,
+    async (tx) => {
+      const fresh = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
+      const isTerminal = (TERMINAL_ORDER_STATUSES as readonly string[]).includes(fresh.status);
+      const isStale = expectedVersion !== undefined && fresh.version !== expectedVersion;
+
+      if (isTerminal || isStale) {
+        if (expectedVersion !== undefined) {
+          await recordConflict(tx, {
+            tenantId,
+            branchId,
+            kind: "STALE_ORDER_ACTION",
+            orderId,
+            actionType: "void",
+            devicePayload: { expectedVersion, reason },
+            serverSnapshot: { status: fresh.status, version: fresh.version },
+          });
+          return { ok: false as const };
+        }
+        throw new HttpError(409, `This order is already ${fresh.status.toLowerCase()} and cannot be voided.`);
+      }
+
+      const updated = await tx.order.update({
+        where: { id: orderId },
+        data: { status: "VOIDED", voidedAt: new Date(), version: { increment: 1 } },
+      });
+      await tx.orderEvent.create({ data: { tenantId, orderId, type: "VOIDED", actorId, payload: { reason } } });
+      if (updated.tableId) {
+        await tx.restaurantTable.update({ where: { id: updated.tableId }, data: { status: "AVAILABLE" } });
+      }
+      return { ok: true as const, order: updated };
+    },
+    (r) => r.ok,
+    () => db.order.findUniqueOrThrow({ where: { id: orderId } }).then((o) => ({ ok: true as const, order: o }))
+  );
+
+  if (!result.ok) {
+    throw new HttpError(409, "Another device already changed this order — a manager needs to resolve this before it can be voided.", {
+      code: "SYNC_CONFLICT",
+      kind: "STALE_ORDER_ACTION",
+    });
+  }
+
+  if (result.order.tableId) {
+    await publish(tenantId, branchId, "tables", "table_status_changed", { tableId: result.order.tableId, status: "AVAILABLE" });
+  }
   await publish(tenantId, branchId, "orders", "order_voided", { orderId });
-  return order;
+  return result.order;
 }
