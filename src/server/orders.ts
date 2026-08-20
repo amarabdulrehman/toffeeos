@@ -93,6 +93,12 @@ export interface CreateOrderInput {
   lines: CreateOrderLineInput[];
   orderDiscount?: DiscountInput;
   idempotencyKey: string;
+  /** Defaults to POS — the online ordering site and QR table ordering pass ONLINE/QR so staff can
+   * tell at a glance where an order came from (src/components/pos/order-queue-panel.tsx). */
+  source?: "POS" | "ONLINE" | "QR";
+  /** DELIVERY-type orders only. A plain snapshot, not linked to CustomerAddress — see the schema
+   * comment on Order.deliveryAddress. */
+  deliveryAddress?: string;
 }
 
 /** Loads a branch's pricing configuration (service charge, rounding, tax rules) in the shape
@@ -157,10 +163,10 @@ async function resolveLines(
 
   return lines.map((line) => {
     const menuItem = menuItemById.get(line.menuItemId);
-    if (!menuItem) throw new Error(`Unknown menu item: ${line.menuItemId}`);
+    if (!menuItem) throw new HttpError(400, `Unknown menu item: ${line.menuItemId}`);
     const override = overrideByMenuItemId.get(line.menuItemId);
     if (override && !override.isAvailable) {
-      throw new Error(`${menuItem.name} is not available at this branch right now.`);
+      throw new HttpError(400, `${menuItem.name} is not available at this branch right now.`);
     }
 
     const basePrice = override?.priceOverridePaisa ?? menuItem.basePricePaisa;
@@ -169,7 +175,7 @@ async function resolveLines(
 
     const resolvedModifiers = (line.modifierIds ?? []).map((modifierId) => {
       const modifier = modifierById.get(modifierId);
-      if (!modifier) throw new Error(`Unknown modifier: ${modifierId}`);
+      if (!modifier) throw new HttpError(400, `Unknown modifier: ${modifierId}`);
       return {
         id: newId(),
         modifierId,
@@ -206,10 +212,12 @@ const MAX_ORDER_NUMBER_RETRIES = 3;
  * idempotencyKey makes a retried submission (e.g. an offline POS reconnecting) a no-op rather than
  * a duplicate order — see the unique constraint on [tenantId, idempotencyKey].
  */
+/** actorId is null for customer-placed orders (online ordering, QR) — there's no staff member to
+ * attribute createdById/OrderEvent.actorId to, and both columns are nullable for exactly this. */
 export async function createOrder(
   tenantId: string,
   branchId: string,
-  actorId: string,
+  actorId: string | null,
   input: CreateOrderInput
 ) {
   const existing = await tenantDb(tenantId).order.findFirst({
@@ -265,6 +273,8 @@ export async function createOrder(
             orderNumber,
             type: input.type,
             status: "OPEN",
+            source: input.source ?? "POS",
+            deliveryAddress: input.deliveryAddress,
             subtotalPaisa: totals.subtotalPaisa,
             discountedSubtotalPaisa: totals.discountedSubtotalPaisa,
             serviceChargePaisa: totals.serviceChargePaisa,
@@ -355,7 +365,7 @@ export async function sendToKitchen(
   tenantId: string,
   branchId: string,
   orderId: string,
-  actorId: string,
+  actorId: string | null,
   actionId?: string
 ) {
   const order = await withActionIdempotency(

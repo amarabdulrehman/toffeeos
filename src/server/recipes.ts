@@ -31,12 +31,13 @@ export async function getRecipe(tenantId: string, menuItemId: string) {
   });
 }
 
-/** For the menu management screen's "no recipe" badge. */
-export async function listMenuItemsRecipeStatus(tenantId: string) {
+/** For the menu management screen's "no recipe" badge, plus this branch's live availability so
+ * the same screen can 86 an item (POST .../availability) without a separate page. */
+export async function listMenuItemsRecipeStatus(tenantId: string, branchId: string) {
   const db = tenantDb(tenantId);
   const items = await db.menuItem.findMany({
     where: { isActive: true },
-    include: { category: true, recipeLines: { select: { id: true } } },
+    include: { category: true, recipeLines: { select: { id: true } }, branchMenuItems: { where: { branchId } } },
     orderBy: { name: "asc" },
   });
   return items.map((i) => ({
@@ -45,6 +46,7 @@ export async function listMenuItemsRecipeStatus(tenantId: string) {
     categoryName: i.category.name,
     basePricePaisa: i.basePricePaisa,
     hasRecipe: i.recipeLines.length > 0,
+    isAvailable: i.branchMenuItems[0]?.isAvailable ?? true,
   }));
 }
 

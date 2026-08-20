@@ -98,5 +98,8 @@ export interface OrderDto {
   /** Optimistic-concurrency counter (src/lib/offline) — absent on locally-created orders that
    * haven't synced yet, since there's no server state to have a version of. */
   version?: number;
+  /** POS (staff-entered), ONLINE (the public ordering site), or QR (table QR ordering). Absent on
+   * locally-queued-but-not-yet-synced orders defaults to "POS" in the UI. */
+  source?: "POS" | "ONLINE" | "QR";
   lines: { id: string; nameSnapshot: string; quantity: number; lineTotalPaisa: number; kitchenReady: boolean }[];
 }

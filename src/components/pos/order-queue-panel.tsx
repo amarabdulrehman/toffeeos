@@ -43,8 +43,13 @@ export function OrderQueuePanel({
         {orders.map((o) => (
           <div key={o.id} className="rounded-xl border border-border/60 bg-background p-3.5 transition-colors hover:border-border">
             <div className="flex items-center justify-between">
-              <div className="font-heading text-sm font-semibold">
+              <div className="flex items-center gap-1.5 font-heading text-sm font-semibold">
                 #{o.orderNumber} · {o.type.replace("_", " ")}
+                {o.source && o.source !== "POS" && (
+                  <Badge variant="outline" className="text-[10px] font-medium">
+                    {o.source}
+                  </Badge>
+                )}
               </div>
               <Badge className={`${STATUS_STYLE[o.status] ?? "bg-muted text-muted-foreground"} border-none`}>
                 {o.status.replace(/_/g, " ")}

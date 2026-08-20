@@ -14,6 +14,7 @@ const NAV = [
   { href: "/app/delivery", label: "Delivery" },
   { href: "/app/customers", label: "Customers" },
   { href: "/app/whatsapp", label: "WhatsApp" },
+  { href: "/app/online-ordering", label: "Online Ordering" },
   { href: "/app/reports", label: "Reports" },
   { href: "/app/sync-conflicts", label: "Sync Conflicts" },
 ];

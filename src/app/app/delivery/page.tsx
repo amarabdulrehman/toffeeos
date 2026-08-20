@@ -19,6 +19,7 @@ interface BoardOrder {
   createdAt: string;
   assignedRiderId: string | null;
   deliveryProofMethod: string | null;
+  deliveryAddress: string | null;
 }
 interface Board {
   readyForPickup: BoardOrder[];
@@ -146,6 +147,7 @@ function BoardColumn({
             <div className="text-xs text-muted-foreground">
               {formatDistanceToNow(new Date(o.createdAt), { addSuffix: true })}
             </div>
+            {o.deliveryAddress && <div className="mt-1 text-xs text-muted-foreground">📍 {o.deliveryAddress}</div>}
             {children?.(o)}
           </div>
         ))}

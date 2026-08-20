@@ -47,6 +47,10 @@ model Tenant {
   name      String
   slug      String       @unique
   status    TenantStatus @default(TRIALING)
+  // Minimal per-tenant branding for the public online ordering site (Phase 4) — deliberately just
+  // these two fields, not a full site builder.
+  logoUrl    String?
+  brandColor String? // hex, e.g. "#7c3aed"
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
@@ -703,6 +707,12 @@ enum OrderType {
   SERVICE
 }
 
+enum OrderSource {
+  POS
+  ONLINE
+  QR
+}
+
 enum OrderStatus {
   OPEN
   SENT_TO_KITCHEN
@@ -754,10 +764,14 @@ model Order {
   orderNumber Int
   type        OrderType
   status      OrderStatus @default(OPEN)
+  source      OrderSource @default(POS)
 
   // Delivery & rider (DELIVERY-type orders only). See src/server/delivery.ts. `deliveryOtpCode`
   // is a short-lived handoff code, not a security-critical secret — it exists purely so the
   // customer can verify the rider at the door, so it is stored in plain text like a receipt code.
+  // `deliveryAddress` is a plain snapshot (not linked to CustomerAddress) — the same
+  // "snapshot, don't reference mutable state" pattern as OrderLine.nameSnapshot. This was a real
+  // gap: no DELIVERY order anywhere (POS or online) had anywhere to record an address until now.
   assignedRider       User?                @relation("OrderAssignedRider", fields: [assignedRiderId], references: [id])
   assignedRiderId     String?
   riderAssignedAt     DateTime?
@@ -766,6 +780,7 @@ model Order {
   deliveryProofMethod DeliveryProofMethod?
   deliveryProofUrl    String?
   deliveryOtpCode     String?
+  deliveryAddress     String?
 
   subtotalPaisa           Int @default(0)
   discountedSubtotalPaisa Int @default(0)

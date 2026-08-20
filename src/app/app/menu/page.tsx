@@ -17,6 +17,7 @@ interface MenuItemRow {
   categoryName: string;
   basePricePaisa: number;
   hasRecipe: boolean;
+  isAvailable: boolean;
 }
 interface InventoryItem {
   id: string;
@@ -41,10 +42,27 @@ export default function MenuManagementPage() {
 
   useEffect(load, [load]);
 
+  async function toggleAvailability(item: MenuItemRow) {
+    const res = await fetch(`/api/menu-items/${item.id}/availability`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isAvailable: !item.isAvailable }),
+    });
+    if (!res.ok) {
+      toast.error("Could not update availability.");
+      return;
+    }
+    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, isAvailable: !i.isAvailable } : i)));
+  }
+
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold">Menu</h1>
-      <p className="text-muted-foreground">Set a recipe per item to enable automatic stock deduction and cost/margin reporting.</p>
+      <p className="text-muted-foreground">
+        Set a recipe per item to enable automatic stock deduction and cost/margin reporting. Availability here is what
+        POS, KDS, and the online ordering site all read — mark an item unavailable (&ldquo;86 it&rdquo;) and it greys
+        out everywhere at once, for this branch.
+      </p>
 
       <Card className="mt-6">
         <CardHeader>
@@ -58,13 +76,16 @@ export default function MenuManagementPage() {
                 <TableHead>Category</TableHead>
                 <TableHead>Price</TableHead>
                 <TableHead>Recipe</TableHead>
+                <TableHead>Available</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell className="font-medium">{item.name}</TableCell>
+                  <TableCell className={`font-medium ${!item.isAvailable ? "text-muted-foreground line-through" : ""}`}>
+                    {item.name}
+                  </TableCell>
                   <TableCell>{item.categoryName}</TableCell>
                   <TableCell>{formatPkr(item.basePricePaisa)}</TableCell>
                   <TableCell>
@@ -74,7 +95,15 @@ export default function MenuManagementPage() {
                       <Badge variant="destructive">No recipe</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell>
+                    <Badge variant={item.isAvailable ? "secondary" : "destructive"}>
+                      {item.isAvailable ? "Available" : "86'd"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right space-x-2">
+                    <Button size="sm" variant="outline" onClick={() => toggleAvailability(item)}>
+                      {item.isAvailable ? "Mark unavailable" : "Mark available"}
+                    </Button>
                     <Button size="sm" variant="outline" onClick={() => setEditingItem(item)}>
                       Edit recipe
                     </Button>

@@ -24,6 +24,7 @@ interface KdsOrder {
   orderNumber: number;
   type: "DINE_IN" | "TAKEAWAY" | "DELIVERY" | "SERVICE";
   status: string;
+  source: "POS" | "ONLINE" | "QR";
   sentToKitchenAt: string | null;
   table: { label: string } | null;
   lines: KdsLine[];
@@ -83,6 +84,7 @@ function OrderCard({ order, canMarkReady, onChanged }: { order: KdsOrder; canMar
           <span className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${style.chip}`}>
             {order.type.replace("_", " ")}
             {order.table ? ` · ${order.table.label}` : ""}
+            {order.source !== "POS" ? ` · ${order.source}` : ""}
           </span>
         </div>
         <div
