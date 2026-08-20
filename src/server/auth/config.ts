@@ -8,6 +8,7 @@ import { edgeAuthConfig } from "./edge-config";
 import { buildTenantSessionUser, findTenantBySlug, tenantAcceptsLogin } from "./session-user";
 import { verifyOtp } from "./otp-store";
 import { consumeImpersonationToken } from "./impersonation-store";
+import { clockIn } from "@/server/hr";
 import type { PlatformSessionUser, SessionUser } from "./types";
 
 // NextAuth's `authorize()` return type is nominally `User`, but our sessions carry a much richer,
@@ -95,6 +96,10 @@ export const authConfig = {
           const pinHash = m.user.staffPin?.pinHash;
           if (!pinHash || !m.user.isActive) continue;
           if (await verifyPin(pin, pinHash)) {
+            // Reuses the PIN pad as the attendance clock, per the Phase 4 brief — no separate
+            // kiosk flow. clockIn() is a no-op if this person already has an open record for this
+            // branch, so re-entering a PIN mid-shift doesn't fragment their attendance.
+            await clockIn(tenant.id, branchId, m.userId);
             const sessionUser = await buildTenantSessionUser(tenant.id, m.userId, branchId);
             return sessionUser as unknown as LooseUser;
           }

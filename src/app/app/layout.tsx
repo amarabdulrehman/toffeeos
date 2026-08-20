@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/server/auth";
 import { BRAND_NAME } from "@/config/brand";
 import { SignOutButton } from "@/components/sign-out-button";
+import { ClockOutButton } from "@/components/clock-out-button";
 
 const NAV = [
   { href: "/app/dashboard", label: "Dashboard" },
@@ -16,6 +17,7 @@ const NAV = [
   { href: "/app/whatsapp", label: "WhatsApp" },
   { href: "/app/online-ordering", label: "Online Ordering" },
   { href: "/app/reports", label: "Reports" },
+  { href: "/app/hr", label: "HR & Payroll" },
   { href: "/app/sync-conflicts", label: "Sync Conflicts" },
 ];
 
@@ -48,6 +50,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <div className="font-medium">{user.name}</div>
             <div className="text-muted-foreground">{user.roleKey.replace("_", " ")}</div>
           </div>
+          <ClockOutButton />
           <SignOutButton />
         </div>
       </aside>

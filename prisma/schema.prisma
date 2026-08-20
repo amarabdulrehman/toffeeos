@@ -249,8 +249,20 @@ model Membership {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
+  // Pay profile (Phase 4 Payroll & HR) — lives on the per-branch employment record, not User,
+  // since pay rate is a property of "this person's job at this branch," not the person globally.
+  // Null payType means "not set up for payroll yet" — runPayroll skips those rather than guessing.
+  payType            PayType?
+  hourlyRatePaisa    Int?
+  monthlySalaryPaisa Int?
+
   @@unique([userId, branchId])
   @@index([tenantId, branchId])
+}
+
+enum PayType {
+  HOURLY
+  MONTHLY
 }
 
 model Invite {
@@ -953,4 +965,49 @@ model OrderEvent {
 
   @@index([orderId, createdAt])
   @@index([tenantId])
+}
+
+// ============================================================================
+// Payroll & HR (Phase 4). Payroll numbers are computed live from Shift/AttendanceRecord + a
+// Membership's pay profile each time runPayroll() is called, not persisted as a "payroll run" —
+// there's no history/audit trail of past runs, only of the attendance they're computed from. A
+// deliberate scope decision for this phase, not an oversight.
+// ============================================================================
+
+/// A planned shift on the roster — separate from AttendanceRecord (what actually happened).
+model Shift {
+  id          String   @id @default(uuid())
+  tenantId    String
+  branchId    String
+  userId      String
+  startsAt    DateTime
+  endsAt      DateTime
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, branchId, startsAt])
+  @@index([tenantId, userId])
+}
+
+enum AttendanceSource {
+  PIN
+  MANUAL
+}
+
+/// clockInAt/clockOutAt, not a single timestamp + type, so "still clocked in" is just
+/// clockOutAt = null rather than needing to pair up separate IN/OUT rows.
+model AttendanceRecord {
+  id          String           @id @default(uuid())
+  tenantId    String
+  branchId    String
+  userId      String
+  clockInAt   DateTime
+  clockOutAt  DateTime?
+  source      AttendanceSource @default(PIN)
+  editedById  String? // set only when a manager corrected this record after the fact
+  editNote    String?
+  createdAt   DateTime         @default(now())
+
+  @@index([tenantId, branchId, clockInAt])
+  @@index([tenantId, userId])
 }

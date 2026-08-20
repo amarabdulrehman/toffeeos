@@ -90,6 +90,8 @@ const TENANT_SCOPED_MODELS = new Set([
   "WhatsAppRecipient",
   "WhatsAppTemplate",
   "WhatsAppMessageLog",
+  "Shift",
+  "AttendanceRecord",
 ]);
 
 const WHERE_OPERATIONS = new Set([
