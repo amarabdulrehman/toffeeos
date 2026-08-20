@@ -2,6 +2,7 @@
 
 import { MapPin, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatPkr } from "@/lib/money";
 import { CustomerPicker } from "./customer-picker";
@@ -20,6 +21,8 @@ export function CartPanel({
   onOrderTypeChange,
   tableLabel,
   onOpenTables,
+  deliveryAddress,
+  onDeliveryAddressChange,
   customer,
   onSelectCustomer,
   onClearCustomer,
@@ -40,6 +43,8 @@ export function CartPanel({
   onOrderTypeChange: (t: OrderType) => void;
   tableLabel: string | undefined;
   onOpenTables: () => void;
+  deliveryAddress: string;
+  onDeliveryAddressChange: (v: string) => void;
   customer: CustomerDto | null;
   onSelectCustomer: (c: CustomerDto) => void;
   onClearCustomer: () => void;
@@ -80,6 +85,18 @@ export function CartPanel({
             <MapPin className="size-4 text-muted-foreground" />
             {tableLabel ? <span className="font-medium">Table {tableLabel}</span> : <span className="text-muted-foreground">Select a table</span>}
           </button>
+        )}
+
+        {orderType === "DELIVERY" && (
+          <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-1">
+            <MapPin className="size-4 shrink-0 text-muted-foreground" />
+            <Input
+              value={deliveryAddress}
+              onChange={(e) => onDeliveryAddressChange(e.target.value)}
+              placeholder="Delivery address"
+              className="h-8 border-0 px-0 shadow-none focus-visible:ring-0"
+            />
+          </div>
         )}
 
         <CustomerPicker customer={customer} onSelect={onSelectCustomer} onClear={onClearCustomer} />

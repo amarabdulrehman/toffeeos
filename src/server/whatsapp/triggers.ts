@@ -13,6 +13,10 @@ async function recipientsFor(tenantId: string, branchId: string) {
   return db.whatsAppRecipient.findMany({ where: { branchId, isActive: true } });
 }
 
+function roundQty(qty: number): number {
+  return Math.round(qty * 100) / 100;
+}
+
 /** Fired after a stock-mutating transaction commits (GRN, adjustment, transfer, recipe
  * consumption) when applyStockDelta reports a newly-opened LowStockAlert — never called from
  * inside that transaction, since a WhatsApp send is not something a stock write should roll back
@@ -27,7 +31,13 @@ export async function notifyLowStock(tenantId: string, alert: NewLowStockAlert) 
         branchId: alert.branchId,
         toPhone: r.phone,
         templateKey: "low_stock_alert",
-        params: [alert.itemName, `${alert.quantityAtTrigger} ${alert.unitOfMeasure}`, `${alert.thresholdAtTrigger} ${alert.unitOfMeasure}`],
+        params: [
+          alert.itemName,
+          // Stock quantities are floating point (fractional kg/L), so raw arithmetic can surface
+          // binary rounding noise (e.g. 0.299999999999997) straight into a customer-facing message.
+          `${roundQty(alert.quantityAtTrigger)} ${alert.unitOfMeasure}`,
+          `${roundQty(alert.thresholdAtTrigger)} ${alert.unitOfMeasure}`,
+        ],
       })
     )
   );

@@ -14,6 +14,7 @@ import { OfflineBanner } from "./offline-banner";
 import { useSync } from "@/lib/offline/use-sync";
 import { cacheMenu, cacheOpenOrders, getCachedMenu, getCachedOpenOrders, listQueue, type CreateOrderAction } from "@/lib/offline/db";
 import { queueCreateOrder, queuePayOrder, queueVoidOrder } from "@/lib/offline/queue";
+import { newOrderId } from "@/lib/ids";
 import type {
   CartLine,
   CustomerDto,
@@ -51,6 +52,7 @@ export function PosTerminal({
   const [lines, setLines] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<OrderType>("DINE_IN");
   const [table, setTable] = useState<RestaurantTableDto | null>(null);
+  const [deliveryAddress, setDeliveryAddress] = useState("");
   const [customer, setCustomer] = useState<CustomerDto | null>(null);
   const [discount, setDiscount] = useState<Discount | null>(null);
   const [tablesOpen, setTablesOpen] = useState(false);
@@ -190,6 +192,7 @@ export function PosTerminal({
     setLines([]);
     setTotals(null);
     setTable(null);
+    setDeliveryAddress("");
     setCustomer(null);
     setDiscount(null);
     idempotencyKey.current = crypto.randomUUID();
@@ -201,8 +204,17 @@ export function PosTerminal({
       return;
     }
     setSending(true);
+    // Minted once per submission and reused by both paths below (including queueOffline) —
+    // critical if the online attempt actually reaches and is applied by the server but its
+    // response is lost (a dropped connection mid-response, not "never sent"): falling back to the
+    // offline queue with a *different* id/idempotencyKey would create a second, genuinely
+    // duplicate order once the queue replays, since the server has no way to recognize the retry
+    // as the same order.
+    const orderId = newOrderId();
+    const key = idempotencyKey.current;
     try {
       const body = {
+        id: orderId,
         type: orderType,
         tableId: orderType === "DINE_IN" ? table?.id : undefined,
         customerId: customer?.id,
@@ -213,7 +225,8 @@ export function PosTerminal({
           discount: l.discount,
         })),
         orderDiscount: discount ?? undefined,
-        idempotencyKey: idempotencyKey.current,
+        idempotencyKey: key,
+        deliveryAddress: orderType === "DELIVERY" ? deliveryAddress.trim() || undefined : undefined,
       };
 
       if (!sync.isOnline) {
@@ -246,6 +259,8 @@ export function PosTerminal({
 
     async function queueOffline() {
       const localOrder = await queueCreateOrder({
+        orderId,
+        idempotencyKey: key,
         type: orderType,
         tableId: orderType === "DINE_IN" ? table?.id : undefined,
         customer,
@@ -253,6 +268,7 @@ export function PosTerminal({
         orderDiscount: discount ?? undefined,
         totalPaisa: totals?.totalPaisa ?? lines.reduce((a, l) => a + l.unitPricePaisa * l.quantity, 0),
         localOrderNumber: localOrderCounter.current--,
+        deliveryAddress: orderType === "DELIVERY" ? deliveryAddress.trim() || undefined : undefined,
       });
       toast.success(`Order queued offline — will sync when the connection returns.`);
       resetCart();
@@ -376,6 +392,8 @@ export function PosTerminal({
             onOrderTypeChange={setOrderType}
             tableLabel={table?.label}
             onOpenTables={() => setTablesOpen(true)}
+            deliveryAddress={deliveryAddress}
+            onDeliveryAddressChange={setDeliveryAddress}
             customer={customer}
             onSelectCustomer={setCustomer}
             onClearCustomer={() => setCustomer(null)}

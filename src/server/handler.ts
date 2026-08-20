@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { ZodType } from "zod";
 import { auth } from "@/server/auth";
 import { tenantDb } from "@/server/db";
-import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import type { TenantSessionUser } from "@/server/auth/types";
 
 /**
@@ -105,6 +105,13 @@ export function defineHandler<TSchema extends ZodType = ZodType<undefined>>(
     } catch (err) {
       if (err instanceof HttpError) {
         return NextResponse.json({ error: err.message, issues: err.issues }, { status: err.status });
+      }
+      // A row a handler expected to exist (findUniqueOrThrow/update/delete on a bare `where: { id }`)
+      // wasn't visible to this session — either it genuinely doesn't exist, or (just as often, given
+      // the RLS-bound tenant scoping) it belongs to a different tenant/branch and was correctly
+      // filtered out at the database layer. Either way that's a 404 to the caller, not a crash.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
       console.error(err);
       return NextResponse.json({ error: "Internal error" }, { status: 500 });

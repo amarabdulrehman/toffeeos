@@ -23,6 +23,7 @@ const createOrderSchema = z.object({
   lines: z.array(lineSchema).min(1),
   orderDiscount: discountSchema.optional(),
   idempotencyKey: z.string().min(1),
+  deliveryAddress: z.string().max(400).optional(),
 });
 
 // GET /api/orders — the Order Queue: every open-ish order for this branch, most recent first.

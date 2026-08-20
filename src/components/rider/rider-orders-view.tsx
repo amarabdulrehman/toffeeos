@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Camera, PackageCheck, Truck } from "lucide-react";
+import { Camera, MapPin, PackageCheck, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatPkr } from "@/lib/money";
@@ -12,6 +12,7 @@ interface RiderOrder {
   orderNumber: number;
   totalPaisa: number;
   pickedUpAt: string | null;
+  deliveryAddress: string | null;
   lines: { id: string; nameSnapshot: string; quantity: number }[];
   customer: { name: string | null; phone: string | null } | null;
 }
@@ -122,6 +123,12 @@ function OrderCard({ order, onChanged }: { order: RiderOrder; onChanged: () => v
         <span className="font-semibold">{formatPkr(order.totalPaisa)}</span>
       </div>
       {order.customer?.name && <div className="text-sm text-muted-foreground">{order.customer.name}</div>}
+      {order.deliveryAddress && (
+        <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-muted/50 p-2 text-sm font-medium">
+          <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          {order.deliveryAddress}
+        </div>
+      )}
       <div className="mt-2 space-y-0.5 text-sm">
         {order.lines.map((l) => (
           <div key={l.id}>

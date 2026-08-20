@@ -28,6 +28,7 @@ export interface CreateOrderPayload {
   }[];
   orderDiscount?: Discount;
   idempotencyKey: string;
+  deliveryAddress?: string;
 }
 
 export interface CreateOrderAction extends QueuedActionBase {

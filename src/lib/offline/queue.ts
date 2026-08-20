@@ -73,9 +73,19 @@ export async function queueCreateOrder(args: {
   orderDiscount?: { type: "PERCENT" | "FIXED"; value: number };
   totalPaisa: number;
   localOrderNumber: number;
+  /** Reuse the same order id / idempotencyKey an earlier online attempt for this exact submission
+   * already used, rather than minting fresh ones — critical when this is a *fallback* after a
+   * request that may have actually reached and been applied by the server before the response was
+   * lost (a dropped connection mid-response, not "never sent"). Without this, that fallback would
+   * create a second, genuinely duplicate order once the queue replays, since the server has no way
+   * to recognize a different idempotencyKey as "the same order." Omit only when there was no prior
+   * online attempt (the device was already offline before Send to Kitchen was even tapped). */
+  orderId?: string;
+  idempotencyKey?: string;
+  deliveryAddress?: string;
 }): Promise<OrderDto> {
-  const orderId = newOrderId();
-  const actionId = crypto.randomUUID();
+  const orderId = args.orderId ?? newOrderId();
+  const actionId = args.idempotencyKey ?? crypto.randomUUID();
   const payload: CreateOrderPayload = {
     id: orderId,
     type: args.type,
@@ -89,6 +99,7 @@ export async function queueCreateOrder(args: {
     })),
     orderDiscount: args.orderDiscount,
     idempotencyKey: actionId,
+    deliveryAddress: args.deliveryAddress,
   };
   const localOrder = buildLocalOrder({
     orderId,

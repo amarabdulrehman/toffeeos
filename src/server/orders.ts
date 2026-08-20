@@ -560,6 +560,16 @@ export async function takePayment(
 
   const totals = finalizeOrder(pricingLines, orderDiscount, taxRules, settings, input.tenders);
 
+  // The tender-covers-the-total check only ever lived in the client (PaymentDialog disables
+  // Confirm while remainingPaisa > 0) — nothing here enforced it, so a direct API call (or a
+  // future client that doesn't replicate that check) could mark an order PAID, deduct its
+  // inventory, and count it as full revenue in reports while under-collecting the difference.
+  // Tendering more than the total (cash change due) is fine; tendering less is not.
+  const tenderedPaisa = totals.tenders.reduce((a, t) => a + t.amountPaisa, 0);
+  if (tenderedPaisa < totals.totalPaisa) {
+    throw new HttpError(400, `Tendered amount (${tenderedPaisa}) is less than the order total (${totals.totalPaisa}).`);
+  }
+
   const result = await withActionIdempotency(
     tenantId,
     actionId,
