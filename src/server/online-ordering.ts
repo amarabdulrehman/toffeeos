@@ -2,7 +2,7 @@ import "server-only";
 import { tenantDb } from "@/server/db";
 import { findTenantBySlug, tenantAcceptsLogin } from "@/server/auth/session-user";
 import { findOrCreateCustomer } from "@/server/crm";
-import { createOrder, sendToKitchen, type CreateOrderLineInput } from "@/server/orders";
+import { createOrder, sendToKitchen, findOpenOrderForTable, addLinesToOrder, type CreateOrderLineInput } from "@/server/orders";
 import { HttpError } from "@/server/handler";
 
 /** Resolves a public storefront by slug — 404s (returns null) rather than leaking whether a slug
@@ -110,6 +110,60 @@ export async function placeOnlineOrder(tenantId: string, input: PlaceOnlineOrder
 
   await sendToKitchen(tenantId, input.branchId, order.id, null);
 
+  return order;
+}
+
+/** Resolves a scanned table QR — 404s (returns null) if the table doesn't belong to this tenant,
+ * so a stale/tampered tableId in the URL can't leak or target another tenant's table. */
+export async function getTableInfo(tenantId: string, tableId: string) {
+  const db = tenantDb(tenantId);
+  const table = await db.restaurantTable.findUnique({ where: { id: tableId }, include: { floor: true } });
+  if (!table) return null;
+  return { id: table.id, label: table.label, branchId: table.branchId, floorName: table.floor.name };
+}
+
+export interface PlaceQrOrderInput {
+  tableId: string;
+  customerName?: string;
+  customerPhone?: string;
+  lines: CreateOrderLineInput[];
+  idempotencyKey: string;
+}
+
+/**
+ * The QR table-ordering flow: reuses the same createOrder/addLinesToOrder/sendToKitchen machinery
+ * as everything else (per the brief — no separate ordering engine), just deciding which of the two
+ * to call. A guest scanning a table that already has an open order (a waiter started one, or an
+ * earlier scan from the same table) gets their items appended to it rather than starting a second,
+ * competing order — that's exactly the scenario the offline-sync module's TABLE_DOUBLE_ORDER
+ * conflict guards against, so checking first here is what keeps this path from ever tripping it.
+ * Unlike online pickup/delivery, name/phone are optional — a dine-in guest is already physically
+ * at the table.
+ */
+export async function placeQrOrder(tenantId: string, input: PlaceQrOrderInput) {
+  const db = tenantDb(tenantId);
+  const table = await db.restaurantTable.findUniqueOrThrow({ where: { id: input.tableId } });
+
+  let customerId: string | undefined;
+  if (input.customerPhone?.trim()) {
+    const customer = await findOrCreateCustomer(tenantId, input.customerPhone, input.customerName);
+    customerId = customer.id;
+  }
+
+  const existing = await findOpenOrderForTable(tenantId, input.tableId);
+  if (existing) {
+    return addLinesToOrder(tenantId, table.branchId, existing.id, input.lines, null);
+  }
+
+  const order = await createOrder(tenantId, table.branchId, null, {
+    type: "DINE_IN",
+    tableId: input.tableId,
+    customerId,
+    lines: input.lines,
+    idempotencyKey: input.idempotencyKey,
+    source: "QR",
+  });
+  await sendToKitchen(tenantId, table.branchId, order.id, null);
   return order;
 }
 

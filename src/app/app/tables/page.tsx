@@ -15,6 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { generateQrDataUrl } from "@/lib/qr";
 
 interface TableRow {
   id: string;
@@ -42,6 +43,8 @@ export default function TablesSettingsPage() {
   const [addTableFor, setAddTableFor] = useState<string | null>(null);
   const [tableLabel, setTableLabel] = useState("");
   const [tableSeats, setTableSeats] = useState("4");
+  const [tenantSlug, setTenantSlug] = useState("");
+  const [qrTable, setQrTable] = useState<TableRow | null>(null);
 
   function load() {
     fetch("/api/tables")
@@ -50,6 +53,11 @@ export default function TablesSettingsPage() {
   }
 
   useEffect(load, []);
+  useEffect(() => {
+    fetch("/api/tenant-branding")
+      .then((r) => r.json())
+      .then((d) => setTenantSlug(d.slug ?? ""));
+  }, []);
 
   async function createFloor() {
     if (!newFloorName.trim()) return;
@@ -161,6 +169,9 @@ export default function TablesSettingsPage() {
                         <div className="text-xs text-muted-foreground">{t.seats} seats</div>
                       </div>
                       <Badge variant={STATUS_VARIANT[t.status]}>{t.status}</Badge>
+                      <Button size="sm" variant="outline" onClick={() => setQrTable(t)}>
+                        QR code
+                      </Button>
                       <button
                         onClick={() => deleteTable(t.id)}
                         className="text-muted-foreground hover:text-destructive"
@@ -203,6 +214,43 @@ export default function TablesSettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <QrCodeDialog table={qrTable} tenantSlug={tenantSlug} onClose={() => setQrTable(null)} />
     </div>
+  );
+}
+
+function QrCodeDialog({ table, tenantSlug, onClose }: { table: TableRow | null; tenantSlug: string; onClose: () => void }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const orderUrl =
+    table && typeof window !== "undefined" ? `${window.location.origin}/order/${tenantSlug}?tableId=${table.id}` : "";
+
+  useEffect(() => {
+    if (!table || !orderUrl) return;
+    generateQrDataUrl(orderUrl).then(setDataUrl);
+  }, [table, orderUrl]);
+
+  return (
+    <Dialog open={!!table} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>QR code — Table {table?.label}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col items-center gap-3">
+          {dataUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- a generated data: URL, not a remote image
+            <img src={dataUrl} alt={`QR code for table ${table?.label}`} className="size-64" />
+          ) : (
+            <div className="flex size-64 items-center justify-center text-sm text-muted-foreground">Generating…</div>
+          )}
+          <p className="break-all text-center text-xs text-muted-foreground">{orderUrl}</p>
+          {dataUrl && (
+            <a href={dataUrl} download={`table-${table?.label}-qr.png`}>
+              <Button variant="outline">Download PNG</Button>
+            </a>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

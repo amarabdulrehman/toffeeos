@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useRef, useState, Suspense } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -50,11 +50,21 @@ interface CartLine {
   quantity: number;
 }
 
-export default function OnlineOrderPage() {
+interface TableInfo {
+  id: string;
+  label: string;
+  branchId: string;
+  floorName: string;
+}
+
+function OnlineOrderContent() {
   const params = useParams<{ tenantSlug: string }>();
+  const searchParams = useSearchParams();
+  const qrTableId = searchParams.get("tableId");
   const [storefront, setStorefront] = useState<Storefront | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [branchId, setBranchId] = useState("");
+  const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [lines, setLines] = useState<CartLine[]>([]);
   const [fulfillment, setFulfillment] = useState<"PICKUP" | "DELIVERY">("PICKUP");
@@ -65,6 +75,7 @@ export default function OnlineOrderPage() {
   const [confirmation, setConfirmation] = useState<{ orderNumber: number; totalPaisa: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const idempotencyKey = useRef(crypto.randomUUID());
+  const isQrOrder = !!qrTableId;
 
   useEffect(() => {
     fetch(`/api/online-order/${params.tenantSlug}`)
@@ -74,10 +85,27 @@ export default function OnlineOrderPage() {
       })
       .then((d: Storefront) => {
         setStorefront(d);
-        if (d.branches.length > 0) setBranchId(d.branches[0].id);
+        if (!qrTableId && d.branches.length > 0) setBranchId(d.branches[0].id);
       })
       .catch(() => setNotFound(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.tenantSlug]);
+
+  // QR mode: resolve the scanned table and lock the branch to wherever that table actually is —
+  // a guest scanning a physical table shouldn't be choosing a branch at all.
+  useEffect(() => {
+    if (!qrTableId) return;
+    fetch(`/api/online-order/${params.tenantSlug}/table/${qrTableId}`)
+      .then((r) => {
+        if (!r.ok) throw new Error("not found");
+        return r.json();
+      })
+      .then((d: TableInfo) => {
+        setTableInfo(d);
+        setBranchId(d.branchId);
+      })
+      .catch(() => setNotFound(true));
+  }, [qrTableId, params.tenantSlug]);
 
   useEffect(() => {
     if (!branchId) return;
@@ -104,23 +132,36 @@ export default function OnlineOrderPage() {
   async function placeOrder() {
     setError(null);
     if (lines.length === 0) return setError("Add at least one item.");
-    if (!name.trim() || !phone.trim()) return setError("Name and phone are required.");
-    if (fulfillment === "DELIVERY" && !address.trim()) return setError("A delivery address is required.");
+    if (!isQrOrder) {
+      if (!name.trim() || !phone.trim()) return setError("Name and phone are required.");
+      if (fulfillment === "DELIVERY" && !address.trim()) return setError("A delivery address is required.");
+    }
 
     setPlacing(true);
     try {
-      const res = await fetch(`/api/online-order/${params.tenantSlug}/checkout`, {
+      const url = isQrOrder ? `/api/online-order/${params.tenantSlug}/qr-checkout` : `/api/online-order/${params.tenantSlug}/checkout`;
+      const body = isQrOrder
+        ? {
+            tableId: qrTableId,
+            customerName: name.trim() || undefined,
+            customerPhone: phone.trim() || undefined,
+            lines: lines.map((l) => ({ menuItemId: l.menuItemId, variantId: l.variantId, quantity: l.quantity })),
+            idempotencyKey: idempotencyKey.current,
+          }
+        : {
+            branchId,
+            customerName: name,
+            customerPhone: phone,
+            fulfillment,
+            deliveryAddress: fulfillment === "DELIVERY" ? address : undefined,
+            lines: lines.map((l) => ({ menuItemId: l.menuItemId, variantId: l.variantId, quantity: l.quantity })),
+            idempotencyKey: idempotencyKey.current,
+          };
+
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          branchId,
-          customerName: name,
-          customerPhone: phone,
-          fulfillment,
-          deliveryAddress: fulfillment === "DELIVERY" ? address : undefined,
-          lines: lines.map((l) => ({ menuItemId: l.menuItemId, variantId: l.variantId, quantity: l.quantity })),
-          idempotencyKey: idempotencyKey.current,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -152,8 +193,13 @@ export default function OnlineOrderPage() {
             <div className="text-4xl">✓</div>
             <h1 className="text-xl font-bold">Order #{confirmation.orderNumber} placed!</h1>
             <p className="text-muted-foreground">
-              {fulfillment === "DELIVERY" ? "We'll deliver it to you soon." : "We'll have it ready for pickup soon."} Pay{" "}
-              {fulfillment === "DELIVERY" ? "on delivery" : "at pickup"} — total {formatPkr(confirmation.totalPaisa)}.
+              {isQrOrder
+                ? `We'll bring it out to table ${tableInfo?.label} shortly.`
+                : fulfillment === "DELIVERY"
+                  ? "We'll deliver it to you soon."
+                  : "We'll have it ready for pickup soon."}{" "}
+              Pay {isQrOrder ? "at the table" : fulfillment === "DELIVERY" ? "on delivery" : "at pickup"} — total{" "}
+              {formatPkr(confirmation.totalPaisa)}.
             </p>
             <Button className="w-full" onClick={() => setConfirmation(null)}>
               Order again
@@ -170,9 +216,11 @@ export default function OnlineOrderPage() {
         {storefront.logoUrl && <img src={storefront.logoUrl} alt="" className="size-10 rounded-full object-cover" />}
         <div>
           <h1 className="text-lg font-bold">{storefront.name}</h1>
-          <p className="text-xs text-muted-foreground">Order online — pay at pickup or on delivery</p>
+          <p className="text-xs text-muted-foreground">
+            {isQrOrder ? `Table ${tableInfo?.label ?? "…"} — pay at the table` : "Order online — pay at pickup or on delivery"}
+          </p>
         </div>
-        {storefront.branches.length > 1 && (
+        {!isQrOrder && storefront.branches.length > 1 && (
           <Select value={branchId} onValueChange={(v) => v && setBranchId(v)}>
             <SelectTrigger className="ml-auto w-48">
               <SelectValue>{(v: string) => storefront.branches.find((b) => b.id === v)?.name ?? v}</SelectValue>
@@ -254,28 +302,42 @@ export default function OnlineOrderPage() {
             )}
 
             <div className="space-y-2 border-t pt-4">
-              <Select value={fulfillment} onValueChange={(v) => v && setFulfillment(v as "PICKUP" | "DELIVERY")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="PICKUP">Pickup</SelectItem>
-                  <SelectItem value="DELIVERY">Delivery</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
-              <Input placeholder="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              {fulfillment === "DELIVERY" && (
+              {!isQrOrder && (
+                <Select value={fulfillment} onValueChange={(v) => v && setFulfillment(v as "PICKUP" | "DELIVERY")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PICKUP">Pickup</SelectItem>
+                    <SelectItem value="DELIVERY">Delivery</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+              <Input placeholder={isQrOrder ? "Your name (optional)" : "Your name"} value={name} onChange={(e) => setName(e.target.value)} />
+              <Input placeholder={isQrOrder ? "Phone (optional)" : "Phone number"} value={phone} onChange={(e) => setPhone(e.target.value)} />
+              {!isQrOrder && fulfillment === "DELIVERY" && (
                 <Textarea placeholder="Delivery address" value={address} onChange={(e) => setAddress(e.target.value)} rows={2} />
               )}
               {error && <p className="text-sm text-destructive">{error}</p>}
               <Button className="w-full" style={{ backgroundColor: brandColor }} disabled={placing} onClick={placeOrder}>
-                {placing ? "Placing order…" : `Place order — pay at ${fulfillment === "DELIVERY" ? "delivery" : "pickup"}`}
+                {placing
+                  ? "Placing order…"
+                  : isQrOrder
+                    ? "Send to kitchen — pay at the table"
+                    : `Place order — pay at ${fulfillment === "DELIVERY" ? "delivery" : "pickup"}`}
               </Button>
             </div>
           </CardContent>
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function OnlineOrderPage() {
+  return (
+    <Suspense>
+      <OnlineOrderContent />
+    </Suspense>
   );
 }

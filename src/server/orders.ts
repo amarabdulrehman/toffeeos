@@ -361,6 +361,110 @@ export async function createOrder(
   throw new Error("Could not allocate an order number — please retry.");
 }
 
+/** The table's currently-open order, if any — "open" meaning not yet PAID/VOIDED/CANCELLED/
+ * DELIVERED, same terminal-status definition used everywhere else. QR table ordering
+ * (src/server/online-ordering.ts) uses this to decide whether a guest's order should attach to
+ * what's already there or start a fresh one, instead of ever creating a second competing order
+ * for an occupied table. */
+export async function findOpenOrderForTable(tenantId: string, tableId: string) {
+  const db = tenantDb(tenantId);
+  return db.order.findFirst({
+    where: { tableId, status: { notIn: [...TERMINAL_ORDER_STATUSES] } },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+/**
+ * Appends lines to an order that's already been punched — the QR-ordering case of a guest adding
+ * more items to a table that already has an open order. Recomputes provisional totals from every
+ * non-voided line (existing + new), same pricing engine as creation. If the kitchen had already
+ * marked the order READY, this bumps it back to SENT_TO_KITCHEN — there's now unprepared food
+ * against it — rather than leaving new items silently invisible on a "ready" ticket.
+ */
+export async function addLinesToOrder(
+  tenantId: string,
+  branchId: string,
+  orderId: string,
+  newLines: CreateOrderLineInput[],
+  actorId: string | null
+) {
+  const db = tenantDb(tenantId);
+  const order = await db.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true, discounts: true } });
+  if ((TERMINAL_ORDER_STATUSES as readonly string[]).includes(order.status)) {
+    throw new HttpError(409, `This order is already ${order.status.toLowerCase()} and can't take more items.`);
+  }
+
+  const resolvedNewLines = await resolveLines(tenantId, branchId, newLines);
+  const { settings, taxRules } = await getBranchPricingContext(tenantId, branchId, order.type);
+  const orderDiscount: DiscountInput | undefined = order.discounts[0]
+    ? { type: order.discounts[0].type, value: order.discounts[0].value }
+    : undefined;
+
+  const allPricingLines: PricingLineInput[] = [
+    ...order.lines.filter((l) => !l.isVoided).map((l) => ({ id: l.id, unitPricePaisa: l.unitPricePaisa, quantity: l.quantity })),
+    ...toPricingLines(resolvedNewLines),
+  ];
+  const totals = computeProvisionalTotal(allPricingLines, orderDiscount, taxRules, settings);
+
+  return runInTenantTransaction(tenantId, async (tx) => {
+    for (const line of resolvedNewLines) {
+      await tx.orderLine.create({
+        data: {
+          id: line.id,
+          tenantId,
+          orderId,
+          menuItemId: line.menuItemId,
+          variantId: line.variantId,
+          nameSnapshot: line.nameSnapshot,
+          unitPricePaisa: line.unitPricePaisa,
+          quantity: line.quantity,
+          discountType: line.discount?.type,
+          discountValue: line.discount?.value,
+          lineTotalPaisa: line.unitPricePaisa * line.quantity,
+          notes: line.notes,
+        },
+      });
+      if (line.modifiers.length > 0) {
+        await tx.orderLineModifier.createMany({
+          data: line.modifiers.map((m) => ({
+            id: m.id,
+            tenantId,
+            orderLineId: line.id,
+            modifierId: m.modifierId,
+            nameSnapshot: m.nameSnapshot,
+            priceDeltaPaisa: m.priceDeltaPaisa,
+          })),
+        });
+      }
+    }
+
+    const wasReady = order.status === "READY";
+    const updated = await tx.order.update({
+      where: { id: orderId },
+      data: {
+        subtotalPaisa: totals.subtotalPaisa,
+        discountedSubtotalPaisa: totals.discountedSubtotalPaisa,
+        serviceChargePaisa: totals.serviceChargePaisa,
+        taxPaisa: totals.taxPaisa,
+        totalPaisa: totals.totalPaisa,
+        version: { increment: 1 },
+        ...(wasReady ? { status: "SENT_TO_KITCHEN" as const, sentToKitchenAt: new Date() } : {}),
+      },
+    });
+
+    await tx.orderEvent.create({
+      data: { tenantId, orderId, type: "PUNCHED", actorId, payload: { appended: true, lineCount: resolvedNewLines.length } },
+    });
+
+    return updated;
+  }).then(async (updated) => {
+    if (order.status === "SENT_TO_KITCHEN" || order.status === "READY") {
+      await publish(tenantId, branchId, "kds", "order_sent_to_kitchen", { orderId });
+    }
+    return updated;
+  });
+}
+
 export async function sendToKitchen(
   tenantId: string,
   branchId: string,
