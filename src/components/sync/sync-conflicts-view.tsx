@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,11 +70,19 @@ export function SyncConflictsView() {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-bold">Sync Conflicts</h1>
-      <p className="mb-6 text-muted-foreground">
-        The offline sync engine flags these instead of guessing — two devices touched the same order or table while
-        offline, or a queued action landed on an order that had already changed. Look at both sides and decide.
-      </p>
+      <div className="mb-6 flex items-center gap-3">
+        <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <RefreshCw className="size-5" />
+        </span>
+        <div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight">Sync Conflicts</h1>
+          <p className="text-sm text-muted-foreground">
+            The offline sync engine flags these instead of guessing — two devices touched the same order or table
+            while offline, or a queued action landed on an order that had already changed. Look at both sides and
+            decide.
+          </p>
+        </div>
+      </div>
 
       <div className="space-y-4">
         {open.length === 0 && (
@@ -127,7 +136,7 @@ export function SyncConflictsView() {
                 <CardContent className="py-3 text-sm">
                   <div className="flex items-center justify-between">
                     <span>{KIND_LABEL[c.kind]}</span>
-                    <Badge variant="secondary">RESOLVED</Badge>
+                    <Badge variant="success">RESOLVED</Badge>
                   </div>
                   {c.resolutionNote && <div className="mt-1 text-xs text-muted-foreground">{c.resolutionNote}</div>}
                 </CardContent>

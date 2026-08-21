@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatPkr } from "@/lib/money";
 
 interface PayProfile {
@@ -151,6 +152,7 @@ export function HrView() {
 function RosterTab({ qs }: { qs: string }) {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [staff, setStaff] = useState<PayProfile[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [userId, setUserId] = useState("");
@@ -158,17 +160,20 @@ function RosterTab({ qs }: { qs: string }) {
   const [endsAt, setEndsAt] = useState("");
 
   const load = useCallback(async () => {
+    setLoading(true);
     const [shiftsRes, staffRes] = await Promise.all([
       safeGet<{ shifts: Shift[] }>(`/api/hr/shifts?${qs}`),
       safeGet<{ profiles: PayProfile[] }>("/api/hr/pay-profiles"),
     ]);
     if (shiftsRes.error || staffRes.error) {
       setError(shiftsRes.error ?? staffRes.error);
+      setLoading(false);
       return;
     }
     setError(null);
     setShifts(shiftsRes.data?.shifts ?? []);
     setStaff(staffRes.data?.profiles ?? []);
+    setLoading(false);
   }, [qs]);
 
   useEffect(() => {
@@ -227,14 +232,23 @@ function RosterTab({ qs }: { qs: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {shifts.length === 0 && (
+              {loading &&
+                Array.from({ length: 3 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-10" /></TableCell>
+                  </TableRow>
+                ))}
+              {!loading && shifts.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
                     No shifts scheduled in this range.
                   </TableCell>
                 </TableRow>
               )}
-              {shifts.map((s) => (
+              {!loading && shifts.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.userName}</TableCell>
                   <TableCell className="text-muted-foreground">{new Date(s.startsAt).toLocaleString()}</TableCell>
@@ -292,6 +306,7 @@ function RosterTab({ qs }: { qs: string }) {
 function AttendanceTab({ qs }: { qs: string }) {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [staff, setStaff] = useState<PayProfile[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [userId, setUserId] = useState("");
@@ -300,17 +315,20 @@ function AttendanceTab({ qs }: { qs: string }) {
   const [note, setNote] = useState("");
 
   const load = useCallback(async () => {
+    setLoading(true);
     const [recordsRes, staffRes] = await Promise.all([
       safeGet<{ records: AttendanceRecord[] }>(`/api/hr/attendance?${qs}`),
       safeGet<{ profiles: PayProfile[] }>("/api/hr/pay-profiles"),
     ]);
     if (recordsRes.error || staffRes.error) {
       setError(recordsRes.error ?? staffRes.error);
+      setLoading(false);
       return;
     }
     setError(null);
     setRecords(recordsRes.data?.records ?? []);
     setStaff(staffRes.data?.profiles ?? []);
+    setLoading(false);
   }, [qs]);
 
   useEffect(() => {
@@ -369,14 +387,23 @@ function AttendanceTab({ qs }: { qs: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {records.length === 0 && (
+              {loading &&
+                Array.from({ length: 3 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                  </TableRow>
+                ))}
+              {!loading && records.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
                     No attendance in this range.
                   </TableCell>
                 </TableRow>
               )}
-              {records.map((r) => (
+              {!loading && records.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell className="font-medium">{r.userName}</TableCell>
                   <TableCell className="text-muted-foreground">{new Date(r.clockInAt).toLocaleString()}</TableCell>
@@ -572,17 +599,21 @@ function PayRatesTab() {
 
 function PayrollTab({ qs }: { qs: string }) {
   const [lines, setLines] = useState<PayrollLine[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [payslip, setPayslip] = useState<{ userName: string; membershipId: string } | null>(null);
 
   const load = useCallback(async () => {
+    setLoading(true);
     const res = await safeGet<{ lines: PayrollLine[] }>(`/api/hr/payroll?${qs}`);
     if (res.error) {
       setError(res.error);
+      setLoading(false);
       return;
     }
     setError(null);
     setLines(res.data?.lines ?? []);
+    setLoading(false);
   }, [qs]);
 
   useEffect(() => {
@@ -615,27 +646,39 @@ function PayrollTab({ qs }: { qs: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {lines.length === 0 && (
+              {loading &&
+                Array.from({ length: 3 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-10" /></TableCell>
+                    <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-16" /></TableCell>
+                    <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-10" /></TableCell>
+                  </TableRow>
+                ))}
+              {!loading && lines.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
                     No staff have a pay rate set yet — set one in the Pay rates tab.
                   </TableCell>
                 </TableRow>
               )}
-              {lines.map((l) => (
-                <TableRow key={l.membershipId}>
-                  <TableCell className="font-medium">{l.userName}</TableCell>
-                  <TableCell className="text-muted-foreground">{l.branchName}</TableCell>
-                  <TableCell className="tabular-nums">{l.payType === "HOURLY" ? `${formatPkr(l.hourlyRatePaisa ?? 0)}/hr` : `${formatPkr(l.monthlySalaryPaisa ?? 0)}/mo`}</TableCell>
-                  <TableCell className="tabular-nums">{l.hoursWorked}</TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">{formatPkr(l.grossPayPaisa)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" variant="outline" onClick={() => setPayslip({ userName: l.userName, membershipId: l.membershipId })}>
-                      View
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {!loading &&
+                lines.map((l) => (
+                  <TableRow key={l.membershipId}>
+                    <TableCell className="font-medium">{l.userName}</TableCell>
+                    <TableCell className="text-muted-foreground">{l.branchName}</TableCell>
+                    <TableCell className="tabular-nums">{l.payType === "HOURLY" ? `${formatPkr(l.hourlyRatePaisa ?? 0)}/hr` : `${formatPkr(l.monthlySalaryPaisa ?? 0)}/mo`}</TableCell>
+                    <TableCell className="tabular-nums">{l.hoursWorked}</TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">{formatPkr(l.grossPayPaisa)}</TableCell>
+                    <TableCell className="text-right">
+                      <Button size="sm" variant="outline" onClick={() => setPayslip({ userName: l.userName, membershipId: l.membershipId })}>
+                        View
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
             </TableBody>
           </Table>
         )}

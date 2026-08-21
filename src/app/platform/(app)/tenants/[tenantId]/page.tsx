@@ -13,6 +13,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatPkr } from "@/lib/money";
 import { TIER_ORDER, TIER_LABEL, type TierKey } from "@/lib/tiers";
 
+// Same 4-way mapping as the tenants list page (src/app/platform/(app)/tenants/page.tsx) — a
+// tenant's status badge should read the same on both screens. This page previously collapsed it to
+// a 2-way SUSPENDED/else check, which showed TRIALING and CANCELLED tenants as green "success"
+// (a real bug, not just a style inconsistency — CANCELLED reading as success is actively misleading).
+const STATUS_VARIANT: Record<TenantDetail["tenant"]["status"], "success" | "info" | "destructive" | "outline"> = {
+  TRIALING: "info",
+  ACTIVE: "success",
+  SUSPENDED: "destructive",
+  CANCELLED: "outline",
+};
+
 interface TenantDetail {
   tenant: {
     id: string;
@@ -138,7 +149,7 @@ export default function TenantDetailPage() {
           <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
             {tenant.slug}
             {tenant.subscription && <Badge variant="secondary">{TIER_LABEL[tenant.subscription.plan.key]}</Badge>}
-            <Badge variant={tenant.status === "SUSPENDED" ? "destructive" : "success"}>{tenant.status}</Badge>
+            <Badge variant={STATUS_VARIANT[tenant.status]}>{tenant.status}</Badge>
           </p>
         </div>
         <Button variant="warning" onClick={impersonate} disabled={impersonating}>

@@ -146,7 +146,15 @@ describe("computeProvisionalTotal", () => {
     expect(totals.serviceChargePaisa).toBe(8000);
     expect(totals.taxableBasePaisa).toBe(88_000);
     expect(totals.taxPaisa).toBe(14_080); // 16% of 88000 exactly
-    expect(totals.totalPaisa).toBe(80_000 + 8000 + 14_080);
+    // preRoundingTotalPaisa is the raw chain (80_000 + 8000 + 14_080 = 102_080, i.e. Rs 1020.80);
+    // computeProvisionalTotal rounds this per the branch's mode (step 9 of the file's documented
+    // order of operations), same as finalizeOrder — this used to be skipped here, a real bug: the
+    // amount shown/persisted at order-creation time could be a few paisa off from what
+    // finalizeOrder would require at payment time, tripping the underpayment guard on the exact
+    // amount the UI itself had just defaulted the cashier to.
+    expect(totals.preRoundingTotalPaisa).toBe(80_000 + 8000 + 14_080);
+    expect(totals.roundingAdjustmentPaisa).toBe(20); // 102_080 -> nearest rupee is 102_100
+    expect(totals.totalPaisa).toBe(102_100);
   });
 
   it("excludes service charge from the taxable base when serviceChargeTaxable is false", () => {

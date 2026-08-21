@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
+import { Truck, PackageCheck, Bike } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,13 +40,26 @@ interface Rider {
 export function DeliveryView() {
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-bold">Delivery</h1>
-      <p className="text-muted-foreground">Dispatch board and rider roster for this branch.</p>
+      <div className="flex items-center gap-3">
+        <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Truck className="size-5" />
+        </span>
+        <div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight">Delivery</h1>
+          <p className="text-sm text-muted-foreground">Dispatch board and rider roster for this branch.</p>
+        </div>
+      </div>
 
       <Tabs defaultValue="board" className="mt-6">
         <TabsList>
-          <TabsTrigger value="board">Delivery Orders</TabsTrigger>
-          <TabsTrigger value="riders">Riders</TabsTrigger>
+          <TabsTrigger value="board" className="gap-1.5">
+            <PackageCheck className="size-3.5" />
+            Delivery Orders
+          </TabsTrigger>
+          <TabsTrigger value="riders" className="gap-1.5">
+            <Bike className="size-3.5" />
+            Riders
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="board" className="mt-4">
           <DeliveryBoard />
@@ -139,10 +153,10 @@ function BoardColumn({
       <CardContent className="space-y-2">
         {orders.length === 0 && <p className="text-sm text-muted-foreground">No orders.</p>}
         {orders.map((o) => (
-          <div key={o.id} className="rounded-lg border p-3">
+          <div key={o.id} className="rounded-xl border border-border/60 bg-muted/20 p-3 shadow-xs transition-colors hover:border-border">
             <div className="flex items-center justify-between">
-              <span className="font-semibold">#{o.orderNumber}</span>
-              <span className="text-sm font-medium">{formatPkr(o.totalPaisa)}</span>
+              <span className="font-heading font-semibold">#{o.orderNumber}</span>
+              <span className="text-sm font-medium tabular-nums">{formatPkr(o.totalPaisa)}</span>
             </div>
             <div className="text-xs text-muted-foreground">
               {formatDistanceToNow(new Date(o.createdAt), { addSuffix: true })}
@@ -231,7 +245,7 @@ function RidersTab() {
 
         <div className="space-y-2">
           {riders.map((r) => (
-            <div key={r.userId} className="flex items-center justify-between rounded-lg border p-3">
+            <div key={r.userId} className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/20 p-3 shadow-xs">
               <div>
                 <div className="font-medium">
                   {r.name} {r.employeeId ? `· ${r.employeeId}` : ""}
@@ -241,7 +255,7 @@ function RidersTab() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant={r.isActive ? "secondary" : "outline"}>{r.isActive ? "Active" : "Inactive"}</Badge>
+                <Badge variant={r.isActive ? "success" : "outline"}>{r.isActive ? "Active" : "Inactive"}</Badge>
                 <Button size="sm" variant="outline" onClick={() => toggleActive(r)}>
                   {r.isActive ? "Deactivate" : "Reactivate"}
                 </Button>

@@ -132,6 +132,8 @@ export interface ProvisionalTotals {
   taxableBasePaisa: Paisa;
   taxPaisa: Paisa;
   deliveryFeePaisa: Paisa;
+  preRoundingTotalPaisa: Paisa;
+  roundingAdjustmentPaisa: Paisa;
   totalPaisa: Paisa;
   appliedRateBasisPoints: BasisPoints;
 }
@@ -155,7 +157,16 @@ export function computeProvisionalTotal(
   const appliedRateBasisPoints = resolveTaxRate(taxRules, assumedMethod);
   const taxPaisa = applyRate(taxableBasePaisa, appliedRateBasisPoints);
   const deliveryFeePaisa = settings.deliveryFeePaisa ?? 0;
-  const totalPaisa = discountedSubtotalPaisa + serviceChargePaisa + taxPaisa + deliveryFeePaisa;
+  const preRoundingTotalPaisa = discountedSubtotalPaisa + serviceChargePaisa + taxPaisa + deliveryFeePaisa;
+  // Step 9 of the file-level order-of-operations doc comment applies here too, not just in
+  // finalizeOrder — this was a real bug: the provisional total (what gets persisted as
+  // Order.totalPaisa at creation, and what the POS cart/payment dialog display and default the
+  // cash tender to) never rounded, so it could land on the wrong side of takePayment's
+  // underpayment guard by the rounding adjustment itself for the extremely common case of a
+  // single-method order (assumedMethod already matches the actual tender). Rounding here now
+  // matches finalizeOrder's authoritative rounding for that case, so the amount a cashier is
+  // shown/defaulted to is always payable.
+  const { roundedPaisa, adjustmentPaisa } = roundTotal(preRoundingTotalPaisa, settings.roundingMode);
   return {
     subtotalPaisa,
     discountedSubtotalPaisa,
@@ -163,7 +174,9 @@ export function computeProvisionalTotal(
     taxableBasePaisa,
     taxPaisa,
     deliveryFeePaisa,
-    totalPaisa,
+    preRoundingTotalPaisa,
+    roundingAdjustmentPaisa: adjustmentPaisa,
+    totalPaisa: roundedPaisa,
     appliedRateBasisPoints,
   };
 }

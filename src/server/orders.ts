@@ -279,6 +279,7 @@ export async function createOrder(
             discountedSubtotalPaisa: totals.discountedSubtotalPaisa,
             serviceChargePaisa: totals.serviceChargePaisa,
             taxPaisa: totals.taxPaisa,
+            roundingAdjustmentPaisa: totals.roundingAdjustmentPaisa,
             totalPaisa: totals.totalPaisa,
           },
         });
@@ -446,6 +447,7 @@ export async function addLinesToOrder(
         discountedSubtotalPaisa: totals.discountedSubtotalPaisa,
         serviceChargePaisa: totals.serviceChargePaisa,
         taxPaisa: totals.taxPaisa,
+        roundingAdjustmentPaisa: totals.roundingAdjustmentPaisa,
         totalPaisa: totals.totalPaisa,
         version: { increment: 1 },
         ...(wasReady ? { status: "SENT_TO_KITCHEN" as const, sentToKitchenAt: new Date() } : {}),

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Globe } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,19 @@ interface OnlineOrder {
   totalPaisa: number;
   source: string;
 }
+
+// Same status vocabulary as the KDS board / POS order queue — an online order's status badge
+// should read the same everywhere it shows up, not a flat "secondary" here specifically.
+const STATUS_VARIANT: Record<string, "default" | "success" | "destructive" | "warning" | "secondary"> = {
+  OPEN: "secondary",
+  SENT_TO_KITCHEN: "warning",
+  READY: "default",
+  SERVED: "default",
+  PAID: "success",
+  DELIVERED: "success",
+  VOIDED: "destructive",
+  CANCELLED: "destructive",
+};
 
 export function OnlineOrderingView() {
   const [branding, setBranding] = useState<Branding | null>(null);
@@ -73,10 +87,18 @@ export function OnlineOrderingView() {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-bold">Online Ordering</h1>
-      <p className="mb-6 text-muted-foreground">
-        A public ordering page — no online payment, customers pay at pickup or on delivery like a phone-in order.
-      </p>
+      <div className="mb-6 flex items-center gap-3">
+        <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Globe className="size-5" />
+        </span>
+        <div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight">Online Ordering</h1>
+          <p className="text-sm text-muted-foreground">
+            A public ordering page — no online payment, customers pay at pickup or on delivery like a phone-in
+            order.
+          </p>
+        </div>
+      </div>
 
       <Card className="mb-6">
         <CardHeader>
@@ -148,7 +170,9 @@ export function OnlineOrderingView() {
                 <TableRow key={o.id}>
                   <TableCell>#{o.orderNumber}</TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{o.status.replace(/_/g, " ")}</Badge>
+                    <Badge variant={STATUS_VARIANT[o.status] ?? "secondary"} className="capitalize">
+                      {o.status.toLowerCase().replace(/_/g, " ")}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-right">{formatPkr(o.totalPaisa)}</TableCell>
                 </TableRow>
