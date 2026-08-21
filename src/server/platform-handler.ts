@@ -15,7 +15,7 @@ export interface PlatformHandlerContext<TInput> {
   params: Record<string, string>;
 }
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(public status: number, message: string, public issues?: unknown) {
     super(message);
   }

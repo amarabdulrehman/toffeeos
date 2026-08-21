@@ -19,7 +19,13 @@ export interface SyncState {
 }
 
 export function useSync(): SyncState {
-  const [isOnline, setIsOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+  // Deliberately NOT derived from navigator.onLine here — that read has to happen client-only
+  // (see the effect below), because this Next.js SSR runtime polyfills a bare `navigator` global
+  // server-side too (no `.onLine`), so a `typeof navigator === "undefined"` guard in the
+  // initializer doesn't actually catch it: server renders as if offline, client reads the real
+  // value on first paint, and React flags a hydration mismatch. Starting both sides at the same
+  // fixed value and correcting it in an effect (after hydration) sidesteps that entirely.
+  const [isOnline, setIsOnline] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [pending, setPending] = useState(0);
   const [conflicts, setConflicts] = useState(0);
@@ -56,7 +62,10 @@ export function useSync(): SyncState {
   useEffect(() => {
     // Wrapped in an inline async IIFE so the effect body itself never synchronously calls a
     // setState-triggering function — see https://react.dev/learn/you-might-not-need-an-effect.
+    // That includes the client-only correction of the SSR-safe `true` default above: it runs
+    // after hydration either way, so this can never cause a mismatch even though it flips state.
     (async () => {
+      setIsOnline(navigator.onLine);
       await refreshCounts();
     })();
     const onOnline = () => {

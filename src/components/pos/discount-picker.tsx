@@ -31,14 +31,17 @@ export function DiscountPicker({
 
   if (discount) {
     return (
-      <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2 text-sm">
+      <div className="flex items-center justify-between rounded-lg border bg-background px-3 py-2.5 text-sm">
         <div className="flex items-center gap-2">
           <Percent className="size-4 text-muted-foreground" />
           <span className="font-medium">
             {discount.type === "PERCENT" ? `${(discount.value / 100).toFixed(0)}% off` : `Rs ${(discount.value / 100).toFixed(0)} off`}
           </span>
         </div>
-        <button onClick={onClear} className="text-muted-foreground transition-colors hover:text-destructive">
+        <button
+          onClick={onClear}
+          className="-m-1 flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+        >
           <X className="size-4" />
         </button>
       </div>
@@ -49,7 +52,7 @@ export function DiscountPicker({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-2 rounded-md border bg-background px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:border-primary/50"
+        className="flex w-full items-center gap-2 rounded-lg border border-dashed bg-background px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
       >
         <Percent className="size-4" />
         Apply discount (optional)

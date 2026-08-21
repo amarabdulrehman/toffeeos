@@ -15,8 +15,13 @@ export type TenantTransactionClient = Prisma.TransactionClient;
  * Three separate PrismaClient connections, deliberately never mixed:
  *   - rawDb        internal only (this file). Connects as `app_user` (RLS-bound). Never import
  *                   this directly from route handlers — go through tenantDb()/runInTenantTransaction().
- *   - platformDb    connects as `platform_user` (BYPASSRLS). Only (platform) super-admin route
- *                   handlers may import this — it can see every tenant's data.
+ *   - platformDb    connects as `platform_user` (BYPASSRLS). It can see every tenant's data, so
+ *                   it's normally only imported by (platform) super-admin route handlers. The one
+ *                   other legitimate case is a public route holding an unguessable single-use
+ *                   token (invite accept, impersonation hand-off) that must resolve to a tenant
+ *                   *before* any tenant context exists to scope an RLS-bound query by — the token
+ *                   itself is the authorization there, same reasoning as findTenantBySlug reading
+ *                   the tenant-less Tenant table directly. See src/server/staff-invites.ts.
  *   - tenantDb(id)  what ~everything else uses. Auto-injects `tenantId` into every query for
  *                   models in TENANT_SCOPED_MODELS, AND sets the RLS session var, per call.
  */

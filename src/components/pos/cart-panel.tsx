@@ -80,7 +80,7 @@ export function CartPanel({
         {orderType === "DINE_IN" && (
           <button
             onClick={onOpenTables}
-            className="flex w-full items-center gap-2 rounded-md border bg-background px-3 py-2 text-left text-sm transition-colors hover:border-primary/50"
+            className="flex w-full items-center gap-2 rounded-lg border bg-background px-3 py-2.5 text-left text-sm transition-colors hover:border-primary/50"
           >
             <MapPin className="size-4 text-muted-foreground" />
             {tableLabel ? <span className="font-medium">Table {tableLabel}</span> : <span className="text-muted-foreground">Select a table</span>}
@@ -88,13 +88,13 @@ export function CartPanel({
         )}
 
         {orderType === "DELIVERY" && (
-          <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-1">
+          <div className="flex items-center gap-2 rounded-lg border bg-background px-3 py-1">
             <MapPin className="size-4 shrink-0 text-muted-foreground" />
             <Input
               value={deliveryAddress}
               onChange={(e) => onDeliveryAddressChange(e.target.value)}
               placeholder="Delivery address"
-              className="h-8 border-0 px-0 shadow-none focus-visible:ring-0"
+              className="h-9 border-0 px-0 shadow-none focus-visible:ring-0"
             />
           </div>
         )}
@@ -120,7 +120,7 @@ export function CartPanel({
                 <div className="text-sm font-semibold leading-snug">{line.name}</div>
                 <button
                   onClick={() => onRemoveLine(line.key)}
-                  className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
+                  className="-m-1.5 flex shrink-0 size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -129,16 +129,16 @@ export function CartPanel({
                 <div className="flex items-center gap-1 rounded-full border bg-muted/50 p-0.5">
                   <button
                     onClick={() => onQuantityChange(line.key, -1)}
-                    className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                    className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground active:scale-95"
                   >
-                    <Minus className="h-3 w-3" />
+                    <Minus className="h-3.5 w-3.5" />
                   </button>
-                  <span className="w-5 text-center text-sm font-medium tabular-nums">{line.quantity}</span>
+                  <span className="w-6 text-center text-sm font-semibold tabular-nums">{line.quantity}</span>
                   <button
                     onClick={() => onQuantityChange(line.key, 1)}
-                    className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                    className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground active:scale-95"
                   >
-                    <Plus className="h-3 w-3" />
+                    <Plus className="h-3.5 w-3.5" />
                   </button>
                 </div>
                 <div className="font-heading text-sm font-semibold tabular-nums">
@@ -154,7 +154,7 @@ export function CartPanel({
         <Row label="Subtotal" value={totals?.discountedSubtotalPaisa} />
         {!!totals?.serviceChargePaisa && <Row label="Service charge" value={totals.serviceChargePaisa} />}
         <Row label={`Tax (${((totals?.appliedRateBasisPoints ?? 0) / 100).toFixed(0)}%)`} value={totals?.taxPaisa} />
-        <div className="mt-2 flex items-center justify-between rounded-xl bg-primary/10 px-3 py-2.5">
+        <div className="mt-2 flex items-center justify-between rounded-xl bg-primary/10 px-3.5 py-3 shadow-xs">
           <span className="font-heading text-sm font-semibold">Total</span>
           <span className="font-heading text-xl font-bold tabular-nums text-primary">
             {formatPkr(totals?.totalPaisa ?? 0)}
@@ -164,7 +164,6 @@ export function CartPanel({
 
       <div className="space-y-2 border-t p-4">
         <Button
-          variant="outline"
           className="w-full"
           size="lg"
           disabled={lines.length === 0 || sending}
@@ -173,7 +172,7 @@ export function CartPanel({
           {sending ? "Sending…" : "Send to Kitchen"}
         </Button>
         {canTakePayment && (
-          <Button className="w-full" size="lg" disabled={lines.length === 0} onClick={onOpenPayment}>
+          <Button variant="success" className="w-full" size="lg" disabled={lines.length === 0} onClick={onOpenPayment}>
             Take Payment
           </Button>
         )}

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Camera, MapPin, PackageCheck, Truck } from "lucide-react";
+import { Camera, MapPin, PackageCheck, Phone, Truck } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatPkr } from "@/lib/money";
@@ -34,12 +35,14 @@ export function RiderOrdersView() {
     return () => clearInterval(interval);
   }, [load]);
 
-  if (loading) return <p className="text-center text-muted-foreground">Loading your deliveries…</p>;
+  if (loading) return <p className="mt-16 text-center text-sm text-muted-foreground">Loading your deliveries…</p>;
   if (orders.length === 0) {
     return (
-      <div className="mt-16 flex flex-col items-center gap-2 text-center text-muted-foreground">
-        <Truck className="size-10 opacity-40" />
-        <p>No deliveries assigned to you right now.</p>
+      <div className="mt-16 flex flex-col items-center gap-3 text-center">
+        <span className="flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Truck className="size-6" />
+        </span>
+        <p className="text-sm text-muted-foreground">No deliveries assigned to you right now.</p>
       </div>
     );
   }
@@ -117,19 +120,35 @@ function OrderCard({ order, onChanged }: { order: RiderOrder; onChanged: () => v
   }
 
   return (
-    <div className="rounded-2xl border bg-card p-4 shadow-sm">
+    <div className={`rounded-2xl border-l-4 bg-card p-4 shadow-sm ${order.pickedUpAt ? "border-l-info" : "border-l-warning"}`}>
       <div className="flex items-center justify-between">
-        <span className="text-lg font-bold">#{order.orderNumber}</span>
-        <span className="font-semibold">{formatPkr(order.totalPaisa)}</span>
+        <span className="font-heading text-xl font-bold tabular-nums">#{order.orderNumber}</span>
+        <Badge variant={order.pickedUpAt ? "info" : "warning"}>{order.pickedUpAt ? "Out for delivery" : "Ready for pickup"}</Badge>
       </div>
-      {order.customer?.name && <div className="text-sm text-muted-foreground">{order.customer.name}</div>}
+      <div className="mt-1 flex items-center justify-between">
+        {order.customer?.name ? (
+          <span className="text-sm font-medium text-muted-foreground">{order.customer.name}</span>
+        ) : (
+          <span />
+        )}
+        <span className="font-heading text-base font-semibold tabular-nums">{formatPkr(order.totalPaisa)}</span>
+      </div>
+      {order.customer?.phone && (
+        <a
+          href={`tel:${order.customer.phone}`}
+          className="mt-2 flex w-fit items-center gap-1.5 rounded-full bg-success/15 px-3 py-1.5 text-sm font-semibold text-success"
+        >
+          <Phone className="size-3.5" />
+          {order.customer.phone}
+        </a>
+      )}
       {order.deliveryAddress && (
-        <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-muted/50 p-2 text-sm font-medium">
+        <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-muted/50 p-2.5 text-sm font-medium">
           <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           {order.deliveryAddress}
         </div>
       )}
-      <div className="mt-2 space-y-0.5 text-sm">
+      <div className="mt-2.5 space-y-0.5 text-sm text-muted-foreground">
         {order.lines.map((l) => (
           <div key={l.id}>
             {l.quantity}× {l.nameSnapshot}
@@ -144,7 +163,7 @@ function OrderCard({ order, onChanged }: { order: RiderOrder; onChanged: () => v
         </Button>
       ) : mode === "idle" ? (
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <Button size="lg" disabled={submitting} onClick={() => fileInputRef.current?.click()}>
+          <Button size="lg" variant="success" disabled={submitting} onClick={() => fileInputRef.current?.click()}>
             <Camera className="size-4" />
             Photo
           </Button>
@@ -170,9 +189,9 @@ function OrderCard({ order, onChanged }: { order: RiderOrder; onChanged: () => v
             placeholder="4-digit code"
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            className="flex-1"
+            className="h-11 flex-1 text-center text-lg tracking-[0.3em]"
           />
-          <Button disabled={submitting} onClick={handleOtpSubmit}>
+          <Button size="lg" variant="success" disabled={submitting} onClick={handleOtpSubmit}>
             Confirm
           </Button>
         </div>

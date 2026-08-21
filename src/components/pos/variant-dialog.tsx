@@ -24,7 +24,7 @@ export function VariantDialog({
             <button
               key={v.id}
               onClick={() => onPick(v.id)}
-              className="flex items-center justify-between rounded-xl border border-border/70 bg-card px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-sm active:translate-y-0"
+              className="flex items-center justify-between rounded-xl border border-border/70 bg-card px-4 py-3.5 text-left shadow-xs transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md active:translate-y-0"
             >
               <span className="font-medium">{v.name}</span>
               <span className="font-heading font-semibold text-primary">

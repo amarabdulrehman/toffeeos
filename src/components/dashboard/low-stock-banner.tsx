@@ -29,11 +29,11 @@ export function LowStockBanner() {
   return (
     <Link
       href="/app/inventory"
-      className="mt-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm transition-colors hover:border-destructive/50"
+      className="mt-6 flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm shadow-xs transition-colors hover:border-warning/50"
     >
-      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
       <div>
-        <div className="font-semibold text-destructive">
+        <div className="font-semibold text-warning-foreground">
           {alerts.length} item{alerts.length !== 1 ? "s" : ""} running low
         </div>
         <div className="mt-1 text-muted-foreground">

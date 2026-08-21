@@ -75,13 +75,16 @@ export function CustomerPicker({
 
   if (customer) {
     return (
-      <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2 text-sm">
+      <div className="flex items-center justify-between rounded-lg border bg-background px-3 py-2.5 text-sm">
         <div className="flex items-center gap-2">
           <UserRound className="size-4 text-muted-foreground" />
           <span className="font-medium">{customer.name ?? customer.phone}</span>
           {customer.name && <span className="text-muted-foreground">{customer.phone}</span>}
         </div>
-        <button onClick={onClear} className="text-muted-foreground transition-colors hover:text-destructive">
+        <button
+          onClick={onClear}
+          className="-m-1 flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+        >
           <X className="size-4" />
         </button>
       </div>
@@ -92,7 +95,7 @@ export function CustomerPicker({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-2 rounded-md border bg-background px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:border-primary/50"
+        className="flex w-full items-center gap-2 rounded-lg border border-dashed bg-background px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
       >
         <UserRound className="size-4" />
         Add customer (optional)

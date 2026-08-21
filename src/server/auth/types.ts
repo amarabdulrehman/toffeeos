@@ -12,6 +12,10 @@ export interface TenantSessionUser {
   roleId: string;
   roleKey: string;
   permissions: string[];
+  /** True only for an admin-provisioned owner who hasn't set their own password yet — gates every
+   * tenant layout to /change-password until cleared. Never true for self-serve signup or
+   * invite-accepted staff, since both of those already chose their own password. */
+  mustChangePassword: boolean;
   /** Set only when this session came from the platform admin's Impersonate action — drives the
    * "Viewing as..." banner in the tenant app shell. Absent for a normal staff login. */
   impersonatedByPlatformUserId?: string;

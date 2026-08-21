@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useChannel } from "@/lib/realtime-client";
 import { topic } from "@/lib/realtime-topics";
 
@@ -26,25 +27,34 @@ interface KdsOrder {
   status: string;
   source: "POS" | "ONLINE" | "QR";
   sentToKitchenAt: string | null;
+  readyAt: string | null;
   table: { label: string } | null;
   lines: KdsLine[];
 }
 
+// Chip text uses the bright semantic color itself (not the *-foreground token) — these sit on a
+// translucent tint over the dark KDS card, not a solid fill, so the pairing that keeps contrast
+// high here is bright-color-on-dark-tint, same direction as the card background itself.
 const TYPE_STYLE: Record<KdsOrder["type"], { border: string; chip: string }> = {
-  DINE_IN: { border: "border-t-primary", chip: "bg-primary/15 text-primary" },
-  TAKEAWAY: { border: "border-t-warning", chip: "bg-warning/20 text-warning-foreground" },
-  DELIVERY: { border: "border-t-sky-500", chip: "bg-sky-500/15 text-sky-400" },
-  SERVICE: { border: "border-t-success", chip: "bg-success/15 text-success" },
+  DINE_IN: { border: "border-t-primary", chip: "bg-primary/20 text-primary" },
+  TAKEAWAY: { border: "border-t-warning", chip: "bg-warning/25 text-warning" },
+  DELIVERY: { border: "border-t-info", chip: "bg-info/25 text-info" },
+  SERVICE: { border: "border-t-success", chip: "bg-success/25 text-success" },
 };
 
-function useElapsedSeconds(since: string | null): number {
+// `until` freezes the clock at that timestamp (e.g. readyAt) instead of ticking against wall-clock
+// `now` — without it, a KDS order stays visible after being marked ready (the board still shows
+// READY orders until they're served) and its timer just kept counting up forever.
+function useElapsedSeconds(since: string | null, until: string | null): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    if (until) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [until]);
   if (!since) return 0;
-  return Math.max(0, Math.floor((now - new Date(since).getTime()) / 1000));
+  const end = until ? new Date(until).getTime() : now;
+  return Math.max(0, Math.floor((end - new Date(since).getTime()) / 1000));
 }
 
 function formatElapsed(seconds: number): string {
@@ -54,8 +64,11 @@ function formatElapsed(seconds: number): string {
 }
 
 function OrderCard({ order, canMarkReady, onChanged }: { order: KdsOrder; canMarkReady: boolean; onChanged: () => void }) {
-  const elapsed = useElapsedSeconds(order.sentToKitchenAt);
-  const late = elapsed > SLA_SECONDS;
+  const isReady = order.status === "READY";
+  const elapsed = useElapsedSeconds(order.sentToKitchenAt, isReady ? order.readyAt : null);
+  // Once the kitchen has marked it ready, an old SLA breach is no longer something they need to
+  // act on — that alarm belongs to whoever hasn't served/picked it up yet, not this board.
+  const late = !isReady && elapsed > SLA_SECONDS;
   const style = TYPE_STYLE[order.type];
 
   async function toggleLine(lineId: string) {
@@ -77,44 +90,83 @@ function OrderCard({ order, canMarkReady, onChanged }: { order: KdsOrder; canMar
   }
 
   return (
-    <div className={`flex flex-col rounded-2xl border-t-4 bg-card shadow-md ${style.border} ${late ? "ring-1 ring-destructive/40" : ""}`}>
-      <div className="flex items-center justify-between px-4 py-3">
+    <div
+      className={`flex flex-col rounded-2xl border-t-[6px] bg-card shadow-lg ${style.border} ${late ? "ring-2 ring-destructive/60" : ""}`}
+    >
+      <div className="flex items-center justify-between px-4 py-3.5">
         <div>
-          <div className="font-heading text-lg font-bold tabular-nums">#{order.orderNumber}</div>
-          <span className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${style.chip}`}>
+          <div className="font-heading text-2xl font-bold tabular-nums">#{order.orderNumber}</div>
+          <span className={`mt-1 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${style.chip}`}>
             {order.type.replace("_", " ")}
             {order.table ? ` · ${order.table.label}` : ""}
             {order.source !== "POS" ? ` · ${order.source}` : ""}
           </span>
         </div>
         <div
-          className={`rounded-lg px-2.5 py-1.5 font-heading text-lg font-bold tabular-nums ${
-            late ? "animate-pulse bg-destructive text-white" : "bg-muted text-foreground"
+          className={`rounded-lg px-3 py-2 font-heading text-xl font-bold tabular-nums ${
+            late
+              ? "animate-pulse bg-destructive text-white"
+              : isReady
+                ? "bg-success/15 text-success"
+                : "bg-muted text-foreground"
           }`}
         >
           {formatElapsed(elapsed)}
         </div>
       </div>
-      <div className="flex-1 space-y-1.5 px-4 pb-3">
+      <div className="flex-1 space-y-1 px-3 pb-3">
         {order.lines.map((line) => (
-          <label key={line.id} className="flex items-center gap-2.5 text-sm">
-            <Checkbox checked={line.kitchenReady} onCheckedChange={() => toggleLine(line.id)} />
-            <span className={line.kitchenReady ? "text-muted-foreground/60 line-through" : "font-medium"}>
+          <label
+            key={line.id}
+            className="flex items-center gap-3 rounded-lg px-1.5 py-2 text-base transition-colors hover:bg-muted/60"
+          >
+            <Checkbox
+              checked={line.kitchenReady}
+              onCheckedChange={() => toggleLine(line.id)}
+              className="size-6 rounded-[6px] [&_svg]:size-4.5"
+            />
+            <span className={line.kitchenReady ? "text-muted-foreground/50 line-through" : "font-semibold"}>
               {line.quantity}× {line.nameSnapshot}
             </span>
           </label>
         ))}
       </div>
       {canMarkReady && (
-        <div className="flex gap-2 border-t p-2.5">
-          <Button size="sm" variant="secondary" className="flex-1" onClick={() => window.print()}>
+        <div className="flex gap-2 border-t border-border/60 p-3">
+          <Button size="lg" variant="secondary" className="flex-1" onClick={() => window.print()}>
             Print
           </Button>
-          <Button size="sm" className="flex-1" onClick={markOrderReady} disabled={order.status === "READY"}>
+          <Button size="lg" variant="success" className="flex-1" onClick={markOrderReady} disabled={order.status === "READY"}>
             {order.status === "READY" ? "Ready" : "Mark Ready"}
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Mirrors OrderCard's real shape (border-t accent, header row, a few line rows, action row) so
+ * the board never renders an empty "No active kitchen orders" flash before the first fetch
+ * actually resolves — the fixed count (8) roughly fills a typical viewport's grid without
+ * over-fetching-shaped guessing at how many real cards will follow. */
+function OrderCardSkeleton() {
+  return (
+    <div className="flex flex-col rounded-2xl border-t-[6px] border-t-muted bg-card shadow-lg">
+      <div className="flex items-center justify-between px-4 py-3.5">
+        <div className="space-y-1.5">
+          <Skeleton className="h-7 w-14" />
+          <Skeleton className="h-5 w-20 rounded-full" />
+        </div>
+        <Skeleton className="h-9 w-16 rounded-lg" />
+      </div>
+      <div className="space-y-2.5 px-3 pb-3">
+        <Skeleton className="h-5 w-4/5" />
+        <Skeleton className="h-5 w-3/5" />
+      </div>
+      <div className="flex gap-2 border-t border-border/60 p-3">
+        <Skeleton className="h-11 flex-1 rounded-lg" />
+        <Skeleton className="h-11 flex-1 rounded-lg" />
+      </div>
     </div>
   );
 }
@@ -129,6 +181,7 @@ export function KdsBoard({
   canMarkReady: boolean;
 }) {
   const [orders, setOrders] = useState<KdsOrder[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<KdsOrder["type"] | "ALL">("ALL");
 
@@ -136,7 +189,8 @@ export function KdsBoard({
     fetch("/api/kds/orders")
       .then((r) => r.json())
       .then((d) => setOrders(d.orders ?? []))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -166,18 +220,18 @@ export function KdsBoard({
     <div className="flex h-full flex-col p-5">
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search order #"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-44 rounded-full bg-card pl-9"
+            className="h-10 w-44 rounded-full bg-card pl-10"
           />
         </div>
-        <div className="mx-1 h-6 w-px bg-border" />
+        <div className="mx-1 h-7 w-px bg-border" />
         <button
           onClick={() => setTypeFilter("ALL")}
-          className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+          className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
             typeFilter === "ALL" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground"
           }`}
         >
@@ -187,7 +241,7 @@ export function KdsBoard({
           <button
             key={g.type}
             onClick={() => setTypeFilter(g.type)}
-            className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+            className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
               typeFilter === g.type
                 ? "bg-primary text-primary-foreground"
                 : "bg-card text-muted-foreground hover:text-foreground"
@@ -199,10 +253,16 @@ export function KdsBoard({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {filtered.length === 0 ? (
+        {loading && orders.length === 0 ? (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <OrderCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="mt-20 text-center text-muted-foreground">No active kitchen orders.</div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
             {filtered.map((o) => (
               <OrderCard key={o.id} order={o} canMarkReady={canMarkReady} onChanged={load} />
             ))}

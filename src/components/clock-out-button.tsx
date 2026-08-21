@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 
 /** Clock-in happens automatically on PIN login (src/server/auth/config.ts); this is the explicit
  * counterpart. Safe to press speculatively — clocking out when not clocked in anywhere is a no-op,
- * not an error. */
-export function ClockOutButton() {
+ * not an error. `onDark` mirrors SignOutButton's — legible on the dark navy sidebar chrome. */
+export function ClockOutButton({ onDark = false }: { onDark?: boolean }) {
   const [loading, setLoading] = useState(false);
 
   async function clockOut() {
@@ -26,7 +26,13 @@ export function ClockOutButton() {
   }
 
   return (
-    <Button variant="outline" size="sm" className="w-full" disabled={loading} onClick={clockOut}>
+    <Button
+      variant={onDark ? "ghost" : "outline"}
+      size="sm"
+      className={onDark ? "w-full text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground" : "w-full"}
+      disabled={loading}
+      onClick={clockOut}
+    >
       {loading ? "…" : "Clock out"}
     </Button>
   );

@@ -1,66 +1,58 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { LayoutGrid } from "lucide-react";
 import { auth } from "@/server/auth";
+import { tenantDb } from "@/server/db";
+import { getTenantTier } from "@/server/tier";
 import { BRAND_NAME } from "@/config/brand";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ClockOutButton } from "@/components/clock-out-button";
+import { AppSidebarNav } from "@/components/app-sidebar-nav";
 
-const NAV = [
-  { href: "/app/dashboard", label: "Dashboard" },
-  { href: "/pos", label: "POS" },
-  { href: "/kds", label: "KDS" },
-  { href: "/app/tables", label: "Tables" },
-  { href: "/app/menu", label: "Menu" },
-  { href: "/app/inventory", label: "Inventory" },
-  { href: "/app/delivery", label: "Delivery" },
-  { href: "/app/customers", label: "Customers" },
-  { href: "/app/whatsapp", label: "WhatsApp" },
-  { href: "/app/online-ordering", label: "Online Ordering" },
-  { href: "/app/reports", label: "Reports" },
-  { href: "/app/hr", label: "HR & Payroll" },
-  { href: "/app/sync-conflicts", label: "Sync Conflicts" },
-];
-
+// Dark navy "chrome" sidebar, same --sidebar tokens as the POS/KDS headers — this is the one nav
+// every back-office screen shares, so unifying it here means every screen behind it (Dashboard,
+// Reports, Inventory, etc.) already reads as one product before its own pass touches it.
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user || session.user.kind !== "tenant") redirect("/login");
   const user = session.user;
+  if (user.mustChangePassword) redirect("/change-password");
+  // Read fresh on every request (never cached on the session) so a platform admin's tier change is
+  // reflected on this tenant's very next page load, no re-login required.
+  const tier = await getTenantTier(tenantDb(user.tenantId));
 
   return (
     <div className="flex min-h-screen">
-      <aside className="flex w-56 flex-col border-r bg-muted/30 p-4">
-        <div className="mb-6">
-          <div className="text-lg font-bold">{BRAND_NAME}</div>
-          <div className="text-xs text-muted-foreground">{user.tenantName}</div>
-          <div className="text-xs text-muted-foreground">{user.branchName}</div>
-        </div>
-        <nav className="flex flex-1 flex-col gap-1">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded-md px-3 py-2 text-sm font-medium hover:bg-muted"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="mt-auto space-y-2 border-t pt-4">
-          <div className="text-xs">
-            <div className="font-medium">{user.name}</div>
-            <div className="text-muted-foreground">{user.roleKey.replace("_", " ")}</div>
+      <aside className="flex w-60 shrink-0 flex-col bg-sidebar p-4 text-sidebar-foreground shadow-lg">
+        <div className="mb-6 flex items-center gap-3 px-1">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+            <LayoutGrid className="size-4.5" />
+          </span>
+          <div className="min-w-0 leading-tight">
+            <div className="font-heading text-base font-semibold tracking-tight">{BRAND_NAME}</div>
+            <div className="truncate text-xs text-sidebar-foreground/55">{user.tenantName}</div>
           </div>
-          <ClockOutButton />
-          <SignOutButton />
+        </div>
+        <AppSidebarNav permissions={user.permissions} tier={tier} />
+        <div className="mt-auto space-y-2 border-t border-sidebar-border pt-4">
+          <div className="px-1 text-xs">
+            <div className="font-medium">{user.name}</div>
+            <div className="text-sidebar-foreground/55">{user.roleKey.replace("_", " ")}</div>
+          </div>
+          <ClockOutButton onDark />
+          <SignOutButton onDark />
         </div>
       </aside>
       <div className="flex flex-1 flex-col overflow-hidden">
         {user.impersonatedByPlatformUserId && (
-          <div className="flex items-center justify-between bg-amber-500/90 px-4 py-2 text-sm font-medium text-amber-950">
+          <div className="flex items-center justify-between bg-warning px-4 py-2 text-sm font-medium text-warning-foreground">
             <span>
               Viewing as {user.tenantName} — impersonated by {user.impersonatedByPlatformUserEmail}
             </span>
-            <SignOutButton label="Exit impersonation" callbackUrl="/platform/login" className="border-amber-950/30 text-amber-950 hover:bg-amber-950/10" />
+            <SignOutButton
+              label="Exit impersonation"
+              callbackUrl="/platform/login"
+              className="border-warning-foreground/30 text-warning-foreground hover:bg-warning-foreground/10"
+            />
           </div>
         )}
         <main className="flex-1 overflow-auto">{children}</main>

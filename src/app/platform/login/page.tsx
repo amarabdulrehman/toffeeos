@@ -4,6 +4,7 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,14 +31,19 @@ export default function PlatformLoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 px-4">
-      <div className="mb-8 text-center text-white">
-        <h1 className="text-2xl font-bold tracking-tight">{BRAND_NAME} Platform</h1>
-        <p className="text-sm text-slate-400">Super-admin — every tenant, one place.</p>
+    <div className="dark flex min-h-screen flex-col items-center justify-center bg-background px-4">
+      <div className="mb-8 flex flex-col items-center gap-3 text-center">
+        <span className="flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
+          <ShieldCheck className="size-6" />
+        </span>
+        <div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">{BRAND_NAME} Platform</h1>
+          <p className="text-sm text-muted-foreground">Super-admin — every tenant, one place.</p>
+        </div>
       </div>
-      <Card className="w-full max-w-sm">
+      <Card className="w-full max-w-sm shadow-xl">
         <CardHeader>
-          <CardTitle>Platform sign in</CardTitle>
+          <CardTitle className="font-heading">Platform sign in</CardTitle>
           <CardDescription>Not a restaurant account — this is for the platform owner only.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -56,7 +62,7 @@ export default function PlatformLoginPage() {
                 required
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" size="lg" disabled={loading}>
               {loading ? "Signing in…" : "Sign in"}
             </Button>
           </form>

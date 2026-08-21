@@ -137,7 +137,7 @@ export function TablesDialog({
                     key={table.id}
                     disabled={loadingTableId === table.id}
                     onClick={() => handleTap(table)}
-                    className={`flex size-20 flex-col items-center justify-center rounded-full border-2 bg-card text-center transition-all hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 ${STATUS_RING[table.status]}`}
+                    className={`flex size-20 flex-col items-center justify-center rounded-full border-2 bg-card text-center shadow-xs transition-all hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 ${STATUS_RING[table.status]}`}
                   >
                     <span className="flex items-center gap-1 text-sm font-bold">
                       <span className={`size-1.5 rounded-full ${STATUS_DOT[table.status]}`} />
@@ -171,10 +171,10 @@ export function ResumedOrderPanel({
   onTakePayment: () => void;
 }) {
   return (
-    <div className="space-y-4 rounded-xl border bg-card p-4">
+    <div className="space-y-4 rounded-xl border bg-card p-4 shadow-xs">
       <div className="flex items-center justify-between">
         <div>
-          <div className="font-semibold">
+          <div className="font-heading font-semibold">
             Table {table.label} · Order #{order.orderNumber}
           </div>
           <div className="text-sm text-muted-foreground">{order.status.replace(/_/g, " ")}</div>
@@ -193,12 +193,12 @@ export function ResumedOrderPanel({
           </div>
         ))}
       </div>
-      <div className="flex items-center justify-between border-t pt-3 font-semibold">
+      <div className="flex items-center justify-between border-t pt-3 font-heading font-semibold">
         <span>Total</span>
         <span className="tabular-nums">{formatPkr(order.totalPaisa)}</span>
       </div>
       {order.status !== "PAID" && (
-        <Button className="w-full" onClick={onTakePayment}>
+        <Button variant="success" size="lg" className="w-full" onClick={onTakePayment}>
           Take Payment
         </Button>
       )}

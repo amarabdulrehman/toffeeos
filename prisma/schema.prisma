@@ -25,10 +25,12 @@ datasource db {
 // ============================================================================
 
 model Plan {
-  id                       String   @id @default(uuid())
-  key                      String   @unique // "starter" | "growth" | "enterprise"
-  name                     String
-  maxBranches              Int
+  id   String @id @default(uuid())
+  key  String @unique // "starter" | "growth" | "complete" — Phase D's tier gating keys off this directly
+  name String
+  /// Null means unlimited (the Complete plan) — previously a magic "999", made properly nullable
+  /// when Phase D needed a real "unlimited" check rather than an arbitrary large number.
+  maxBranches              Int?
   pricePaisaPerBranchMonth Int
   createdAt                DateTime @default(now())
 
@@ -58,6 +60,7 @@ model Tenant {
   users          User[]
   roles          Role[]
   memberships    Membership[]
+  invites        Invite[]
   subscription   Subscription?
   customers      Customer[]
   categories     Category[]
@@ -83,7 +86,10 @@ model Subscription {
   plan             Plan               @relation(fields: [planId], references: [id])
   planId           String
   status           SubscriptionStatus @default(TRIALING)
-  branchLimit      Int                @default(1)
+  /// Snapshot of plan.maxBranches at subscription-create/tier-change time (null = unlimited) —
+  /// kept as its own column rather than always reading through plan so a plan's limit can change
+  /// later without silently reshaping every existing subscription that already opted into it.
+  branchLimit      Int?               @default(1)
   trialEndsAt      DateTime?
   currentPeriodEnd DateTime?
   paymentMethod    String? // "jazzcash" | "easypaisa" | "bank_transfer" | "stripe"
@@ -134,6 +140,7 @@ model Branch {
   settings        BranchSettings?
   taxRules        TaxRule[]
   memberships     Membership[]
+  invites         Invite[]
   floors          Floor[]
   tables          RestaurantTable[]
   branchMenuItems BranchMenuItem[]
@@ -201,6 +208,11 @@ model User {
   /// src/server/permissions/registry.ts SEED_ROLES.rider.
   employeeId   String?
   isActive     Boolean  @default(true)
+  /// Set true only when a platform admin generates the password (admin-provisioned tenant owner);
+  /// self-serve signup and invite-accept both let the user pick their own password, so this stays
+  /// false there. Checked at the app/pos/kds layout level, not in defineHandler, since it needs to
+  /// gate page rendering before any API call happens.
+  mustChangePassword Boolean  @default(false)
   createdAt    DateTime @default(now())
 
   memberships   Membership[]
@@ -227,6 +239,7 @@ model Role {
   createdAt   DateTime @default(now())
 
   memberships Membership[]
+  invites     Invite[]
 
   @@unique([tenantId, key])
   @@index([tenantId])
@@ -267,8 +280,11 @@ enum PayType {
 
 model Invite {
   id         String    @id @default(uuid())
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
   tenantId   String
+  branch     Branch    @relation(fields: [branchId], references: [id])
   branchId   String
+  role       Role      @relation(fields: [roleId], references: [id])
   roleId     String
   email      String?
   phone      String?

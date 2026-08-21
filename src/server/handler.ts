@@ -5,6 +5,8 @@ import { auth } from "@/server/auth";
 import { tenantDb } from "@/server/db";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import type { TenantSessionUser } from "@/server/auth/types";
+import { tenantAcceptsLogin } from "@/server/auth/session-user";
+import { getTenantGate, minTierForPermission, tierMeets, TIER_LABEL, type TierKey } from "@/server/tier";
 
 /**
  * The single choke point every tenant-facing API route goes through: resolves the session,
@@ -33,6 +35,14 @@ export interface AuditInfo {
 export interface DefineHandlerOptions<TSchema extends ZodType> {
   /** A key from src/server/permissions/registry.ts. Omit only for routes any signed-in staff member may hit. */
   permission?: string;
+  /**
+   * Overrides which tier-gated module this route belongs to, when `permission`'s own module
+   * (its string before the first ".") doesn't match the tier grid — e.g. tenant-branding is gated
+   * by the broad `settings.general.manage` permission but is specifically an Online Ordering
+   * feature. Only needed for that kind of mismatch; leave unset otherwise, since `permission`
+   * already infers the right tier for the vast majority of routes.
+   */
+  tierModule?: string;
   input?: TSchema;
   /** Return null to skip logging for a particular call (e.g. a no-op update). */
   audit?: (input: TSchema["_output"], result: unknown) => AuditInfo | null;
@@ -65,6 +75,26 @@ export function defineHandler<TSchema extends ZodType = ZodType<undefined>>(
         throw new HttpError(403, `Missing permission: ${options.permission}`);
       }
 
+      const db = tenantDb(user.tenantId);
+
+      // One query for two checks that both need to be fresh on every request (neither is cached on
+      // the session): suspension/cancellation only ever blocked new *logins* before this — an
+      // already-issued JWT session kept working against every API route until it naturally expired
+      // — and a platform admin's tier change must take effect on the tenant's very next call, not
+      // require a re-login. Originally two separate round trips; consolidated after measuring real,
+      // consistent per-request latency against this app's remote Postgres (~1.3s sequential, not a
+      // dev-compile artifact) — this is a genuine fix, not premature optimization.
+      const gate = await getTenantGate(db);
+      if (!gate.tenantStatus || !tenantAcceptsLogin(gate.tenantStatus)) {
+        throw new HttpError(403, "This restaurant's account is no longer active.");
+      }
+      if (options.permission) {
+        const requiredTier: TierKey = minTierForPermission(options.tierModule ?? options.permission);
+        if (requiredTier !== "starter" && !tierMeets(gate.tier, requiredTier)) {
+          throw new HttpError(403, `This feature requires the ${TIER_LABEL[requiredTier]} plan or higher.`);
+        }
+      }
+
       let input: TSchema["_output"] = undefined as TSchema["_output"];
       if (options.input) {
         const raw =
@@ -78,7 +108,6 @@ export function defineHandler<TSchema extends ZodType = ZodType<undefined>>(
         input = parsed.data;
       }
 
-      const db = tenantDb(user.tenantId);
       const result = await fn({ session: user, db, input, req, params });
 
       if (options.audit) {

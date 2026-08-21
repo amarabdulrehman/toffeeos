@@ -13,30 +13,31 @@ export default async function PosLayout({ children }: { children: React.ReactNod
   const session = await auth();
   if (!session?.user || session.user.kind !== "tenant") redirect("/login");
   const user = session.user;
+  if (user.mustChangePassword) redirect("/change-password");
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <header className="flex shrink-0 items-center justify-between bg-sidebar px-5 py-3 text-sidebar-foreground">
+      <header className="relative z-10 flex shrink-0 items-center justify-between bg-sidebar px-5 py-3 text-sidebar-foreground shadow-md">
         <div className="flex items-center gap-3">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <UtensilsCrossed className="size-4" />
+          <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+            <UtensilsCrossed className="size-4.5" />
           </span>
           <div className="leading-tight">
-            <div className="text-base font-semibold tracking-tight">{BRAND_NAME}</div>
-            <div className="text-xs text-sidebar-foreground/60">{user.branchName}</div>
+            <div className="font-heading text-base font-semibold tracking-tight">{BRAND_NAME}</div>
+            <div className="text-xs text-sidebar-foreground/55">{user.branchName}</div>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <Link
             href="/app/dashboard"
-            className="flex items-center gap-1 text-sm text-sidebar-foreground/70 transition-colors hover:text-sidebar-foreground"
+            className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <ChevronLeft className="size-4" />
             Back office
           </Link>
           <div className="h-6 w-px bg-sidebar-border" />
           <div className="flex items-center gap-2">
-            <span className="flex size-7 items-center justify-center rounded-full bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground">
+            <span className="flex size-7.5 items-center justify-center rounded-full bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground ring-1 ring-white/10">
               {user.name
                 .split(" ")
                 .map((p) => p[0])

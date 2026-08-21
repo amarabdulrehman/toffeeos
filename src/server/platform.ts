@@ -3,6 +3,7 @@ import { platformDb } from "@/server/db";
 import { tenantDb } from "@/server/db";
 import { HttpError } from "@/server/handler";
 import { issueImpersonationToken } from "@/server/auth/impersonation-store";
+import { TIER_ORDER, type TierKey } from "@/server/tier";
 
 export async function platformMetrics() {
   const tenants = await platformDb.tenant.findMany({
@@ -82,4 +83,47 @@ export async function startImpersonation(
     platformUserId,
     platformUserEmail,
   });
+}
+
+/**
+ * Changes a tenant's plan (their tier). Deliberately just re-points `Subscription.planId` and
+ * refreshes the `branchLimit` snapshot — it never touches any of the tenant's own data, so a
+ * downgrade doesn't delete anything in a now-gated module (e.g. delivery/rider records survive a
+ * Complete->Growth downgrade, just inaccessible until re-upgraded). Every tier-gated check reads
+ * the tier live from this same row on each request, so the change is visible on the tenant's very
+ * next request — no re-login, no cache to invalidate. Audit-logged the same way impersonation is.
+ */
+export async function changeTenantTier(
+  tenantId: string,
+  planKey: TierKey,
+  platformUserId: string,
+  platformUserEmail: string
+) {
+  if (!TIER_ORDER.includes(planKey)) throw new HttpError(400, "Unknown plan.");
+
+  const [subscription, plan] = await Promise.all([
+    platformDb.subscription.findUnique({ where: { tenantId }, include: { plan: true } }),
+    platformDb.plan.findUnique({ where: { key: planKey } }),
+  ]);
+  if (!subscription) throw new HttpError(404, "This tenant has no subscription to change.");
+  if (!plan) throw new HttpError(404, "Unknown plan.");
+
+  const fromTier = subscription.plan.key;
+  await platformDb.subscription.update({
+    where: { tenantId },
+    data: { planId: plan.id, branchLimit: plan.maxBranches },
+  });
+
+  await platformDb.auditLog.create({
+    data: {
+      tenantId,
+      actorId: platformUserId,
+      action: "platform.tier.change",
+      entityType: "Subscription",
+      entityId: subscription.id,
+      metadata: { platformUserEmail, fromTier, toTier: planKey },
+    },
+  });
+
+  return { fromTier, toTier: planKey };
 }

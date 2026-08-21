@@ -18,11 +18,14 @@ const DEMO_PIN = "1234";
 const PLATFORM_EMAIL = "admin@tableos.app";
 const PLATFORM_PASSWORD = "ChangeMe123!";
 
+// Phase D's three tiers — feature gating keys off Plan.key directly (see src/server/tier.ts),
+// not a separate field, so these three key strings are load-bearing beyond just pricing.
+// maxBranches: null means unlimited (Complete).
 async function seedPlans() {
   const plans = [
     { key: "starter", name: "Starter", maxBranches: 1, pricePaisaPerBranchMonth: 4_999_00 },
-    { key: "growth", name: "Growth", maxBranches: 5, pricePaisaPerBranchMonth: 3_999_00 },
-    { key: "enterprise", name: "Enterprise", maxBranches: 999, pricePaisaPerBranchMonth: 2_999_00 },
+    { key: "growth", name: "Growth", maxBranches: 3, pricePaisaPerBranchMonth: 3_999_00 },
+    { key: "complete", name: "Complete", maxBranches: null, pricePaisaPerBranchMonth: 2_999_00 },
   ];
   for (const plan of plans) {
     await rawDb.plan.upsert({ where: { key: plan.key }, update: plan, create: plan });

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatPkr } from "@/lib/money";
 import type { MenuCategoryDto, MenuItemDto } from "./types";
 
@@ -24,9 +25,11 @@ function accentFor(index: number) {
 
 export function ProductGrid({
   categories,
+  loading = false,
   onSelectItem,
 }: {
   categories: MenuCategoryDto[];
+  loading?: boolean;
   onSelectItem: (categoryId: string, item: MenuItemDto) => void;
 }) {
   // Categories arrive async (fetched by the parent after mount), so a plain useState default of
@@ -61,7 +64,15 @@ export function ProductGrid({
         />
       </div>
 
-      {!search.trim() && (
+      {!search.trim() && loading && (
+        <div className="flex flex-wrap gap-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-24 rounded-full" />
+          ))}
+        </div>
+      )}
+
+      {!search.trim() && !loading && (
         <div className="flex flex-wrap gap-2">
           {categories.map((c, i) => {
             const active = c.id === activeCategoryId;
@@ -69,7 +80,7 @@ export function ProductGrid({
               <button
                 key={c.id}
                 onClick={() => setSelectedCategoryId(c.id)}
-                className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-all ${
+                className={`rounded-full border px-4 py-2 text-sm font-medium transition-all ${
                   active
                     ? "border-primary bg-primary text-primary-foreground shadow-sm"
                     : `border-transparent ${accentFor(i).pill} hover:opacity-80`
@@ -83,36 +94,44 @@ export function ProductGrid({
       )}
 
       <div className="grid flex-1 auto-rows-min grid-cols-2 gap-3 overflow-y-auto pb-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {visibleItems.map((item) => {
-          const categoryIndex = categories.findIndex((c) => c.items.includes(item));
-          return (
-            <button
-              key={item.id}
-              disabled={!item.isAvailable}
-              onClick={() => onSelectItem(categories[categoryIndex]?.id ?? activeCategoryId, item)}
-              className="group relative flex flex-col items-start overflow-hidden rounded-2xl border border-border/60 bg-card p-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-sm"
-            >
-              <span className={`absolute inset-x-0 top-0 h-1 ${accentFor(categoryIndex).stripe}`} />
-              <div className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-tight">{item.name}</div>
-              <div className="mt-2 flex w-full items-center justify-between">
-                <span className="font-heading text-base font-semibold text-primary">
-                  {formatPkr(item.basePricePaisa)}
-                </span>
-                {item.variants.length > 0 && (
-                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    {item.variants.length} sizes
+        {loading &&
+          Array.from({ length: 10 }).map((_, i) => (
+            <div key={i} className="flex min-h-[6.5rem] flex-col justify-between rounded-2xl border border-border/60 bg-card p-3.5 shadow-sm">
+              <Skeleton className="h-4 w-4/5" />
+              <Skeleton className="h-5 w-16" />
+            </div>
+          ))}
+        {!loading &&
+          visibleItems.map((item) => {
+            const categoryIndex = categories.findIndex((c) => c.items.includes(item));
+            return (
+              <button
+                key={item.id}
+                disabled={!item.isAvailable}
+                onClick={() => onSelectItem(categories[categoryIndex]?.id ?? activeCategoryId, item)}
+                className="group relative flex min-h-[6.5rem] flex-col items-start overflow-hidden rounded-2xl border border-border/60 bg-card p-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-sm"
+              >
+                <span className={`absolute inset-x-0 top-0 h-1 ${accentFor(categoryIndex).stripe}`} />
+                <div className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-tight">{item.name}</div>
+                <div className="mt-2 flex w-full items-center justify-between">
+                  <span className="font-heading text-base font-semibold text-primary">
+                    {formatPkr(item.basePricePaisa)}
+                  </span>
+                  {item.variants.length > 0 && (
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground">
+                      {item.variants.length} sizes
+                    </span>
+                  )}
+                </div>
+                {!item.isAvailable && (
+                  <span className="absolute right-2 top-2 rounded-full bg-destructive/15 px-2 py-0.5 text-2xs font-semibold text-destructive">
+                    Unavailable
                   </span>
                 )}
-              </div>
-              {!item.isAvailable && (
-                <span className="absolute right-2 top-2 rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-semibold text-destructive">
-                  Unavailable
-                </span>
-              )}
-            </button>
-          );
-        })}
-        {visibleItems.length === 0 && (
+              </button>
+            );
+          })}
+        {!loading && visibleItems.length === 0 && (
           <div className="col-span-full py-12 text-center text-sm text-muted-foreground">No items found.</div>
         )}
       </div>

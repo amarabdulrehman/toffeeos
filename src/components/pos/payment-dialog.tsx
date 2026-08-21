@@ -72,7 +72,7 @@ export function PaymentDialog({
           <DialogTitle className="font-heading">Take payment</DialogTitle>
         </DialogHeader>
 
-        <div className="rounded-xl bg-primary/10 px-4 py-3 text-center">
+        <div className="rounded-xl bg-primary/10 px-4 py-3.5 text-center shadow-xs">
           <div className="text-xs font-medium text-muted-foreground">Amount due</div>
           <div className="font-heading text-3xl font-bold tabular-nums text-primary">{formatPkr(totalPaisa)}</div>
         </div>
@@ -136,7 +136,7 @@ export function PaymentDialog({
           )}
 
           <div
-            className={`rounded-lg px-3 py-2 text-center text-sm font-semibold ${
+            className={`rounded-lg px-3 py-2.5 text-center text-sm font-semibold ${
               remainingPaisa > 0
                 ? "bg-destructive/10 text-destructive"
                 : "bg-success/15 text-success"
@@ -147,10 +147,10 @@ export function PaymentDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" size="lg" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={confirm} disabled={remainingPaisa > 0 || submitting}>
+          <Button variant="success" size="lg" onClick={confirm} disabled={remainingPaisa > 0 || submitting}>
             {submitting ? "Processing…" : "Confirm payment"}
           </Button>
         </DialogFooter>

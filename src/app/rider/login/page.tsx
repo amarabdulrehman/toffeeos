@@ -4,6 +4,7 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,14 +54,19 @@ export default function RiderLoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/40 px-4 py-12">
-      <div className="mb-8 text-center">
-        <h1 className="text-2xl font-bold tracking-tight">{BRAND_NAME}</h1>
-        <p className="text-sm text-muted-foreground">Rider sign in</p>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/20 px-4 py-12">
+      <div className="mb-8 flex flex-col items-center gap-3 text-center">
+        <span className="flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-md">
+          <Truck className="size-6" />
+        </span>
+        <div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight">{BRAND_NAME}</h1>
+          <p className="text-sm text-muted-foreground">Rider sign in</p>
+        </div>
       </div>
-      <Card className="w-full max-w-sm">
+      <Card className="w-full max-w-sm shadow-lg">
         <CardHeader>
-          <CardTitle>{step === "phone" ? "Enter your phone number" : "Enter the code"}</CardTitle>
+          <CardTitle className="font-heading">{step === "phone" ? "Enter your phone number" : "Enter the code"}</CardTitle>
           <CardDescription>
             {step === "phone"
               ? "We'll text you a one-time code."

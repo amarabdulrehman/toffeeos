@@ -49,6 +49,7 @@ export function PosTerminal({
 }) {
   const sync = useSync();
   const [categories, setCategories] = useState<MenuCategoryDto[]>([]);
+  const [menuLoading, setMenuLoading] = useState(true);
   const [lines, setLines] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<OrderType>("DINE_IN");
   const [table, setTable] = useState<RestaurantTableDto | null>(null);
@@ -79,7 +80,8 @@ export function PosTerminal({
         const cached = await getCachedMenu();
         if (cached) setCategories(cached);
         else toast.error("Could not load the menu.");
-      });
+      })
+      .finally(() => setMenuLoading(false));
   }, []);
 
   // Merges the server's order queue with any locally-queued-but-not-yet-synced orders, so a
@@ -355,7 +357,7 @@ export function PosTerminal({
       <OfflineBanner sync={sync} />
       <div className="grid min-h-0 flex-1 grid-cols-[1fr_340px]">
         <div className="relative min-h-0">
-          <ProductGrid categories={categories} onSelectItem={handleSelectItem} />
+          <ProductGrid categories={categories} loading={menuLoading} onSelectItem={handleSelectItem} />
           {canTakePayment && (
             <Button
               variant="outline"

@@ -62,5 +62,6 @@ export async function buildTenantSessionUser(
     roleId: membership.roleId,
     roleKey: membership.role.key,
     permissions,
+    mustChangePassword: user.mustChangePassword,
   };
 }
