@@ -40,7 +40,9 @@ export async function stockReport(tenantId: string, branchId: string, opts: { be
   const levels = await db.stockLevel.findMany({
     where: { locationId: { in: locations.map((l) => l.id) } },
   });
-  const levelByKey = new Map(levels.map((l) => [`${l.locationId}:${l.itemId}`, l.quantity]));
+  // Rounded defensively at read time too, for StockLevel rows written before the rounding fix in
+  // applyStockDelta landed — old rows can still carry accumulated float drift (e.g. -2.8e-15).
+  const levelByKey = new Map(levels.map((l) => [`${l.locationId}:${l.itemId}`, Math.round(l.quantity * 1000) / 1000]));
 
   const rows = locations.flatMap((location) =>
     items.map((item) => ({
@@ -87,11 +89,20 @@ export async function applyStockDelta(
   delta: number
 ): Promise<{ level: Awaited<ReturnType<TenantTransactionClient["stockLevel"]["upsert"]>>; newAlert: NewLowStockAlert | null }> {
   const item = await tx.inventoryItem.findUniqueOrThrow({ where: { id: itemId, tenantId } });
-  const level = await tx.stockLevel.upsert({
+  let level = await tx.stockLevel.upsert({
     where: { locationId_itemId: { locationId, itemId }, tenantId },
     create: { tenantId, locationId, itemId, quantity: delta },
     update: { quantity: { increment: delta } },
   });
+
+  // Float increments accumulate floating-point drift over many recipe-consumption deductions
+  // (e.g. a quantity that should be exactly 0 lands at -2.8e-15). Snap to a sane precision right
+  // after every write so the drift never compounds and never surfaces in the UI as scientific
+  // notation.
+  const rounded = Math.round(level.quantity * 1000) / 1000;
+  if (rounded !== level.quantity) {
+    level = await tx.stockLevel.update({ where: { id: level.id }, data: { quantity: rounded } });
+  }
 
   const isBelow = level.quantity < item.lowStockThresholdQty;
   const activeAlert = await tx.lowStockAlert.findFirst({

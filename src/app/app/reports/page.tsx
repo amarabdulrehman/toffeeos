@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/server/auth";
-import { tenantDb } from "@/server/db";
-import { getTenantTier } from "@/server/tier";
+import { getTenantModulesForTenant } from "@/server/tier";
 import { ReportsView } from "@/components/reports/reports-view";
 
 // Individual tabs each require their own narrower permission (checked server-side by their own
@@ -25,10 +24,10 @@ export default async function ReportsPage() {
   if (!user || user.kind !== "tenant") redirect("/login");
   if (!REPORTS_PERMISSIONS.some((p) => user.permissions.includes(p))) redirect("/app/dashboard");
 
-  // Sales/staff reports stay Starter; the rest of the tabs are Growth/Complete — ReportsView hides
-  // the ones the tenant's plan doesn't include rather than the page redirecting wholesale, since
-  // most tenants can see *some* of this page regardless of tier.
-  const tier = await getTenantTier(tenantDb(user.tenantId));
+  // Sales/staff reports stay always-on; the rest of the tabs each need their own module toggle —
+  // ReportsView hides the ones the tenant doesn't have enabled rather than the page redirecting
+  // wholesale, since most tenants can see *some* of this page regardless.
+  const enabledModules = await getTenantModulesForTenant(user.tenantId);
 
-  return <ReportsView tier={tier} />;
+  return <ReportsView enabledModules={enabledModules} />;
 }

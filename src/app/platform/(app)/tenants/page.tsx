@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Building2, Check, CircleDollarSign, Copy, Store, TriangleAlert, Users } from "lucide-react";
+import { Building2, Check, CircleDollarSign, Copy, PiggyBank, Store, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatPkr } from "@/lib/money";
 import { TIER_ORDER, TIER_LABEL, type TierKey } from "@/lib/tiers";
+import { getBillingStatus } from "@/lib/billing";
 
 function slugify(value: string): string {
   return value
@@ -29,6 +31,9 @@ interface Metrics {
   byStatus: { TRIALING: number; ACTIVE: number; SUSPENDED: number; CANCELLED: number };
   totalBranches: number;
   mrrPaisa: number;
+  overdueCount: number;
+  customPricedCount: number;
+  collectedThisMonthPaisa: number;
 }
 
 interface TenantRow {
@@ -43,6 +48,8 @@ interface TenantRow {
   planKey: TierKey | null;
   subscriptionStatus: string | null;
   trialEndsAt: string | null;
+  currentPeriodEnd: string | null;
+  customMonthlyPricePaisa: number | null;
 }
 
 const STATUS_VARIANT: Record<TenantRow["status"], "success" | "info" | "destructive" | "outline"> = {
@@ -123,16 +130,27 @@ export default function PlatformTenantsPage() {
       </div>
 
       {metrics && (
-        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
-          <MetricCard label="Trialing" value={metrics.byStatus.TRIALING} icon={Store} />
-          <MetricCard label="Active" value={metrics.byStatus.ACTIVE} icon={Store} tone="success" />
-          <MetricCard label="Suspended" value={metrics.byStatus.SUSPENDED} icon={TriangleAlert} tone="destructive" />
-          <MetricCard label="Total branches" value={metrics.totalBranches} icon={Building2} />
-          <MetricCard label="MRR" value={formatPkr(metrics.mrrPaisa)} icon={CircleDollarSign} tone="primary" />
+        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          <StatCard label="Trialing" value={metrics.byStatus.TRIALING} icon={Store} />
+          <StatCard label="Active" value={metrics.byStatus.ACTIVE} icon={Store} tone="success" />
+          <StatCard
+            label="Suspended"
+            value={metrics.byStatus.SUSPENDED}
+            icon={TriangleAlert}
+            tone={metrics.byStatus.SUSPENDED > 0 ? "destructive" : undefined}
+          />
+          <StatCard
+            label="Overdue"
+            value={metrics.overdueCount}
+            icon={TriangleAlert}
+            tone={metrics.overdueCount > 0 ? "destructive" : undefined}
+          />
+          <StatCard label="Collected this month" value={formatPkr(metrics.collectedThisMonthPaisa)} icon={PiggyBank} />
+          <StatCard label="MRR" value={formatPkr(metrics.mrrPaisa)} icon={CircleDollarSign} hero />
         </div>
       )}
 
-      <Card className="mt-6 shadow-sm">
+      <Card className="mt-6 shadow-sm transition-shadow hover:shadow-md">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -142,7 +160,7 @@ export default function PlatformTenantsPage() {
                 <TableHead>Branches</TableHead>
                 <TableHead>Staff</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Trial ends</TableHead>
+                <TableHead>Paid through</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -175,7 +193,19 @@ export default function PlatformTenantsPage() {
                   <TableCell>
                     <Badge variant={STATUS_VARIANT[t.status]}>{t.status}</Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{t.trialEndsAt ? new Date(t.trialEndsAt).toLocaleDateString() : "—"}</TableCell>
+                  <TableCell>
+                    {(() => {
+                      const billing = getBillingStatus({
+                        tenantStatus: t.status,
+                        trialEndsAt: t.trialEndsAt,
+                        currentPeriodEnd: t.currentPeriodEnd,
+                      });
+                      // Deliberately kept out of the Status column above — Status is what actually
+                      // gates access, this is a non-blocking flag. Conflating them here would blur
+                      // exactly the distinction an admin needs when deciding whether to suspend.
+                      return <Badge variant={billing.badgeVariant}>{billing.label}</Badge>;
+                    })()}
+                  </TableCell>
                   <TableCell className="space-x-2 text-right">
                     <Button size="sm" variant="outline" render={<Link href={`/platform/tenants/${t.id}`} />} nativeButton={false}>
                       View
@@ -403,39 +433,3 @@ function TempPasswordDialog({
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  label: string;
-  value: string | number;
-  icon: typeof Users;
-  tone?: "success" | "destructive" | "primary";
-}) {
-  const toneClass =
-    tone === "success"
-      ? "bg-success/15 text-success"
-      : tone === "destructive"
-        ? "bg-destructive/15 text-destructive"
-        : tone === "primary"
-          ? "bg-primary/15 text-primary"
-          : "bg-muted text-muted-foreground";
-  const hero = tone === "primary";
-  return (
-    <Card className={hero ? "overflow-hidden shadow-md ring-1 ring-primary/20" : "shadow-sm"}>
-      <CardContent
-        className={`flex items-center justify-between pt-6 ${hero ? "bg-gradient-to-br from-primary/15 via-transparent to-transparent" : ""}`}
-      >
-        <div>
-          <div className="text-xs text-muted-foreground">{label}</div>
-          <div className={`font-heading font-bold tabular-nums ${hero ? "text-2xl text-primary" : "text-xl"}`}>{value}</div>
-        </div>
-        <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${toneClass}`}>
-          <Icon className="size-4.5" />
-        </span>
-      </CardContent>
-    </Card>
-  );
-}

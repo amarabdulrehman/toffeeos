@@ -62,7 +62,16 @@ export const GET = defineHandler({ permission: "pos.access" }, async ({ session,
 const createCategorySchema = z.object({ name: z.string().min(1).max(80) });
 
 export const POST = defineHandler(
-  { permission: "menu.manage", input: createCategorySchema },
+  {
+    permission: "menu.manage",
+    input: createCategorySchema,
+    audit: (input, result) => ({
+      action: "menu_category.create",
+      entityType: "Category",
+      entityId: (result as { id: string }).id,
+      metadata: { name: input.name },
+    }),
+  },
   async ({ session, db, input }) => {
     const last = await db.category.aggregate({ _max: { sortOrder: true } });
     return db.category.create({

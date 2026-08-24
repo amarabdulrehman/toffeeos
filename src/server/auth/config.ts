@@ -4,6 +4,7 @@ import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 import { platformDb, tenantDb } from "@/server/db";
 import { verifyPassword, verifyPin } from "@/lib/password";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { edgeAuthConfig } from "./edge-config";
 import { buildTenantSessionUser, findTenantBySlug, tenantAcceptsLogin } from "./session-user";
 import { verifyOtp } from "./otp-store";
@@ -86,6 +87,12 @@ export const authConfig = {
         const tenant = await findTenantBySlug(tenantSlug);
         if (!tenant || !tenantAcceptsLogin(tenant.status)) return null;
 
+        // A PIN is only 4 digits (10,000 combinations) checked against every active membership on
+        // this branch at once — that's the natural attempt boundary an attacker is bound by, so
+        // it's what this is keyed on rather than per-user. 8 attempts/10 min is generous for a
+        // fumbling cashier, punishing for a script.
+        if (!(await checkRateLimit(`staff-pin:${tenant.id}:${branchId}`, 8, 10 * 60 * 1000))) return null;
+
         const db = tenantDb(tenant.id);
         const memberships = await db.membership.findMany({
           where: { branchId, isActive: true },
@@ -123,7 +130,7 @@ export const authConfig = {
 
         const tenant = await findTenantBySlug(tenantSlug);
         if (!tenant || !tenantAcceptsLogin(tenant.status)) return null;
-        if (!verifyOtp(`${tenant.id}:${phone}`, code)) return null;
+        if (!(await verifyOtp(`${tenant.id}:${phone}`, code))) return null;
 
         const user = await tenantDb(tenant.id).user.findFirst({ where: { phone } });
         if (!user || !user.isActive) return null;
@@ -170,7 +177,7 @@ export const authConfig = {
       async authorize(raw): Promise<LooseUser | null> {
         const parsed = impersonateSchema.safeParse(raw);
         if (!parsed.success) return null;
-        const grant = consumeImpersonationToken(parsed.data.token);
+        const grant = await consumeImpersonationToken(parsed.data.token);
         if (!grant) return null;
 
         const sessionUser = await buildTenantSessionUser(grant.tenantId, grant.targetUserId);

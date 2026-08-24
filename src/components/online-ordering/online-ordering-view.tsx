@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableSkeletonRows } from "@/components/ui/table-skeleton";
 import { formatPkr } from "@/lib/money";
 
 interface Branding {
@@ -45,6 +46,7 @@ export function OnlineOrderingView() {
   const [brandColor, setBrandColor] = useState("");
   const [saving, setSaving] = useState(false);
   const [orders, setOrders] = useState<OnlineOrder[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
 
   const load = useCallback(() => {
     fetch("/api/tenant-branding")
@@ -56,7 +58,8 @@ export function OnlineOrderingView() {
       });
     fetch("/api/orders")
       .then((r) => r.json())
-      .then((d) => setOrders((d.orders ?? []).filter((o: OnlineOrder) => o.source === "ONLINE")));
+      .then((d) => setOrders((d.orders ?? []).filter((o: OnlineOrder) => o.source === "ONLINE")))
+      .finally(() => setOrdersLoading(false));
   }, []);
 
   useEffect(load, [load]);
@@ -145,7 +148,7 @@ export function OnlineOrderingView() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="shadow-sm transition-shadow hover:shadow-md">
         <CardHeader>
           <CardTitle>Recent online orders</CardTitle>
         </CardHeader>
@@ -159,14 +162,15 @@ export function OnlineOrderingView() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orders.length === 0 && (
+              {ordersLoading && <TableSkeletonRows widths={["w-12", "w-20", "w-16"]} align={["left", "left", "right"]} rows={4} />}
+              {!ordersLoading && orders.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center text-muted-foreground">
+                  <TableCell colSpan={3} className="py-10 text-center text-muted-foreground">
                     No online orders yet.
                   </TableCell>
                 </TableRow>
               )}
-              {orders.map((o) => (
+              {!ordersLoading && orders.map((o) => (
                 <TableRow key={o.id}>
                   <TableCell>#{o.orderNumber}</TableCell>
                   <TableCell>

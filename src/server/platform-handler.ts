@@ -1,8 +1,10 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import type { ZodType } from "zod";
 import { auth } from "@/server/auth";
 import { platformDb } from "@/server/db";
+import { HttpError } from "@/server/handler";
 import type { PlatformSessionUser } from "@/server/auth/types";
 
 /** Same shape as defineHandler, but for (platform) super-admin routes: requires kind === "platform"
@@ -15,11 +17,16 @@ export interface PlatformHandlerContext<TInput> {
   params: Record<string, string>;
 }
 
-export class HttpError extends Error {
-  constructor(public status: number, message: string, public issues?: unknown) {
-    super(message);
-  }
-}
+/** Re-exported (not redefined) from src/server/handler.ts on purpose — this file used to declare
+ * its own separate `HttpError` class with the same name and shape. Since src/server/platform.ts
+ * and src/server/billing.ts both throw @/server/handler's HttpError (the one defineHandler-based
+ * tenant routes use), every `catch (err) { if (err instanceof HttpError) ... }` check below was
+ * comparing against the WRONG class — two different classes, same name, so `instanceof` always
+ * failed and every intentional HttpError (404s, validation errors, the branch-limit-on-downgrade
+ * check) silently fell through to a generic 500 "Internal error" instead of its real status and
+ * message. A single canonical HttpError, used by both defineHandler and definePlatformHandler,
+ * is what makes `instanceof` actually work regardless of which one catches it. */
+export { HttpError };
 
 type RouteContext = { params: Promise<Record<string, string>> };
 
@@ -52,6 +59,7 @@ export function definePlatformHandler<TSchema extends ZodType = ZodType<undefine
       if (err instanceof HttpError) {
         return NextResponse.json({ error: err.message, issues: err.issues }, { status: err.status });
       }
+      Sentry.captureException(err);
       console.error(err);
       return NextResponse.json({ error: "Internal error" }, { status: 500 });
     }

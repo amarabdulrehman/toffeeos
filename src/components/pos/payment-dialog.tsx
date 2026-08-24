@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatPkr } from "@/lib/money";
 import type { PaymentMethod } from "./types";
+
+interface PreviewTotals {
+  totalPaisa: number;
+  taxPaisa: number;
+  tenders: { method: PaymentMethod; rateBasisPoints: number }[];
+}
 
 const METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "CASH", label: "Cash" },
@@ -24,12 +30,15 @@ interface Tender {
 
 export function PaymentDialog({
   open,
+  orderId,
   totalPaisa,
   onClose,
   onConfirm,
   submitting,
 }: {
   open: boolean;
+  /** Null while the dialog is closed/unmounting — the live preview fetch below is skipped then. */
+  orderId: string | null;
   totalPaisa: number;
   onClose: () => void;
   onConfirm: (tenders: { method: PaymentMethod; amountPaisa: number }[]) => void;
@@ -40,10 +49,43 @@ export function PaymentDialog({
   // reason, so this initializer runs fresh each time instead of only on the very first render.
   const [tenders, setTenders] = useState<Tender[]>([{ method: "CASH", amountRs: (totalPaisa / 100).toFixed(2) }]);
   const [cashGiven, setCashGiven] = useState("");
+  // The order's persisted totalPaisa was computed at order-creation time assuming a CASH tender
+  // (Punjab PRA's higher 16% rate) — it's only a placeholder until this resolves. Cash and card
+  // are genuinely different totals (16% vs 8%), so "Amount due" must reflect whatever the cashier
+  // currently has selected, not the number the order happened to be created with.
+  const [preview, setPreview] = useState<PreviewTotals | null>(null);
 
+  useEffect(() => {
+    if (!orderId) return;
+    const controller = new AbortController();
+    const handle = setTimeout(() => {
+      fetch(`/api/orders/${orderId}/pay-preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          tenders: tenders
+            .map((t) => ({ method: t.method, amountPaisa: Math.round((parseFloat(t.amountRs) || 0) * 100) }))
+            .filter((t) => t.amountPaisa > 0),
+        }),
+      })
+        .then((r) => r.json())
+        .then((d) => d.totals && setPreview(d.totals))
+        .catch(() => {});
+    }, 150);
+    return () => {
+      clearTimeout(handle);
+      controller.abort();
+    };
+    // tenders is a plain array of primitives per entry — stringify so the effect only re-runs
+    // when a method or amount actually changes, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId, JSON.stringify(tenders)]);
+
+  const dueTotalPaisa = preview?.totalPaisa ?? totalPaisa;
   const tenderedPaisa = tenders.reduce((a, t) => a + Math.round((parseFloat(t.amountRs) || 0) * 100), 0);
-  const remainingPaisa = totalPaisa - tenderedPaisa;
-  const changePaisa = Math.max(0, Math.round((parseFloat(cashGiven) || 0) * 100) - totalPaisa);
+  const remainingPaisa = dueTotalPaisa - tenderedPaisa;
+  const changePaisa = Math.max(0, Math.round((parseFloat(cashGiven) || 0) * 100) - dueTotalPaisa);
 
   function updateTender(i: number, patch: Partial<Tender>) {
     setTenders((prev) => prev.map((t, idx) => (idx === i ? { ...t, ...patch } : t)));
@@ -74,7 +116,13 @@ export function PaymentDialog({
 
         <div className="rounded-xl bg-primary/10 px-4 py-3.5 text-center shadow-xs">
           <div className="text-xs font-medium text-muted-foreground">Amount due</div>
-          <div className="font-heading text-3xl font-bold tabular-nums text-primary">{formatPkr(totalPaisa)}</div>
+          <div className="font-heading text-3xl font-bold tabular-nums text-primary">{formatPkr(dueTotalPaisa)}</div>
+          {preview && (
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              incl. {formatPkr(preview.taxPaisa)} tax
+              {preview.tenders.length === 1 && ` (${(preview.tenders[0].rateBasisPoints / 100).toFixed(0)}%)`}
+            </div>
+          )}
         </div>
 
         <div className="space-y-3">

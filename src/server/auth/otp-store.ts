@@ -1,30 +1,34 @@
 import "server-only";
+import { platformDb } from "@/server/db";
 
 /**
- * DEV-ONLY stub OTP store — in-memory, per-process. Fine for local development and demos; wrong
- * for production (won't survive a redeploy, doesn't work across multiple server instances, has no
- * rate limiting). Before going live, replace with a DB- or Redis-backed store and swap the
- * console.log below for a real WhatsApp Business API / SMS send (see the WhatsApp-native
- * differentiator in the product brief).
+ * Persistent (Postgres-backed) OTP store — was an in-memory Map, which is exactly wrong for a
+ * login flow: "request OTP" and "verify OTP" are two separate requests that can land on two
+ * different serverless instances, and a Map on instance A is invisible to instance B. OtpCode is
+ * platform-level (no RLS, not tenant data) — an OTP is issued before any tenant session exists —
+ * so this reads/writes via platformDb.
+ *
+ * Still needs a real WhatsApp Business API / SMS send behind the console.log below before going
+ * live (see the WhatsApp-native differentiator in the product brief) — that part hasn't changed.
  */
-const codes = new Map<string, { code: string; expiresAt: number }>();
 const OTP_TTL_MS = 5 * 60 * 1000;
 
-export function issueOtp(key: string): string {
+export async function issueOtp(key: string): Promise<string> {
   const code = Math.floor(100_000 + Math.random() * 900_000).toString();
-  codes.set(key, { code, expiresAt: Date.now() + OTP_TTL_MS });
+  await platformDb.otpCode.create({ data: { key, code, expiresAt: new Date(Date.now() + OTP_TTL_MS) } });
   console.log(`[OTP STUB] ${key} -> ${code} (expires in 5 min)`);
   return code;
 }
 
-export function verifyOtp(key: string, code: string): boolean {
-  const entry = codes.get(key);
+export async function verifyOtp(key: string, code: string): Promise<boolean> {
+  const entry = await platformDb.otpCode.findFirst({ where: { key, code }, orderBy: { createdAt: "desc" } });
   if (!entry) return false;
-  if (Date.now() > entry.expiresAt) {
-    codes.delete(key);
+  if (Date.now() > entry.expiresAt.getTime()) {
+    await platformDb.otpCode.delete({ where: { id: entry.id } }).catch(() => {});
     return false;
   }
-  const ok = entry.code === code;
-  if (ok) codes.delete(key);
-  return ok;
+  // Single-use: delete on successful verification. Also clears any other still-live codes for this
+  // key so a stale earlier code can't be replayed after a newer one was already consumed.
+  await platformDb.otpCode.deleteMany({ where: { key } });
+  return true;
 }

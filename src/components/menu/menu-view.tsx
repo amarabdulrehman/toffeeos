@@ -6,10 +6,11 @@ import { BookOpen, ChefHat, Lock, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatPkr } from "@/lib/money";
 
 interface MenuItemRow {
@@ -19,6 +20,10 @@ interface MenuItemRow {
   basePricePaisa: number;
   hasRecipe: boolean;
   isAvailable: boolean;
+}
+interface CategoryRow {
+  id: string;
+  name: string;
 }
 interface InventoryItem {
   id: string;
@@ -33,8 +38,17 @@ interface RecipeLine {
 
 export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
   const [items, setItems] = useState<MenuItemRow[]>([]);
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<MenuItemRow | null>(null);
+  const [addCategoryOpen, setAddCategoryOpen] = useState(false);
+  const [addItemOpen, setAddItemOpen] = useState(false);
+
+  const loadCategories = useCallback(async () => {
+    const r = await fetch("/api/menu/categories");
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) setCategories(body.categories ?? []);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -53,9 +67,9 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
 
   useEffect(() => {
     (async () => {
-      await load();
+      await Promise.all([load(), loadCategories()]);
     })();
-  }, [load]);
+  }, [load, loadCategories]);
 
   async function toggleAvailability(item: MenuItemRow) {
     const res = await fetch(`/api/menu-items/${item.id}/availability`, {
@@ -72,23 +86,36 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
 
   return (
     <div className="p-8">
-      <div className="flex items-center gap-3">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <BookOpen className="size-5" />
-        </span>
-        <div>
-          <h1 className="font-heading text-2xl font-bold tracking-tight">Menu</h1>
-          <p className="text-sm text-muted-foreground">
-            Set a recipe per item to enable automatic stock deduction and cost/margin reporting. Availability here is
-            what POS, KDS, and the online ordering site all read — mark an item unavailable (&ldquo;86 it&rdquo;) and
-            it greys out everywhere at once, for this branch.
-          </p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <BookOpen className="size-5" />
+          </span>
+          <div>
+            <h1 className="font-heading text-2xl font-bold tracking-tight">Menu</h1>
+            <p className="text-sm text-muted-foreground">
+              Set a recipe per item to enable automatic stock deduction and cost/margin reporting. Availability here is
+              what POS, KDS, and the online ordering site all read — mark an item unavailable (&ldquo;86 it&rdquo;) and
+              it greys out everywhere at once, for this branch.
+            </p>
+          </div>
         </div>
+        <Button variant="outline" className="shrink-0" onClick={() => setAddCategoryOpen(true)}>
+          + Add category
+        </Button>
       </div>
 
-      <Card className="mt-6 shadow-sm">
-        <CardHeader>
+      <Card className="mt-6 shadow-sm transition-shadow hover:shadow-md">
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="font-heading">Items</CardTitle>
+          <Button
+            size="sm"
+            onClick={() => setAddItemOpen(true)}
+            disabled={categories.length === 0}
+            title={categories.length === 0 ? "Add a category first" : undefined}
+          >
+            + Add item
+          </Button>
         </CardHeader>
         <CardContent>
           {error ? (
@@ -109,6 +136,15 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {items.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={recipeEnabled ? 6 : 5} className="py-10 text-center text-muted-foreground">
+                      {categories.length === 0
+                        ? "No categories yet — add one to start building your menu."
+                        : "No items yet — add your first menu item."}
+                    </TableCell>
+                  </TableRow>
+                )}
                 {items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className={`font-medium ${!item.isAvailable ? "text-muted-foreground line-through" : ""}`}>
@@ -156,7 +192,186 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
           load();
         }}
       />
+
+      <AddCategoryDialog
+        open={addCategoryOpen}
+        onClose={() => setAddCategoryOpen(false)}
+        onCreated={() => {
+          setAddCategoryOpen(false);
+          loadCategories();
+        }}
+      />
+
+      <AddItemDialog
+        open={addItemOpen}
+        categories={categories}
+        onClose={() => setAddItemOpen(false)}
+        onCreated={() => {
+          setAddItemOpen(false);
+          load();
+        }}
+      />
     </div>
+  );
+}
+
+function AddCategoryDialog({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit() {
+    if (!name.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/menu", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? "Could not create category.");
+        return;
+      }
+      toast.success("Category added.");
+      setName("");
+      onCreated();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-heading">New category</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor="categoryName">Category name</Label>
+          <Input
+            id="categoryName"
+            placeholder="e.g. Starters"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <DialogFooter>
+          <Button onClick={submit} disabled={submitting || !name.trim()}>
+            {submitting ? "Adding…" : "Add category"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddItemDialog({
+  open,
+  categories,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  categories: CategoryRow[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [price, setPrice] = useState("");
+  const [description, setDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  function reset() {
+    setName("");
+    setCategoryId("");
+    setPrice("");
+    setDescription("");
+  }
+
+  async function submit() {
+    if (!name.trim() || !categoryId || !price) {
+      toast.error("Name, category, and price are required.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/menu-items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          categoryId,
+          basePricePaisa: Math.round(Number(price) * 100),
+          description: description.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? "Could not create item.");
+        return;
+      }
+      toast.success("Item added.");
+      reset();
+      onCreated();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-heading">New menu item</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="itemName">Item name</Label>
+            <Input id="itemName" placeholder="e.g. Chicken Karahi" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Category</Label>
+            <Select value={categoryId} onValueChange={(v) => v && setCategoryId(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a category">
+                  {(v: string) => categories.find((c) => c.id === v)?.name ?? v}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="itemPrice">Price (Rs)</Label>
+            <Input id="itemPrice" type="number" placeholder="e.g. 450" value={price} onChange={(e) => setPrice(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="itemDescription">Description (optional)</Label>
+            <Input id="itemDescription" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={submit} disabled={submitting || !name.trim() || !categoryId || !price}>
+            {submitting ? "Adding…" : "Add item"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

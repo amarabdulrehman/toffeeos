@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ForgotPasswordDialog } from "@/components/auth/forgot-password-dialog";
 
 function LoginForm() {
   const router = useRouter();
@@ -19,6 +20,7 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -72,7 +74,16 @@ function LoginForm() {
             <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              <button
+                type="button"
+                onClick={() => setForgotOpen(true)}
+                className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              >
+                Forgot password?
+              </button>
+            </div>
             <Input
               id="password"
               type="password"
@@ -85,6 +96,13 @@ function LoginForm() {
             {loading ? "Signing in…" : "Sign in"}
           </Button>
         </form>
+        <ForgotPasswordDialog
+          open={forgotOpen}
+          onClose={() => setForgotOpen(false)}
+          endpoint="/api/auth/request-password-reset"
+          forTenant
+          initialTenantSlug={tenantSlug}
+        />
         <p className="mt-4 text-center text-sm text-muted-foreground">
           Don&apos;t have a restaurant yet?{" "}
           <Link href="/signup" className="font-medium text-primary underline-offset-4 hover:underline">

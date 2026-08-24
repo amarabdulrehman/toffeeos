@@ -9,11 +9,8 @@ import {
   CircleDollarSign,
   Lock,
   Package,
-  TrendingDown,
-  TrendingUp,
   Truck,
   Users,
-  type LucideIcon,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,23 +19,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableSkeletonRows } from "@/components/ui/table-skeleton";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatCard } from "@/components/ui/stat-card";
 import { AreaTrendChart } from "@/components/charts/area-trend-chart";
 import { RankedBarChart } from "@/components/charts/ranked-bar-chart";
 import { formatPkr } from "@/lib/money";
 import { downloadCsv } from "@/lib/csv";
-import { tierMeets, type TierKey } from "@/lib/tiers";
 
-// Sales/staff stay Starter; the rest of the "full report suite" is Growth or Complete, per the
-// pricing brief — see src/lib/tiers.ts's MODULE_MIN_TIER doc comment for the same mapping used
-// server-side to gate the underlying API routes (this is the UI half of the same decision).
-const TAB_MIN_TIER: Record<string, TierKey> = {
-  sales: "starter",
-  items: "starter",
-  staff: "starter",
-  recipe: "growth",
-  discounts: "growth",
-  valuation: "growth",
-  riders: "complete",
+// Sales/staff/items stay always-on; the rest of the "full report suite" each need their own module
+// toggle, per the same mapping used server-side to gate the underlying API routes (this is the UI
+// half of the same decision) — see moduleForPermission in lib/tiers.ts. null = always visible.
+const TAB_MODULE: Record<string, string | null> = {
+  sales: null,
+  items: null,
+  staff: null,
+  recipe: "costing", // "Recipe Cost" tab -> costing.viewMargins
+  discounts: "reports",
+  valuation: "reports",
+  riders: "delivery", // reports.riderPerformance.view is meaningless without Delivery
 };
 
 function useDateRange() {
@@ -65,13 +64,15 @@ function useDateRange() {
  * member lacks permission for (or any other API failure) used to get silently treated as if it
  * were valid data and crash the tab trying to read fields off it. This checks res.ok first and
  * surfaces the server's own message instead. */
-function useReportFetch<T>(url: string): { data: T | null; error: string | null } {
+function useReportFetch<T>(url: string): { data: T | null; error: string | null; loading: boolean } {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setLoading(true);
       setData(null);
       setError(null);
       try {
@@ -85,6 +86,8 @@ function useReportFetch<T>(url: string): { data: T | null; error: string | null 
         setData(body as T);
       } catch {
         if (!cancelled) setError("Could not load this report.");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
@@ -92,7 +95,7 @@ function useReportFetch<T>(url: string): { data: T | null; error: string | null 
     };
   }, [url]);
 
-  return { data, error };
+  return { data, error, loading };
 }
 
 function ReportError({ message }: { message: string }) {
@@ -129,9 +132,12 @@ function DateRangePicker({
   );
 }
 
-export function ReportsView({ tier }: { tier: TierKey }) {
+export function ReportsView({ enabledModules }: { enabledModules: string[] }) {
   const range = useDateRange();
-  const has = (tab: string) => tierMeets(tier, TAB_MIN_TIER[tab]);
+  const has = (tab: string) => {
+    const mod = TAB_MODULE[tab];
+    return mod === null || enabledModules.includes(mod);
+  };
 
   return (
     <div className="p-8">
@@ -200,48 +206,6 @@ export function ReportsView({ tier }: { tier: TierKey }) {
   );
 }
 
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  trend,
-  hero,
-}: {
-  label: string;
-  value: string | number;
-  icon?: LucideIcon;
-  /** Positive → success-toned "up" treatment, negative → destructive-toned "down". Omit for a
-   * plain stat with no directionality (e.g. a raw count). */
-  trend?: number | null;
-  /** The one number on this panel that matters most — a soft primary-tinted glow instead of a
-   * flat card, so the eye lands there first. Use on at most one card per row. */
-  hero?: boolean;
-}) {
-  return (
-    <Card className={hero ? "overflow-hidden shadow-md ring-1 ring-primary/15" : "shadow-sm"}>
-      <CardContent
-        className={`flex items-start justify-between gap-2 pt-6 ${hero ? "bg-gradient-to-br from-primary/[0.07] via-transparent to-transparent" : ""}`}
-      >
-        <div>
-          <div className="text-sm text-muted-foreground">{label}</div>
-          <div className={`font-heading font-bold tabular-nums ${hero ? "text-3xl text-primary" : "text-2xl"}`}>{value}</div>
-          {trend !== undefined && trend !== null && (
-            <div className={`mt-1 flex items-center gap-1 text-xs font-semibold ${trend >= 0 ? "text-success" : "text-destructive"}`}>
-              {trend >= 0 ? <TrendingUp className="size-3.5" /> : <TrendingDown className="size-3.5" />}
-              {trend >= 0 ? "+" : ""}
-              {trend.toFixed(1)}%
-            </div>
-          )}
-        </div>
-        {Icon && (
-          <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${hero ? "bg-primary/15 text-primary" : "bg-primary/10 text-primary"}`}>
-            <Icon className="size-4.5" />
-          </span>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
 
 function ExportButton<T extends object>({ rows, filename }: { rows: T[]; filename: string }) {
   return (
@@ -267,15 +231,40 @@ interface SalesReport {
 }
 
 function SalesTab({ qs }: { qs: string }) {
-  const { data, error } = useReportFetch<SalesReport>(`/api/reports/sales-summary?${qs}`);
+  const { data, error, loading } = useReportFetch<SalesReport>(`/api/reports/sales-summary?${qs}`);
 
   if (error) {
     return (
-      <Card className="shadow-sm">
+      <Card className="shadow-sm transition-shadow hover:shadow-md">
         <CardContent className="pt-6">
           <ReportError message={error} />
         </CardContent>
       </Card>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="shadow-sm">
+              <CardContent className="space-y-2 pt-6">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-7 w-24" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card className="shadow-md">
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-[220px] w-full rounded-lg" />
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -324,7 +313,7 @@ function SalesTab({ qs }: { qs: string }) {
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm">
+        <Card className="shadow-sm transition-shadow hover:shadow-md">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="font-heading">By branch</CardTitle>
             <ExportButton rows={data?.byBranch ?? []} filename="sales-by-branch" />
@@ -336,7 +325,7 @@ function SalesTab({ qs }: { qs: string }) {
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm">
+        <Card className="shadow-sm transition-shadow hover:shadow-md">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="font-heading">By category</CardTitle>
             <ExportButton rows={data?.byCategory ?? []} filename="sales-by-category" />
@@ -348,7 +337,7 @@ function SalesTab({ qs }: { qs: string }) {
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm">
+        <Card className="shadow-sm transition-shadow hover:shadow-md">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="font-heading">By payment method</CardTitle>
             <ExportButton rows={data?.byPaymentMethod ?? []} filename="sales-by-payment-method" />
@@ -375,13 +364,13 @@ function SalesTab({ qs }: { qs: string }) {
 }
 
 function ItemWiseTab({ qs }: { qs: string }) {
-  const { data, error } = useReportFetch<{ items: { menuItemId: string; name: string; quantity: number; revenuePaisa: number }[] }>(
+  const { data, error, loading } = useReportFetch<{ items: { menuItemId: string; name: string; quantity: number; revenuePaisa: number }[] }>(
     `/api/reports/item-wise?${qs}`
   );
   const items = data?.items ?? [];
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="font-heading">Item-wise sales</CardTitle>
         <ExportButton rows={items} filename="item-wise-sales" />
@@ -395,13 +384,22 @@ function ItemWiseTab({ qs }: { qs: string }) {
               <TableRow><TableHead>Item</TableHead><TableHead>Qty</TableHead><TableHead className="text-right">Revenue</TableHead></TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((i) => (
-                <TableRow key={i.menuItemId}>
-                  <TableCell className="font-medium">{i.name}</TableCell>
-                  <TableCell className="tabular-nums">{i.quantity}</TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">{formatPkr(i.revenuePaisa)}</TableCell>
+              {loading && <TableSkeletonRows widths={["w-32", "w-10", "w-20"]} align={["left", "left", "right"]} />}
+              {!loading && items.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={3} className="py-10 text-center text-muted-foreground">
+                    No sales in this range.
+                  </TableCell>
                 </TableRow>
-              ))}
+              )}
+              {!loading &&
+                items.map((i) => (
+                  <TableRow key={i.menuItemId}>
+                    <TableCell className="font-medium">{i.name}</TableCell>
+                    <TableCell className="tabular-nums">{i.quantity}</TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">{formatPkr(i.revenuePaisa)}</TableCell>
+                  </TableRow>
+                ))}
             </TableBody>
           </Table>
         )}
@@ -422,11 +420,11 @@ interface RecipeCostRow {
 }
 
 function RecipeCostTab() {
-  const { data, error } = useReportFetch<{ items: RecipeCostRow[] }>("/api/reports/recipe-cost");
+  const { data, error, loading } = useReportFetch<{ items: RecipeCostRow[] }>("/api/reports/recipe-cost");
   const items = data?.items ?? [];
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="font-heading">Recipe cost & margin (worst margin first)</CardTitle>
         <ExportButton rows={items} filename="recipe-cost-margin" />
@@ -440,7 +438,15 @@ function RecipeCostTab() {
               <TableRow><TableHead>Item</TableHead><TableHead>Price</TableHead><TableHead>Cost</TableHead><TableHead>Margin</TableHead></TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((r) => (
+              {loading && <TableSkeletonRows widths={["w-32", "w-16", "w-16", "w-20"]} />}
+              {!loading && items.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                    No active menu items yet.
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && items.map((r) => (
                 <TableRow key={r.menuItemId}>
                   <TableCell>{r.name}</TableCell>
                   <TableCell>{formatPkr(r.basePricePaisa)}</TableCell>
@@ -478,11 +484,11 @@ interface StaffRow {
 }
 
 function StaffTab({ qs }: { qs: string }) {
-  const { data, error } = useReportFetch<{ rows: StaffRow[] }>(`/api/reports/staff-performance?${qs}`);
+  const { data, error, loading } = useReportFetch<{ rows: StaffRow[] }>(`/api/reports/staff-performance?${qs}`);
   const rows = data?.rows ?? [];
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="font-heading">Staff performance (per staff per day)</CardTitle>
         <ExportButton rows={rows} filename="staff-performance" />
@@ -499,7 +505,15 @@ function StaffTab({ qs }: { qs: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((r, i) => (
+              {loading && <TableSkeletonRows widths={["w-24", "w-20", "w-8", "w-16", "w-6", "w-6"]} rows={4} />}
+              {!loading && rows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                    No staff activity in this range.
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && rows.map((r, i) => (
                 <TableRow key={`${r.staffId}-${r.day}-${i}`}>
                   <TableCell className="font-medium">{r.staffName}</TableCell>
                   <TableCell className="text-muted-foreground">{r.day}</TableCell>
@@ -527,11 +541,11 @@ interface DiscountVoidRow {
 }
 
 function DiscountVoidTab({ qs }: { qs: string }) {
-  const { data, error } = useReportFetch<{ rows: DiscountVoidRow[] }>(`/api/reports/discount-void?${qs}`);
+  const { data, error, loading } = useReportFetch<{ rows: DiscountVoidRow[] }>(`/api/reports/discount-void?${qs}`);
   const rows = data?.rows ?? [];
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="font-heading">Discount & void audit trail</CardTitle>
         <ExportButton rows={rows} filename="discount-void-audit" />
@@ -545,7 +559,15 @@ function DiscountVoidTab({ qs }: { qs: string }) {
               <TableRow><TableHead>Type</TableHead><TableHead>Order #</TableHead><TableHead>Staff</TableHead><TableHead>Detail</TableHead><TableHead>Reason</TableHead><TableHead>When</TableHead></TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((r, i) => (
+              {loading && <TableSkeletonRows widths={["w-14", "w-10", "w-24", "w-28", "w-20", "w-28"]} rows={4} />}
+              {!loading && rows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                    No discounts or voids in this range.
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && rows.map((r, i) => (
                 <TableRow key={i}>
                   <TableCell>
                     <Badge variant={r.kind === "void" ? "destructive" : "warning"} className="capitalize">{r.kind}</Badge>
@@ -575,15 +597,16 @@ interface ValuationRow {
 }
 
 function ValuationTab() {
-  const { data, error } = useReportFetch<{ rows: ValuationRow[]; totalValuePaisa: number }>("/api/reports/inventory-valuation");
+  const { data, error, loading } = useReportFetch<{ rows: ValuationRow[]; totalValuePaisa: number }>("/api/reports/inventory-valuation");
   const rows = data?.rows ?? [];
   const total = data?.totalValuePaisa ?? 0;
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="font-heading">
-          Inventory valuation — total <span className="text-primary">{formatPkr(total)}</span>
+          Inventory valuation — total{" "}
+          {loading ? <Skeleton className="inline-block h-5 w-20 align-middle" /> : <span className="text-primary">{formatPkr(total)}</span>}
         </CardTitle>
         <ExportButton rows={rows} filename="inventory-valuation" />
       </CardHeader>
@@ -596,7 +619,15 @@ function ValuationTab() {
               <TableRow><TableHead>Location</TableHead><TableHead>Item</TableHead><TableHead>Qty</TableHead><TableHead>Unit cost</TableHead><TableHead className="text-right">Value</TableHead></TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((r, i) => (
+              {loading && <TableSkeletonRows widths={["w-20", "w-28", "w-16", "w-16", "w-16"]} align={["left", "left", "left", "left", "right"]} />}
+              {!loading && rows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                    No stock recorded yet.
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && rows.map((r, i) => (
                 <TableRow key={i}>
                   <TableCell className="text-muted-foreground">{r.locationName}</TableCell>
                   <TableCell className="font-medium">{r.itemName}</TableCell>
@@ -621,11 +652,11 @@ interface RiderRow {
 }
 
 function RiderTab({ qs }: { qs: string }) {
-  const { data, error } = useReportFetch<{ rows: RiderRow[] }>(`/api/reports/rider-performance?${qs}`);
+  const { data, error, loading } = useReportFetch<{ rows: RiderRow[] }>(`/api/reports/rider-performance?${qs}`);
   const rows = data?.rows ?? [];
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="font-heading">Rider performance</CardTitle>
         <ExportButton rows={rows} filename="rider-performance" />
@@ -639,7 +670,15 @@ function RiderTab({ qs }: { qs: string }) {
               <TableRow><TableHead>Rider</TableHead><TableHead>Deliveries</TableHead><TableHead>Avg delivery time</TableHead></TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((r) => (
+              {loading && <TableSkeletonRows widths={["w-24", "w-10", "w-16"]} rows={3} />}
+              {!loading && rows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={3} className="py-10 text-center text-muted-foreground">
+                    No deliveries in this range.
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && rows.map((r) => (
                 <TableRow key={r.riderId}>
                   <TableCell className="font-medium">{r.riderName}</TableCell>
                   <TableCell className="tabular-nums">{r.deliveries}</TableCell>

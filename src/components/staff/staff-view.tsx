@@ -109,7 +109,7 @@ export function StaffView({ canInvite, canManage }: { canInvite: boolean; canMan
       </div>
 
       {!loading && data && data.invites.length > 0 && (
-        <Card className="mt-6 shadow-sm">
+        <Card className="mt-6 shadow-sm transition-shadow hover:shadow-md">
           <CardHeader>
             <CardTitle className="font-heading text-base">Pending invites</CardTitle>
           </CardHeader>
@@ -147,7 +147,7 @@ export function StaffView({ canInvite, canManage }: { canInvite: boolean; canMan
         </Card>
       )}
 
-      <Card className="mt-6 shadow-sm">
+      <Card className="mt-6 shadow-sm transition-shadow hover:shadow-md">
         <CardHeader>
           <CardTitle className="font-heading text-base">
             {loading ? "Team" : `${data?.members.length ?? 0} team member${data?.members.length === 1 ? "" : "s"}`}

@@ -1,12 +1,13 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import type { ZodType } from "zod";
 import { auth } from "@/server/auth";
 import { tenantDb } from "@/server/db";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import type { TenantSessionUser } from "@/server/auth/types";
 import { tenantAcceptsLogin } from "@/server/auth/session-user";
-import { getTenantGate, minTierForPermission, tierMeets, TIER_LABEL, type TierKey } from "@/server/tier";
+import { getTenantGate, moduleForPermission } from "@/server/tier";
 
 /**
  * The single choke point every tenant-facing API route goes through: resolves the session,
@@ -36,11 +37,11 @@ export interface DefineHandlerOptions<TSchema extends ZodType> {
   /** A key from src/server/permissions/registry.ts. Omit only for routes any signed-in staff member may hit. */
   permission?: string;
   /**
-   * Overrides which tier-gated module this route belongs to, when `permission`'s own module
-   * (its string before the first ".") doesn't match the tier grid — e.g. tenant-branding is gated
-   * by the broad `settings.general.manage` permission but is specifically an Online Ordering
-   * feature. Only needed for that kind of mismatch; leave unset otherwise, since `permission`
-   * already infers the right tier for the vast majority of routes.
+   * Overrides which gateable module (see GATEABLE_MODULES in src/lib/tiers.ts) this route belongs
+   * to, when `permission`'s own module (its string before the first ".") doesn't match — e.g.
+   * tenant-branding is gated by the broad `settings.general.manage` permission but is specifically
+   * an Online Ordering feature. Only needed for that kind of mismatch; leave unset otherwise, since
+   * `permission` already infers the right module for the vast majority of routes.
    */
   tierModule?: string;
   input?: TSchema;
@@ -89,9 +90,9 @@ export function defineHandler<TSchema extends ZodType = ZodType<undefined>>(
         throw new HttpError(403, "This restaurant's account is no longer active.");
       }
       if (options.permission) {
-        const requiredTier: TierKey = minTierForPermission(options.tierModule ?? options.permission);
-        if (requiredTier !== "starter" && !tierMeets(gate.tier, requiredTier)) {
-          throw new HttpError(403, `This feature requires the ${TIER_LABEL[requiredTier]} plan or higher.`);
+        const moduleKey = moduleForPermission(options.tierModule ?? options.permission);
+        if (moduleKey && !gate.enabledModules.includes(moduleKey)) {
+          throw new HttpError(403, "This feature isn't enabled for this restaurant. Contact your platform admin.");
         }
       }
 
@@ -142,6 +143,10 @@ export function defineHandler<TSchema extends ZodType = ZodType<undefined>>(
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
+      // Only genuinely unexpected errors reach here — HttpError and the P2025 case above are both
+      // handled (expected) outcomes, not incidents. This is the one place a real client's 500 was
+      // previously invisible unless they personally reported it.
+      Sentry.captureException(err);
       console.error(err);
       return NextResponse.json({ error: "Internal error" }, { status: 500 });
     }

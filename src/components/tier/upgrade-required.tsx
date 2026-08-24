@@ -16,10 +16,10 @@ export function UpgradeRequired({ feature, requiredTier }: { feature: string; re
           <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Lock className="size-5" />
           </span>
-          <CardTitle className="font-heading">Upgrade to unlock {feature}</CardTitle>
+          <CardTitle className="font-heading">{feature} isn&apos;t enabled</CardTitle>
           <CardDescription>
-            {feature} is available on the {TIER_LABEL[requiredTier]} plan and above. Ask your platform admin to
-            upgrade this restaurant&apos;s plan.
+            {feature} is available on the {TIER_LABEL[requiredTier]} plan and above, and can also be enabled
+            individually. Ask your platform admin to turn it on for this restaurant.
           </CardDescription>
         </CardHeader>
       </Card>

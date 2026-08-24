@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { Truck } from "lucide-react";
 import { auth } from "@/server/auth";
-import { tenantDb } from "@/server/db";
-import { getTenantTier, tierMeets } from "@/server/tier";
+import { getTenantModulesForTenant } from "@/server/tier";
 import { BRAND_NAME } from "@/config/brand";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -20,11 +19,11 @@ export default async function RiderAppLayout({ children }: { children: React.Rea
     redirect("/app/dashboard");
   }
 
-  // Delivery & Rider Management is Complete-only — mirrors the same check the underlying
+  // Delivery & Rider Management is a gateable module — mirrors the same check the underlying
   // /api/rider/* routes already get automatically via defineHandler, but this is a page (not an
   // API route), so it needs its own explicit check.
-  const tier = await getTenantTier(tenantDb(user.tenantId));
-  if (!tierMeets(tier, "complete")) {
+  const enabledModules = await getTenantModulesForTenant(user.tenantId);
+  if (!enabledModules.includes("delivery")) {
     redirect("/app/dashboard");
   }
 

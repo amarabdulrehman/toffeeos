@@ -4,11 +4,11 @@ import { findTenantBySlug, tenantAcceptsLogin } from "@/server/auth/session-user
 import { findOrCreateCustomer } from "@/server/crm";
 import { createOrder, sendToKitchen, findOpenOrderForTable, addLinesToOrder, type CreateOrderLineInput } from "@/server/orders";
 import { HttpError } from "@/server/handler";
-import { getTenantTier, tierMeets } from "@/server/tier";
+import { getTenantModules } from "@/server/tier";
 
 /** Resolves a public storefront by slug — 404s (returns null) rather than leaking whether a slug
  * exists if the tenant is suspended/cancelled, same gate as tenant login. Online Ordering + QR
- * Table Ordering is a Complete-tier feature: every route under /api/online-order/[tenantSlug]/*
+ * Table Ordering is a gateable module: every route under /api/online-order/[tenantSlug]/*
  * (storefront, menu, checkout, qr-checkout, table info) calls this first, so gating it here blocks
  * the whole public flow in one place rather than four separate ones. */
 export async function getStorefront(slug: string) {
@@ -16,8 +16,8 @@ export async function getStorefront(slug: string) {
   if (!tenant || !tenantAcceptsLogin(tenant.status)) return null;
 
   const db = tenantDb(tenant.id);
-  const tier = await getTenantTier(db);
-  if (!tierMeets(tier, "complete")) return null;
+  const enabledModules = await getTenantModules(db);
+  if (!enabledModules.includes("online")) return null;
 
   const branches = await db.branch.findMany({
     where: { isActive: true },

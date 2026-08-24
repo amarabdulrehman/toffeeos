@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   const { tenantSlug } = await ctx.params;
 
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  if (!checkRateLimit(`checkout:${tenantSlug}:${ip}`, 5, 5 * 60 * 1000)) {
+  if (!(await checkRateLimit(`checkout:${tenantSlug}:${ip}`, 5, 5 * 60 * 1000))) {
     return NextResponse.json({ error: "Too many orders from this connection — please wait a few minutes and try again." }, { status: 429 });
   }
 

@@ -20,17 +20,17 @@ import {
   Building2,
   type LucideIcon,
 } from "lucide-react";
-import { tierMeets, type TierKey } from "@/lib/tiers";
-
 interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
   /** Shown if the user has ANY of these permissions. Omitted = always shown (Dashboard). */
   anyPermission?: string[];
-  /** Tenant's tier must meet this to show the item at all — composes with anyPermission, not a
-   * replacement for it (a Cashier on a Growth tenant still can't see Inventory, tier aside). */
-  minTier?: TierKey;
+  /** Gateable module key (see GATEABLE_MODULES in lib/tiers.ts) — the tenant's enabledModules must
+   * include this for the item to show at all, composes with anyPermission, not a replacement for
+   * it (a Cashier at a tenant with Inventory enabled still can't see Inventory without the
+   * permission too). */
+  module?: string;
 }
 
 const NAV: NavItem[] = [
@@ -39,18 +39,18 @@ const NAV: NavItem[] = [
   { href: "/kds", label: "KDS", icon: ChefHat, anyPermission: ["kds.access"] },
   { href: "/app/tables", label: "Tables", icon: LayoutGrid, anyPermission: ["tables.view"] },
   { href: "/app/menu", label: "Menu", icon: BookOpen, anyPermission: ["menu.view"] },
-  { href: "/app/inventory", label: "Inventory", icon: Package, anyPermission: ["inventory.view"], minTier: "growth" },
-  { href: "/app/delivery", label: "Delivery", icon: Truck, anyPermission: ["delivery.view"], minTier: "complete" },
-  { href: "/app/customers", label: "Customers", icon: Users, anyPermission: ["crm.view"], minTier: "growth" },
+  { href: "/app/inventory", label: "Inventory", icon: Package, anyPermission: ["inventory.view"], module: "inventory" },
+  { href: "/app/delivery", label: "Delivery", icon: Truck, anyPermission: ["delivery.view"], module: "delivery" },
+  { href: "/app/customers", label: "Customers", icon: Users, anyPermission: ["crm.view"], module: "crm" },
   { href: "/app/branches", label: "Branches", icon: Building2, anyPermission: ["branch.manage"] },
   { href: "/app/staff", label: "Staff", icon: UserPlus, anyPermission: ["staff.manage", "staff.invite"] },
-  { href: "/app/whatsapp", label: "WhatsApp", icon: MessageCircle, anyPermission: ["whatsapp.manage"], minTier: "complete" },
+  { href: "/app/whatsapp", label: "WhatsApp", icon: MessageCircle, anyPermission: ["whatsapp.manage"], module: "whatsapp" },
   {
     href: "/app/online-ordering",
     label: "Online Ordering",
     icon: Globe,
     anyPermission: ["settings.general.manage"],
-    minTier: "complete",
+    module: "online",
   },
   {
     href: "/app/reports",
@@ -70,17 +70,17 @@ const NAV: NavItem[] = [
     label: "HR & Payroll",
     icon: Wallet,
     anyPermission: ["hr.shift.assign", "hr.attendance.edit", "hr.employee.manage", "hr.payroll.run", "hr.payroll.view"],
-    minTier: "complete",
+    module: "hr",
   },
   { href: "/app/sync-conflicts", label: "Sync Conflicts", icon: RefreshCw, anyPermission: ["sync.conflict.resolve"] },
 ];
 
-export function AppSidebarNav({ permissions, tier }: { permissions: string[]; tier: TierKey }) {
+export function AppSidebarNav({ permissions, enabledModules }: { permissions: string[]; enabledModules: string[] }) {
   const pathname = usePathname();
 
   const visible = NAV.filter((item) => {
     if (item.anyPermission && !item.anyPermission.some((p) => permissions.includes(p))) return false;
-    if (item.minTier && !tierMeets(tier, item.minTier)) return false;
+    if (item.module && !enabledModules.includes(item.module)) return false;
     return true;
   });
 

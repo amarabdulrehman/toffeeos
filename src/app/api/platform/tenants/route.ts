@@ -28,6 +28,8 @@ export const GET = definePlatformHandler({}, async () => {
       planKey: t.subscription?.plan.key ?? null,
       subscriptionStatus: t.subscription?.status ?? null,
       trialEndsAt: t.subscription?.trialEndsAt ?? null,
+      currentPeriodEnd: t.subscription?.currentPeriodEnd ?? null,
+      customMonthlyPricePaisa: t.subscription?.customMonthlyPricePaisa ?? null,
     })),
   };
 });
@@ -64,10 +66,30 @@ const patchSchema = z.object({
 });
 
 // PATCH /api/platform/tenants — suspend/reactivate a tenant, or manually change its lifecycle status.
-export const PATCH = definePlatformHandler({ input: patchSchema }, async ({ input }) => {
+// Audit-logged like every other platform mutation — this became the actual enforcement half of the
+// billing loop (recording a payment reactivates automatically; suspending is the one manual override
+// that actually blocks access), so "who suspended this tenant, and when" has to be answerable too.
+export const PATCH = definePlatformHandler({ input: patchSchema }, async ({ session, input }) => {
+  const before = await platformDb.tenant.findUnique({ where: { id: input.tenantId }, select: { status: true } });
+  if (!before) throw new HttpError(404, "Tenant not found.");
+
   const tenant = await platformDb.tenant.update({
     where: { id: input.tenantId },
     data: { status: input.status },
   });
+
+  if (before.status !== input.status) {
+    await platformDb.auditLog.create({
+      data: {
+        tenantId: input.tenantId,
+        actorId: session.id,
+        action: "platform.tenant.status.change",
+        entityType: "Tenant",
+        entityId: input.tenantId,
+        metadata: { platformUserEmail: session.email, from: before.status, to: input.status },
+      },
+    });
+  }
+
   return { tenant };
 });

@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { LayoutGrid } from "lucide-react";
 import { auth } from "@/server/auth";
-import { tenantDb } from "@/server/db";
-import { getTenantTier } from "@/server/tier";
+import { getTenantLayoutDataForTenant } from "@/server/tier";
+import { getBillingStatus } from "@/lib/billing";
 import { BRAND_NAME } from "@/config/brand";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ClockOutButton } from "@/components/clock-out-button";
@@ -16,9 +16,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session?.user || session.user.kind !== "tenant") redirect("/login");
   const user = session.user;
   if (user.mustChangePassword) redirect("/change-password");
-  // Read fresh on every request (never cached on the session) so a platform admin's tier change is
-  // reflected on this tenant's very next page load, no re-login required.
-  const tier = await getTenantTier(tenantDb(user.tenantId));
+  // Read fresh on every request (never cached on the session) so a platform admin's tier change —
+  // or a direct per-feature toggle — is reflected on this tenant's very next page load, no re-login
+  // required. Also carries the billing dates for the renewal banner below — one query, not two
+  // (see getTenantLayoutDataForTenant's doc comment).
+  const layoutData = await getTenantLayoutDataForTenant(user.tenantId);
+  const enabledModules = layoutData.enabledModules;
+  // Purely a notice — never gates anything. A tenant whose paid period has lapsed keeps working
+  // normally until a platform admin manually suspends them; this just tells them to renew.
+  const billing = getBillingStatus({
+    tenantStatus: (layoutData.tenantStatus as "TRIALING" | "ACTIVE" | "SUSPENDED" | "CANCELLED" | null) ?? "ACTIVE",
+    trialEndsAt: layoutData.trialEndsAt,
+    currentPeriodEnd: layoutData.currentPeriodEnd,
+  });
+  const showRenewalNotice = billing.isOverdue || billing.state === "due_soon";
 
   return (
     <div className="flex min-h-screen">
@@ -32,7 +43,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <div className="truncate text-xs text-sidebar-foreground/55">{user.tenantName}</div>
           </div>
         </div>
-        <AppSidebarNav permissions={user.permissions} tier={tier} />
+        <AppSidebarNav permissions={user.permissions} enabledModules={enabledModules} />
         <div className="mt-auto space-y-2 border-t border-sidebar-border pt-4">
           <div className="px-1 text-xs">
             <div className="font-medium">{user.name}</div>
@@ -43,6 +54,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
       <div className="flex flex-1 flex-col overflow-hidden">
+        {showRenewalNotice && (
+          <div className="flex items-center px-4 py-2 text-sm font-medium bg-warning text-warning-foreground">
+            {billing.isOverdue
+              ? `Your ${BRAND_NAME} subscription lapsed on ${billing.paidThrough?.toLocaleDateString()}. Contact your account manager to renew.`
+              : `Your ${BRAND_NAME} subscription renews on ${billing.paidThrough?.toLocaleDateString()} — contact your account manager to extend it.`}
+          </div>
+        )}
         {user.impersonatedByPlatformUserId && (
           <div className="flex items-center justify-between bg-warning px-4 py-2 text-sm font-medium text-warning-foreground">
             <span>

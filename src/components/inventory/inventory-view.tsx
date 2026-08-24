@@ -10,8 +10,10 @@ import {
   Package,
   PackagePlus,
   SlidersHorizontal,
+  TriangleAlert,
   Warehouse,
 } from "lucide-react";
+import { StatCard } from "@/components/ui/stat-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -127,7 +129,7 @@ export function InventoryView() {
       </div>
 
       {error ? (
-        <Card className="mt-6 shadow-sm">
+        <Card className="mt-6 shadow-sm transition-shadow hover:shadow-md">
           <CardContent className="pt-6">
             <LoadError message={error} />
           </CardContent>
@@ -146,23 +148,17 @@ export function InventoryView() {
           <TabsContent value="report" className="mt-4 space-y-4">
             {report.length > 0 && (
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                <Card className="shadow-sm">
-                  <CardContent className="pt-6">
-                    <div className="text-sm text-muted-foreground">Items tracked</div>
-                    <div className="font-heading text-2xl font-bold tabular-nums">{report.length}</div>
-                  </CardContent>
-                </Card>
-                <Card className={report.some((r) => r.belowThreshold) ? "overflow-hidden shadow-md ring-1 ring-warning/25" : "shadow-sm"}>
-                  <CardContent className={`pt-6 ${report.some((r) => r.belowThreshold) ? "bg-gradient-to-br from-warning/10 via-transparent to-transparent" : ""}`}>
-                    <div className="text-sm text-muted-foreground">Below threshold</div>
-                    <div className={`font-heading text-2xl font-bold tabular-nums ${report.some((r) => r.belowThreshold) ? "text-warning-foreground" : ""}`}>
-                      {report.filter((r) => r.belowThreshold).length}
-                    </div>
-                  </CardContent>
-                </Card>
+                <StatCard label="Items tracked" value={report.length} icon={Package} hero />
+                <StatCard
+                  label="Below threshold"
+                  value={report.filter((r) => r.belowThreshold).length}
+                  icon={TriangleAlert}
+                  tone={report.some((r) => r.belowThreshold) ? "warning" : undefined}
+                  hero={report.some((r) => r.belowThreshold)}
+                />
               </div>
             )}
-            <Card className="shadow-sm">
+            <Card className="shadow-sm transition-shadow hover:shadow-md">
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="font-heading">Current stock</CardTitle>
                 <Button size="sm" variant={belowOnly ? "default" : "outline"} onClick={() => setBelowOnly((b) => !b)}>
@@ -260,7 +256,7 @@ function LocationsTab({ locations, onChanged }: { locations: Location[]; onChang
   }
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="font-heading">Stock locations</CardTitle>
       </CardHeader>
@@ -354,7 +350,7 @@ function ItemsTab({ items, onChanged }: { items: Item[]; onChanged: () => void }
   }
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="font-heading">Inventory items</CardTitle>
       </CardHeader>
@@ -479,7 +475,7 @@ function GrnTab({ locations, items, onChanged }: { locations: Location[]; items:
   }
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="font-heading">Receive stock (GRN)</CardTitle>
       </CardHeader>
@@ -540,7 +536,7 @@ function AdjustmentTab({ locations, items, onChanged }: { locations: Location[];
   }
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="font-heading">Stock adjustment</CardTitle>
       </CardHeader>
@@ -594,7 +590,7 @@ function TransferTab({ locations, items, onChanged }: { locations: Location[]; i
   }
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="font-heading">Stock transfer</CardTitle>
       </CardHeader>

@@ -14,12 +14,14 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "seed": "cross-env NODE_OPTIONS=--conditions=react-server tsx prisma/seed.ts",
-    "db:sync-roles": "tsx prisma/backfill-role-permissions.ts"
+    "db:sync-roles": "tsx prisma/backfill-role-permissions.ts",
+    "db:sync-features": "tsx prisma/backfill-feature-toggles.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
+    "@sentry/nextjs": "^10.70.0",
     "@supabase/supabase-js": "^2.112.3",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",

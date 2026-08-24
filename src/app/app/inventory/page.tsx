@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/server/auth";
-import { tenantDb } from "@/server/db";
-import { getTenantTier, tierMeets } from "@/server/tier";
+import { getTenantModulesForTenant } from "@/server/tier";
 import { UpgradeRequired } from "@/components/tier/upgrade-required";
 import { InventoryView } from "@/components/inventory/inventory-view";
 
@@ -11,8 +10,8 @@ export default async function InventoryPage() {
   if (!user || user.kind !== "tenant") redirect("/login");
   if (!user.permissions.includes("inventory.view")) redirect("/app/dashboard");
 
-  const tier = await getTenantTier(tenantDb(user.tenantId));
-  if (!tierMeets(tier, "growth")) {
+  const enabledModules = await getTenantModulesForTenant(user.tenantId);
+  if (!enabledModules.includes("inventory")) {
     return <UpgradeRequired feature="Inventory & Stock Control" requiredTier="growth" />;
   }
 

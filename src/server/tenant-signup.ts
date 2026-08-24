@@ -1,10 +1,10 @@
 import "server-only";
 import { addDays } from "date-fns";
-import { rawDb } from "@/server/db";
+import { rawDb, platformDb } from "@/server/db";
 import { newId } from "@/lib/ids";
 import { hashPassword, generateTempPassword } from "@/lib/password";
 import { SEED_ROLES } from "@/server/permissions/registry";
-import type { TierKey } from "@/server/tier";
+import { defaultModulesForTier, type TierKey } from "@/server/tier";
 
 export interface ProvisionTenantInput {
   restaurantName: string;
@@ -73,6 +73,9 @@ async function provisionTenant(
         planId: plan.id,
         status: account.trial ? "TRIALING" : "ACTIVE",
         branchLimit: plan.maxBranches,
+        // Tier-preset starting point for the per-tenant feature toggles — freely customizable per
+        // module afterward from the super-admin panel; this is just where a new tenant starts.
+        enabledModules: defaultModulesForTier(account.planKey),
         trialEndsAt: account.trial ? addDays(new Date(), TRIAL_DAYS) : null,
       },
     });
@@ -130,8 +133,23 @@ async function provisionTenant(
 
 /** Public, unauthenticated self-serve trial signup — the owner picks their own password, so there's
  * nothing to force-change on first login. Always Starter/trial, by design — this is the trial
- * funnel, not a place to land on a paid tier. */
+ * funnel, not a place to land on a paid tier.
+ *
+ * One trial per email, enforced here (not in provisionTenant, which adminCreateTenant also calls —
+ * a platform admin legitimately may want to onboard the same person across multiple restaurant
+ * accounts, so this restriction only applies to the self-serve funnel). Without it, the only
+ * uniqueness this flow ever checked was the tenant slug: a script could mint unlimited free trials
+ * off the same email under a new slug each time, and since a lapsed trial only ever gets flagged in
+ * the admin panel rather than blocked (see getBillingStatus's "flag, don't block" contract), an
+ * unrate-limited trial was a genuinely free, self-renewing resource. Checked via platformDb
+ * (BYPASSRLS) because this is a cross-tenant lookup by design — rawDb's RLS policy would silently
+ * return zero rows for any query issued before app.tenant_id is set, which would make this check
+ * pass every time regardless of whether the email is already in use. */
 export async function signupTenant(input: SignupInput): Promise<{ tenantId: string; slug: string }> {
+  const existingUser = await platformDb.user.findFirst({ where: { email: input.ownerEmail }, select: { id: true } });
+  if (existingUser) {
+    throw new Error("An account with this email already exists. Sign in instead, or contact us if you need another restaurant account.");
+  }
   const passwordHash = await hashPassword(input.ownerPassword);
   return provisionTenant(input, { passwordHash, mustChangePassword: false, planKey: "starter", trial: true });
 }

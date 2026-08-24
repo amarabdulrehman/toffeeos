@@ -211,7 +211,7 @@ function RosterTab({ qs }: { qs: string }) {
   }
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="font-heading">Roster</CardTitle>
         <Button size="sm" onClick={() => setOpen(true)}>
@@ -366,7 +366,7 @@ function AttendanceTab({ qs }: { qs: string }) {
   }
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="font-heading">Attendance</CardTitle>
         <Button size="sm" onClick={() => setOpen(true)}>
@@ -521,7 +521,7 @@ function PayRatesTab() {
   }
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="font-heading">Pay rates</CardTitle>
       </CardHeader>

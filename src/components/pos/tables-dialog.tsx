@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Minus, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { formatPkr } from "@/lib/money";
 import { useChannel } from "@/lib/realtime-client";
 import { topic } from "@/lib/realtime-topics";
-import type { FloorDto, OrderDto, RestaurantTableDto } from "./types";
+import type { CartLine, FloorDto, OrderDto, RestaurantTableDto } from "./types";
 
 type StatusFilter = "ALL" | "AVAILABLE" | "RESERVED" | "BOOKED";
 
@@ -155,20 +155,20 @@ export function TablesDialog({
   );
 }
 
-/** Compact summary shown after resuming an occupied table — Phase 2 intentionally does not
- * support adding items to an already-punched order here (kitchen may already be cooking it;
- * that's a bigger "edit a live order" feature for later), so this offers the actions that make
- * sense today: view what's on it, and take payment. */
+/** Compact summary shown after resuming an occupied table — view what's on it, add another round
+ * if the kitchen isn't done yet, or take payment. */
 export function ResumedOrderPanel({
   table,
   order,
   onClose,
   onTakePayment,
+  onAddItems,
 }: {
   table: RestaurantTableDto;
   order: OrderDto;
   onClose: () => void;
   onTakePayment: () => void;
+  onAddItems: () => void;
 }) {
   return (
     <div className="space-y-4 rounded-xl border bg-card p-4 shadow-xs">
@@ -198,10 +198,105 @@ export function ResumedOrderPanel({
         <span className="tabular-nums">{formatPkr(order.totalPaisa)}</span>
       </div>
       {order.status !== "PAID" && (
-        <Button variant="success" size="lg" className="w-full" onClick={onTakePayment}>
-          Take Payment
-        </Button>
+        <div className="space-y-2">
+          <Button variant="outline" size="lg" className="w-full" onClick={onAddItems}>
+            Add items
+          </Button>
+          <Button variant="success" size="lg" className="w-full" onClick={onTakePayment}>
+            Take Payment
+          </Button>
+        </div>
       )}
+    </div>
+  );
+}
+
+/** Shown instead of ResumedOrderPanel while building a second round for an order already sent to
+ * the kitchen — tapping items on the product grid to the left adds to `lines` here exactly like a
+ * new order would, but "Send" posts to POST /api/orders/[orderId]/lines (addLinesToOrder) instead
+ * of creating a new order. Deliberately minimal compared to the full CartPanel: order type, table,
+ * customer, and order-level discount are all already fixed on the order this is appending to, so
+ * none of those pickers apply here — this is just "what am I adding," not "what am I starting." */
+export function AddItemsPanel({
+  orderNumber,
+  lines,
+  onQuantityChange,
+  onRemoveLine,
+  onCancel,
+  onSubmit,
+  submitting,
+}: {
+  orderNumber: number;
+  lines: CartLine[];
+  onQuantityChange: (key: string, delta: number) => void;
+  onRemoveLine: (key: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+  submitting: boolean;
+}) {
+  const subtotalPaisa = lines.reduce((a, l) => a + l.unitPricePaisa * l.quantity, 0);
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="border-b p-4">
+        <div className="font-heading font-semibold">Adding to Order #{orderNumber}</div>
+        <p className="text-xs text-muted-foreground">
+          Tax and the combined total are recalculated once these are sent — this is just the new items.
+        </p>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4">
+        {lines.length === 0 ? (
+          <p className="mt-10 text-center text-sm text-muted-foreground">Tap items on the left to add them.</p>
+        ) : (
+          <div className="space-y-2">
+            {lines.map((line) => (
+              <div key={line.key} className="rounded-xl border border-border/60 bg-background p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-sm font-semibold leading-snug">{line.name}</div>
+                  <button
+                    onClick={() => onRemoveLine(line.key)}
+                    className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                  <div className="flex items-center gap-1 rounded-full border bg-muted/50 p-0.5">
+                    <button
+                      onClick={() => onQuantityChange(line.key, -1)}
+                      className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                    >
+                      <Minus className="h-3 w-3" />
+                    </button>
+                    <span className="w-5 text-center text-sm font-medium tabular-nums">{line.quantity}</span>
+                    <button
+                      onClick={() => onQuantityChange(line.key, 1)}
+                      className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <div className="font-heading text-sm font-semibold tabular-nums">
+                    {formatPkr(line.unitPricePaisa * line.quantity)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="space-y-2 border-t bg-muted/30 p-4">
+        <div className="flex items-center justify-between text-sm font-medium">
+          <span className="text-muted-foreground">New items subtotal</span>
+          <span className="tabular-nums">{formatPkr(subtotalPaisa)}</span>
+        </div>
+        <Button variant="outline" className="w-full" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button className="w-full" size="lg" disabled={lines.length === 0 || submitting} onClick={onSubmit}>
+          {submitting ? "Sending…" : "Send to Kitchen"}
+        </Button>
+      </div>
     </div>
   );
 }

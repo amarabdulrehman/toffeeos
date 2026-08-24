@@ -93,7 +93,7 @@ export function ProductGrid({
         </div>
       )}
 
-      <div className="grid flex-1 auto-rows-min grid-cols-2 gap-3 overflow-y-auto pb-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-3 overflow-y-auto pb-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {loading &&
           Array.from({ length: 10 }).map((_, i) => (
             <div key={i} className="flex min-h-[6.5rem] flex-col justify-between rounded-2xl border border-border/60 bg-card p-3.5 shadow-sm">

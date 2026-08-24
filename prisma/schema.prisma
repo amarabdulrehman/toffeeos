@@ -25,9 +25,9 @@ datasource db {
 // ============================================================================
 
 model Plan {
-  id   String @id @default(uuid())
-  key  String @unique // "starter" | "growth" | "complete" — Phase D's tier gating keys off this directly
-  name String
+  id                       String   @id @default(uuid())
+  key                      String   @unique // "starter" | "growth" | "complete" — Phase D's tier gating keys off this directly
+  name                     String
   /// Null means unlimited (the Complete plan) — previously a magic "999", made properly nullable
   /// when Phase D needed a real "unlimited" check rather than an arbitrary large number.
   maxBranches              Int?
@@ -45,30 +45,31 @@ enum TenantStatus {
 }
 
 model Tenant {
-  id        String       @id @default(uuid())
-  name      String
-  slug      String       @unique
-  status    TenantStatus @default(TRIALING)
+  id         String       @id @default(uuid())
+  name       String
+  slug       String       @unique
+  status     TenantStatus @default(TRIALING)
   // Minimal per-tenant branding for the public online ordering site (Phase 4) — deliberately just
   // these two fields, not a full site builder.
   logoUrl    String?
   brandColor String? // hex, e.g. "#7c3aed"
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
 
-  branches       Branch[]
-  users          User[]
-  roles          Role[]
-  memberships    Membership[]
-  invites        Invite[]
-  subscription   Subscription?
-  customers      Customer[]
-  categories     Category[]
-  menuItems      MenuItem[]
-  modifierGroups ModifierGroup[]
-  auditLogs      AuditLog[]
-  orders         Order[]
-  inventoryItems InventoryItem[]
+  branches             Branch[]
+  users                User[]
+  roles                Role[]
+  memberships          Membership[]
+  invites              Invite[]
+  subscription         Subscription?
+  subscriptionPayments SubscriptionPayment[]
+  customers            Customer[]
+  categories           Category[]
+  menuItems            MenuItem[]
+  modifierGroups       ModifierGroup[]
+  auditLogs            AuditLog[]
+  orders               Order[]
+  inventoryItems       InventoryItem[]
 }
 
 enum SubscriptionStatus {
@@ -80,21 +81,77 @@ enum SubscriptionStatus {
 }
 
 model Subscription {
-  id               String             @id @default(uuid())
-  tenant           Tenant             @relation(fields: [tenantId], references: [id])
-  tenantId         String             @unique
-  plan             Plan               @relation(fields: [planId], references: [id])
-  planId           String
-  status           SubscriptionStatus @default(TRIALING)
+  id                      String             @id @default(uuid())
+  tenant                  Tenant             @relation(fields: [tenantId], references: [id])
+  tenantId                String             @unique
+  plan                    Plan               @relation(fields: [planId], references: [id])
+  planId                  String
+  status                  SubscriptionStatus @default(TRIALING)
   /// Snapshot of plan.maxBranches at subscription-create/tier-change time (null = unlimited) —
   /// kept as its own column rather than always reading through plan so a plan's limit can change
   /// later without silently reshaping every existing subscription that already opted into it.
-  branchLimit      Int?               @default(1)
-  trialEndsAt      DateTime?
-  currentPeriodEnd DateTime?
-  paymentMethod    String? // "jazzcash" | "easypaisa" | "bank_transfer" | "stripe"
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  branchLimit             Int?               @default(1)
+  /// The tenant's actual, current set of enabled gateable module keys (see GATEABLE_MODULES in
+  /// src/lib/tiers.ts) — this, not `plan.key`, is what every permission gate now checks. Seeded
+  /// from the plan's tier defaults at subscription-create time and reset to those defaults on every
+  /// tier change, but freely toggleable per-module afterward from the platform admin panel without
+  /// snapping back — plan/tier is only ever a *starting preset* for this column, never enforced
+  /// directly. See src/server/platform.ts's setTenantFeatures / changeTenantTier.
+  enabledModules          String[]           @default([])
+  trialEndsAt             DateTime?
+  currentPeriodEnd        DateTime?
+  paymentMethod           String? // "jazzcash" | "easypaisa" | "bank_transfer" | "stripe"
+  /// Contracted recurring monthly price for THIS tenant, in paisa — overrides the
+  /// plan.pricePaisaPerBranchMonth × activeBranches formula everywhere MRR/pricing is computed
+  /// (see effectiveMonthlyRatePaisa in src/lib/billing.ts). Null = use the plan formula. Kept
+  /// separate from any single SubscriptionPayment.amountPaisa on purpose: a payment is
+  /// backward-looking ("what was collected, over an arbitrary period"), this is forward-looking
+  /// ("what we bill monthly going forward") — a one-off discount or a 12-month prepayment must not
+  /// silently distort the recurring figure.
+  customMonthlyPricePaisa Int?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  payments SubscriptionPayment[]
+}
+
+/// Manual billing ledger. The platform admin collects payment out-of-band (bank transfer, cash,
+/// JazzCash) and records it here; this table is the durable "what was actually paid, for what
+/// period" record, while Subscription.currentPeriodEnd is the derived "paid through" pointer.
+/// Rows are soft-voided, never deleted, so a mis-keyed amount stays auditable. Tenant-scoped and
+/// RLS-protected like AuditLog even though only platformDb (BYPASSRLS) ever writes it today — this
+/// keeps the door open for a tenant-facing billing-history view later without a schema/RLS retrofit.
+model SubscriptionPayment {
+  id             String       @id @default(uuid())
+  tenant         Tenant       @relation(fields: [tenantId], references: [id])
+  tenantId       String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+  subscriptionId String
+
+  /// Snapshot of plan.key at record time — a later tier change must not rewrite history.
+  planKey     String
+  /// Integer paisa, per the money convention (src/lib/money.ts). 0 is legal: a comped extension.
+  amountPaisa Int
+  periodStart DateTime
+  periodEnd   DateTime
+  /// Free label, same vocabulary as Subscription.paymentMethod — see PAYMENT_METHODS in
+  /// src/lib/billing.ts: "cash" | "bank_transfer" | "jazzcash" | "easypaisa" | "card" | "other"
+  method      String
+  note        String?
+
+  /// Denormalized platform actor, same pattern as AuditLog.actorId + metadata.platformUserEmail —
+  /// PlatformUser lives outside RLS, so this table never joins to it directly.
+  recordedById    String
+  recordedByEmail String
+
+  voidedAt   DateTime?
+  voidedById String?
+  voidReason String?
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, periodEnd])
+  @@index([tenantId, createdAt])
 }
 
 model PlatformUser {
@@ -103,6 +160,64 @@ model PlatformUser {
   passwordHash String
   name         String
   createdAt    DateTime @default(now())
+}
+
+/// Persistent backing for src/server/auth/otp-store.ts's issueOtp/verifyOtp — was an in-memory Map
+/// (per-process, doesn't survive a redeploy or work across multiple serverless instances), which is
+/// exactly wrong for a login flow. Platform-level, no RLS: this is pre-session infrastructure state
+/// (an OTP is issued before any tenant session exists), not tenant data.
+model OtpCode {
+  id        String   @id @default(uuid())
+  /// Same key shape the old Map used, e.g. "{tenantId}:{phone}" — kept identical so the call sites
+  /// in src/server/auth/otp-store.ts didn't need to change, only their internals.
+  key       String
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([key])
+}
+
+/// Persistent backing for src/server/auth/impersonation-store.ts. Same reasoning as OtpCode — a
+/// platform admin's "Impersonate" click and the browser's next page load (which redeems the token)
+/// can legitimately land on two different serverless instances.
+model ImpersonationToken {
+  token             String   @id
+  tenantId          String
+  targetUserId      String
+  platformUserId    String
+  platformUserEmail String
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+}
+
+/// Persistent backing for src/lib/rate-limit.ts's checkRateLimit. One row per hit rather than a
+/// single counter, so the sliding-window semantics of the original in-memory implementation
+/// (count hits strictly newer than now - windowMs) carry over exactly.
+model RateLimitHit {
+  id        String   @id @default(uuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
+/// Backs the self-serve "forgot password" flow (src/server/password-reset.ts) for both tenant
+/// staff and the platform admin — there was previously no recovery path for either. tenantId is
+/// only set for userType "tenant": User.email isn't unique across tenants (by design — see the
+/// signupTenant dedup check, which only applies to the self-serve trial funnel, not
+/// admin-provisioned or invited accounts), so resolving *which* user a token belongs to needs the
+/// tenant alongside the userId, not just the email that was originally entered.
+model PasswordResetToken {
+  token     String    @id @default(uuid())
+  userType  String // "tenant" | "platform"
+  userId    String
+  tenantId  String?
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userType, userId])
 }
 
 /// Append-only. tenantId is nullable to allow platform-wide entries (e.g. platform-user login)
@@ -196,24 +311,24 @@ model TaxRule {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  tenant       Tenant   @relation(fields: [tenantId], references: [id])
-  tenantId     String
-  email        String?
-  phone        String?
-  passwordHash String?
-  name         String
+  id                 String   @id @default(uuid())
+  tenant             Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId           String
+  email              String?
+  phone              String?
+  passwordHash       String?
+  name               String
   /// Rider-specific (nullable, unused by other roles) — kept on the generic staff table rather
   /// than a separate Rider model since a rider is just a User with role "rider"; see
   /// src/server/permissions/registry.ts SEED_ROLES.rider.
-  employeeId   String?
-  isActive     Boolean  @default(true)
+  employeeId         String?
+  isActive           Boolean  @default(true)
   /// Set true only when a platform admin generates the password (admin-provisioned tenant owner);
   /// self-serve signup and invite-accept both let the user pick their own password, so this stays
   /// false there. Checked at the app/pos/kds layout level, not in defineHandler, since it needs to
   /// gate page rendering before any API call happens.
   mustChangePassword Boolean  @default(false)
-  createdAt    DateTime @default(now())
+  createdAt          DateTime @default(now())
 
   memberships   Membership[]
   staffPin      StaffPin?
@@ -602,16 +717,16 @@ model LowStockAlert {
 // ============================================================================
 
 model Customer {
-  id            String   @id @default(uuid())
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
-  tenantId      String
-  name          String?
-  phone         String?
-  email         String?
-  allergens     String[] @default([])
-  loyaltyPoints Int      @default(0)
-  whatsappOptOut Boolean @default(false)
-  createdAt     DateTime @default(now())
+  id             String   @id @default(uuid())
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId       String
+  name           String?
+  phone          String?
+  email          String?
+  allergens      String[] @default([])
+  loyaltyPoints  Int      @default(0)
+  whatsappOptOut Boolean  @default(false)
+  createdAt      DateTime @default(now())
 
   addresses CustomerAddress[]
   orders    Order[]
@@ -683,18 +798,18 @@ enum WhatsAppTemplateStatus {
 /// assuming free-text sending will work. sendWhatsApp() in src/server/whatsapp/send.ts refuses to
 /// send against anything but an APPROVED template.
 model WhatsAppTemplate {
-  id              String                  @id @default(uuid())
+  id              String                 @id @default(uuid())
   tenantId        String
   key             String // "low_stock_alert" | "daily_summary" | "win_back_30d" | "delivery_picked_up" | "delivery_delivered"
   name            String
-  language        String                  @default("en")
+  language        String                 @default("en")
   bodyText        String // Meta template syntax: {{1}}, {{2}}, ... placeholders
-  status          WhatsAppTemplateStatus  @default(DRAFT)
+  status          WhatsAppTemplateStatus @default(DRAFT)
   submittedAt     DateTime?
   approvedAt      DateTime?
   rejectionReason String?
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
   @@unique([tenantId, key])
 }
@@ -710,7 +825,7 @@ enum WhatsAppMessageStatus {
 /// Append-only send log — every attempt, sent or skipped, with the reason, so "did the win-back
 /// batch actually go out" is answerable without checking Meta's dashboard.
 model WhatsAppMessageLog {
-  id           String                 @id @default(uuid())
+  id           String                @id @default(uuid())
   tenantId     String
   branchId     String?
   customerId   String?
@@ -718,7 +833,7 @@ model WhatsAppMessageLog {
   templateKey  String
   renderedBody String?
   status       WhatsAppMessageStatus
-  createdAt    DateTime               @default(now())
+  createdAt    DateTime              @default(now())
 
   @@index([tenantId, createdAt])
 }
@@ -880,7 +995,7 @@ enum SyncConflictStatus {
 /// against an order another device already changed. Surfaced to a manager (sync.conflict.resolve)
 /// rather than silently picked with last-write-wins. See src/server/sync-conflicts.ts.
 model SyncConflict {
-  id                 String              @id @default(uuid())
+  id                 String             @id @default(uuid())
   tenantId           String
   branchId           String
   kind               SyncConflictKind
@@ -890,11 +1005,11 @@ model SyncConflict {
   actionType         String?
   devicePayload      Json?
   serverSnapshot     Json?
-  status             SyncConflictStatus  @default(OPEN)
+  status             SyncConflictStatus @default(OPEN)
   resolutionNote     String?
   resolvedById       String?
   resolvedAt         DateTime?
-  createdAt          DateTime            @default(now())
+  createdAt          DateTime           @default(now())
 
   @@index([tenantId, branchId, status])
 }
@@ -1013,16 +1128,16 @@ enum AttendanceSource {
 /// clockInAt/clockOutAt, not a single timestamp + type, so "still clocked in" is just
 /// clockOutAt = null rather than needing to pair up separate IN/OUT rows.
 model AttendanceRecord {
-  id          String           @id @default(uuid())
-  tenantId    String
-  branchId    String
-  userId      String
-  clockInAt   DateTime
-  clockOutAt  DateTime?
-  source      AttendanceSource @default(PIN)
-  editedById  String? // set only when a manager corrected this record after the fact
-  editNote    String?
-  createdAt   DateTime         @default(now())
+  id         String           @id @default(uuid())
+  tenantId   String
+  branchId   String
+  userId     String
+  clockInAt  DateTime
+  clockOutAt DateTime?
+  source     AttendanceSource @default(PIN)
+  editedById String? // set only when a manager corrected this record after the fact
+  editNote   String?
+  createdAt  DateTime         @default(now())
 
   @@index([tenantId, branchId, clockInAt])
   @@index([tenantId, userId])

@@ -126,9 +126,14 @@ export function TablesSettingsView({ qrOrderingEnabled }: { qrOrderingEnabled: b
   return (
     <div className="p-8">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-heading text-2xl font-bold tracking-tight">Tables & Floors</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Manage your floor plan for the dine-in POS flow.</p>
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <LayoutGrid className="size-5" />
+          </span>
+          <div>
+            <h1 className="font-heading text-2xl font-bold tracking-tight">Tables & Floors</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Manage your floor plan for the dine-in POS flow.</p>
+          </div>
         </div>
         <Dialog open={addFloorOpen} onOpenChange={setAddFloorOpen}>
           <DialogTrigger render={<Button>+ Add floor</Button>} />
@@ -183,7 +188,7 @@ export function TablesSettingsView({ qrOrderingEnabled }: { qrOrderingEnabled: b
               </div>
             )}
             {floors.map((floor) => (
-              <Card key={floor.id} className="shadow-sm">
+              <Card key={floor.id} className="shadow-sm transition-shadow hover:shadow-md">
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="font-heading text-base">{floor.name}</CardTitle>
                   <div className="flex gap-2">

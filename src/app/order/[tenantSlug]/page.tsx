@@ -196,13 +196,13 @@ function OnlineOrderContent() {
   if (confirmation) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-muted/20 p-6">
-        <Card className="w-full max-w-sm text-center shadow-lg">
+        <Card className="w-full max-w-sm animate-in fade-in zoom-in-95 text-center shadow-lg duration-300">
           <CardContent className="space-y-3 pt-8 pb-8">
             <div
-              className="mx-auto flex size-14 items-center justify-center rounded-full"
-              style={{ backgroundColor: `${brandColor}1a`, color: brandColor }}
+              className="mx-auto flex size-16 items-center justify-center rounded-full ring-8"
+              style={{ backgroundColor: `${brandColor}1a`, color: brandColor, ["--tw-ring-color" as string]: `${brandColor}0d` }}
             >
-              <CheckCircle2 className="size-8" strokeWidth={2.25} />
+              <CheckCircle2 className="size-9" strokeWidth={2.25} />
             </div>
             <h1 className="font-heading text-xl font-bold">Order #{confirmation.orderNumber} placed!</h1>
             <p className="text-sm text-muted-foreground">
@@ -225,15 +225,18 @@ function OnlineOrderContent() {
 
   return (
     <div className="min-h-screen bg-muted/20 pb-24 md:pb-0">
-      <header className="border-b bg-background px-5 py-4 shadow-sm sm:px-6" style={{ borderTopColor: brandColor, borderTopWidth: 4 }}>
+      <header
+        className="border-b bg-background px-5 py-4 shadow-sm sm:px-6"
+        style={{ borderTopColor: brandColor, borderTopWidth: 4, backgroundImage: `linear-gradient(to bottom, ${brandColor}0a, transparent)` }}
+      >
         <div className="mx-auto flex max-w-5xl items-center gap-3.5">
           {storefront.logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- tenant-supplied logo URL, not a local asset
             <img src={storefront.logoUrl} alt="" className="size-12 shrink-0 rounded-full border object-cover shadow-xs" />
           ) : (
             <span
-              className="flex size-12 shrink-0 items-center justify-center rounded-full text-lg font-bold"
-              style={{ backgroundColor: `${brandColor}1a`, color: brandColor }}
+              className="flex size-12 shrink-0 items-center justify-center rounded-full text-lg font-bold ring-4"
+              style={{ backgroundColor: `${brandColor}1a`, color: brandColor, ["--tw-ring-color" as string]: `${brandColor}0d` }}
             >
               {storefront.name.charAt(0)}
             </span>
@@ -271,19 +274,25 @@ function OnlineOrderContent() {
           )}
           {categories.map((cat) => (
             <div key={cat.id} id={`cat-${cat.id}`}>
-              <h2 className="mb-3 font-heading text-lg font-semibold">{cat.name}</h2>
+              <h2 className="mb-3 flex items-center gap-2 font-heading text-lg font-semibold">
+                <span className="h-4 w-1 rounded-full" style={{ backgroundColor: brandColor }} />
+                {cat.name}
+              </h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 {cat.items.map((item) => {
                   const cartLine = item.variants.length === 0 ? lines.find((l) => l.menuItemId === item.id) : undefined;
                   return (
-                    <Card key={item.id} className={`overflow-hidden shadow-xs transition-shadow hover:shadow-sm ${!item.isAvailable ? "opacity-50" : ""}`}>
+                    <Card
+                      key={item.id}
+                      className={`overflow-hidden shadow-xs transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md ${!item.isAvailable ? "opacity-50" : ""}`}
+                    >
                       <CardContent className="flex gap-3 pt-4">
                         {item.imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element -- tenant-supplied menu image, not a local asset
-                          <img src={item.imageUrl} alt="" className="size-16 shrink-0 rounded-lg object-cover" />
+                          <img src={item.imageUrl} alt="" className="size-16 shrink-0 rounded-xl object-cover shadow-xs" />
                         ) : (
                           <div
-                            className="flex size-16 shrink-0 items-center justify-center rounded-lg"
+                            className="flex size-16 shrink-0 items-center justify-center rounded-xl"
                             style={{ backgroundColor: `${brandColor}12` }}
                           >
                             <UtensilsCrossed className="size-6" style={{ color: brandColor }} strokeWidth={1.75} />
@@ -305,20 +314,25 @@ function OnlineOrderContent() {
                                 <div className="flex items-center gap-1 rounded-full border bg-muted/40 p-0.5">
                                   <button
                                     onClick={() => changeQty(cartLine.key, -1)}
-                                    className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                                    className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-all duration-150 hover:bg-card hover:text-foreground active:scale-90"
                                   >
                                     <Minus className="size-3.5" />
                                   </button>
                                   <span className="w-5 text-center text-sm font-semibold tabular-nums">{cartLine.quantity}</span>
                                   <button
                                     onClick={() => changeQty(cartLine.key, 1)}
-                                    className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                                    className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-all duration-150 hover:bg-card hover:text-foreground active:scale-90"
                                   >
                                     <Plus className="size-3.5" />
                                   </button>
                                 </div>
                               ) : (
-                                <Button size="sm" style={{ backgroundColor: brandColor }} onClick={() => addLine(item)}>
+                                <Button
+                                  size="sm"
+                                  className="transition-transform active:scale-95"
+                                  style={{ backgroundColor: brandColor }}
+                                  onClick={() => addLine(item)}
+                                >
                                   Add
                                 </Button>
                               )
@@ -347,10 +361,15 @@ function OnlineOrderContent() {
           ))}
         </div>
 
-        <Card ref={cartRef} className="h-fit shadow-sm md:sticky md:top-6">
+        <Card ref={cartRef} className="h-fit shadow-md md:sticky md:top-6">
           <CardContent className="space-y-4 pt-4">
             <h2 className="flex items-center gap-2 font-heading text-lg font-semibold">
-              <ShoppingBag className="size-4.5" />
+              <span
+                className="flex size-7 items-center justify-center rounded-full"
+                style={{ backgroundColor: `${brandColor}1a`, color: brandColor }}
+              >
+                <ShoppingBag className="size-3.5" />
+              </span>
               Your order
             </h2>
             {lines.length === 0 && <p className="text-sm text-muted-foreground">Cart is empty — tap an item to add it.</p>}
@@ -362,14 +381,14 @@ function OnlineOrderContent() {
                     <div className="flex shrink-0 items-center gap-1 rounded-full border bg-muted/40 p-0.5">
                       <button
                         onClick={() => changeQty(l.key, -1)}
-                        className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                        className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-all duration-150 hover:bg-card hover:text-foreground active:scale-90"
                       >
                         <Minus className="size-3.5" />
                       </button>
                       <span className="w-5 text-center font-medium tabular-nums">{l.quantity}</span>
                       <button
                         onClick={() => changeQty(l.key, 1)}
-                        className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                        className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-all duration-150 hover:bg-card hover:text-foreground active:scale-90"
                       >
                         <Plus className="size-3.5" />
                       </button>
@@ -380,11 +399,11 @@ function OnlineOrderContent() {
             )}
             {lines.length > 0 && (
               <div
-                className="flex items-center justify-between rounded-xl px-3 py-2.5"
-                style={{ backgroundColor: `${brandColor}12` }}
+                className="flex items-center justify-between rounded-xl border px-3.5 py-3"
+                style={{ backgroundColor: `${brandColor}0d`, borderColor: `${brandColor}26` }}
               >
-                <span className="text-sm font-semibold">Total</span>
-                <span className="font-heading text-lg font-bold tabular-nums" style={{ color: brandColor }}>
+                <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Total</span>
+                <span className="font-heading text-xl font-bold tabular-nums" style={{ color: brandColor }}>
                   {formatPkr(totalPaisa)}
                 </span>
               </div>
@@ -408,7 +427,13 @@ function OnlineOrderContent() {
                 <Textarea placeholder="Delivery address" value={address} onChange={(e) => setAddress(e.target.value)} rows={2} />
               )}
               {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button className="w-full" size="lg" style={{ backgroundColor: brandColor }} disabled={placing} onClick={placeOrder}>
+              <Button
+                className="w-full shadow-sm transition-transform active:scale-[0.98]"
+                size="lg"
+                style={{ backgroundColor: brandColor }}
+                disabled={placing}
+                onClick={placeOrder}
+              >
                 {placing
                   ? "Placing order…"
                   : isQrOrder
@@ -425,7 +450,7 @@ function OnlineOrderContent() {
       {itemCount > 0 && (
         <button
           onClick={() => cartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
-          className="fixed inset-x-4 bottom-4 z-20 flex items-center justify-between rounded-2xl px-5 py-3.5 text-white shadow-lg md:hidden"
+          className="fixed inset-x-4 bottom-4 z-20 flex animate-in fade-in slide-in-from-bottom-2 items-center justify-between rounded-2xl px-5 py-3.5 text-white shadow-xl transition-transform duration-150 active:scale-[0.98] md:hidden"
           style={{ backgroundColor: brandColor }}
         >
           <span className="flex items-center gap-2 text-sm font-semibold">

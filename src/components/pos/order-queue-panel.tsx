@@ -28,7 +28,7 @@ export function OrderQueuePanel({
   onClose: () => void;
 }) {
   return (
-    <div className="flex h-full flex-col border-l bg-card">
+    <div className="flex h-full min-h-0 flex-col border-l bg-card">
       <div className="flex items-center justify-between border-b p-4">
         <h2 className="font-heading text-base font-semibold">Order Queue</h2>
         <button

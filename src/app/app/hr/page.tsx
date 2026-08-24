@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/server/auth";
-import { tenantDb } from "@/server/db";
-import { getTenantTier, tierMeets } from "@/server/tier";
+import { getTenantModulesForTenant } from "@/server/tier";
 import { UpgradeRequired } from "@/components/tier/upgrade-required";
 import { HrView } from "@/components/hr/hr-view";
 
@@ -23,8 +22,8 @@ export default async function HrPage() {
   if (!user || user.kind !== "tenant") redirect("/login");
   if (!HR_PERMISSIONS.some((p) => user.permissions.includes(p))) redirect("/app/dashboard");
 
-  const tier = await getTenantTier(tenantDb(user.tenantId));
-  if (!tierMeets(tier, "complete")) {
+  const enabledModules = await getTenantModulesForTenant(user.tenantId);
+  if (!enabledModules.includes("hr")) {
     return <UpgradeRequired feature="Payroll & HR" requiredTier="complete" />;
   }
 

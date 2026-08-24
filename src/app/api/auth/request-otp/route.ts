@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
 
   const tenant = await findTenantBySlug(parsed.data.tenantSlug);
   if (tenant && tenantAcceptsLogin(tenant.status)) {
-    issueOtp(`${tenant.id}:${parsed.data.phone}`);
+    await issueOtp(`${tenant.id}:${parsed.data.phone}`);
   }
 
   return NextResponse.json({ ok: true });

@@ -48,9 +48,17 @@ function initials(name: string | null, phone: string | null): string {
   return phone ? phone.slice(-2) : "?";
 }
 
-const ORDER_STATUS_VARIANT: Record<string, "success" | "destructive" | "secondary"> = {
+// Same status vocabulary used everywhere an order status shows up (KDS, POS queue, Online
+// Ordering) — one status should read as the same color no matter which screen it's on.
+const ORDER_STATUS_VARIANT: Record<string, "default" | "success" | "destructive" | "warning" | "secondary"> = {
+  OPEN: "secondary",
+  SENT_TO_KITCHEN: "warning",
+  READY: "default",
+  SERVED: "default",
   PAID: "success",
+  DELIVERED: "success",
   VOIDED: "destructive",
+  CANCELLED: "destructive",
 };
 
 export function CustomersView() {
@@ -99,21 +107,21 @@ export function CustomersView() {
 
       {!error && customers.length > 0 && (
         <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <Card className="overflow-hidden shadow-md ring-1 ring-primary/10">
-            <CardContent className="flex items-center justify-between bg-gradient-to-br from-primary/[0.07] via-transparent to-transparent pt-6">
+          <Card className="relative overflow-hidden shadow-lg ring-1 ring-primary/10 before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-primary before:via-primary/60 before:to-transparent">
+            <CardContent className="flex items-center justify-between bg-gradient-to-br from-primary/[0.08] via-transparent to-transparent pt-6">
               <div>
-                <div className="text-sm text-muted-foreground">Lifetime revenue</div>
-                <div className="font-heading text-2xl font-bold tabular-nums text-primary">
+                <div className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Lifetime revenue</div>
+                <div className="mt-1.5 font-heading text-3xl font-bold tabular-nums text-primary">
                   {formatPkr(customers.reduce((a, c) => a + c.totalSpendPaisa, 0))}
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">across {customers.length} customer{customers.length === 1 ? "" : "s"}</div>
+                <div className="mt-1.5 text-xs text-muted-foreground">across {customers.length} customer{customers.length === 1 ? "" : "s"}</div>
               </div>
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary ring-4 ring-primary/5">
                 <CircleDollarSign className="size-4.5" />
               </span>
             </CardContent>
           </Card>
-          <Card className="shadow-sm lg:col-span-2">
+          <Card className="shadow-sm transition-shadow hover:shadow-md lg:col-span-2">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 font-heading text-base">
                 <Trophy className="size-4 text-primary" />
@@ -152,7 +160,7 @@ export function CustomersView() {
         </Button>
       </div>
 
-      <Card className="shadow-sm">
+      <Card className="shadow-sm transition-shadow hover:shadow-md">
         <CardHeader>
           <CardTitle className="font-heading">
             {loading ? "Customers" : `${customers.length} customer${customers.length === 1 ? "" : "s"}`}
@@ -170,8 +178,8 @@ export function CustomersView() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Phone</TableHead>
-                  <TableHead>Orders</TableHead>
-                  <TableHead>Total spend</TableHead>
+                  <TableHead className="text-right">Orders</TableHead>
+                  <TableHead className="text-right">Total spend</TableHead>
                   <TableHead>Last order</TableHead>
                 </TableRow>
               </TableHeader>
@@ -186,8 +194,8 @@ export function CustomersView() {
                         </div>
                       </TableCell>
                       <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-8" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-8" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-20" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                     </TableRow>
                   ))}
@@ -212,8 +220,8 @@ export function CustomersView() {
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">{c.phone ?? "—"}</TableCell>
-                      <TableCell className="tabular-nums">{c.totalOrders}</TableCell>
-                      <TableCell className="font-medium tabular-nums">{formatPkr(c.totalSpendPaisa)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{c.totalOrders}</TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">{formatPkr(c.totalSpendPaisa)}</TableCell>
                       <TableCell>
                         {c.lastOrderAt ? (
                           <span className="text-muted-foreground">{new Date(c.lastOrderAt).toLocaleDateString()}</span>

@@ -9,7 +9,7 @@ import { CartPanel } from "./cart-panel";
 import { VariantDialog } from "./variant-dialog";
 import { PaymentDialog } from "./payment-dialog";
 import { OrderQueuePanel } from "./order-queue-panel";
-import { TablesDialog, ResumedOrderPanel } from "./tables-dialog";
+import { TablesDialog, ResumedOrderPanel, AddItemsPanel } from "./tables-dialog";
 import { OfflineBanner } from "./offline-banner";
 import { useSync } from "@/lib/offline/use-sync";
 import { cacheMenu, cacheOpenOrders, getCachedMenu, getCachedOpenOrders, listQueue, type CreateOrderAction } from "@/lib/offline/db";
@@ -58,6 +58,7 @@ export function PosTerminal({
   const [discount, setDiscount] = useState<Discount | null>(null);
   const [tablesOpen, setTablesOpen] = useState(false);
   const [resumed, setResumed] = useState<{ table: RestaurantTableDto; order: OrderDto } | null>(null);
+  const [addingItemsToOrder, setAddingItemsToOrder] = useState(false);
   const [totals, setTotals] = useState<PreviewTotals | null>(null);
   const [variantItem, setVariantItem] = useState<MenuItemDto | null>(null);
   const [sending, setSending] = useState(false);
@@ -279,6 +280,51 @@ export function PosTerminal({
     }
   }
 
+  // Online only, deliberately — addLinesToOrder isn't one of the offline queue's three action
+  // types (createOrder/pay/void), so there's no replay path for it yet if the device goes offline
+  // mid-submission. Blocked up front rather than half-attempted.
+  async function handleAddItemsSubmit() {
+    if (!resumed || lines.length === 0) return;
+    if (!sync.isOnline) {
+      toast.error("You're offline — adding items to an order needs a connection.");
+      return;
+    }
+    setSending(true);
+    try {
+      const res = await fetch(`/api/orders/${resumed.order.id}/lines`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lines: lines.map((l) => ({
+            menuItemId: l.menuItemId,
+            variantId: l.variantId,
+            quantity: l.quantity,
+            discount: l.discount,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not add items.");
+        return;
+      }
+      toast.success(`Added to order #${resumed.order.orderNumber}.`);
+      // addLinesToOrder's response is the bare updated Order row (no .lines — see
+      // src/server/orders.ts) — refetch the full order the same way the order queue already does,
+      // rather than teaching that endpoint a response shape nothing else needs.
+      const refreshed = await fetch("/api/orders").then((r) => r.json());
+      const updatedOrder: OrderDto = (refreshed.orders ?? []).find((o: OrderDto) => o.id === resumed.order.id) ?? resumed.order;
+      setResumed({ table: resumed.table, order: updatedOrder });
+      setAddingItemsToOrder(false);
+      setLines([]);
+      if (showQueue) loadQueue();
+    } catch {
+      toast.error("Could not add items — check your connection.");
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function handleConfirmPayment(tenders: { method: PaymentMethod; amountPaisa: number }[]) {
     if (!payingOrder) return;
     setPaying(true);
@@ -371,13 +417,32 @@ export function PosTerminal({
           )}
         </div>
 
-        {resumed ? (
-          <div className="border-l bg-muted/30 p-4">
+        {resumed && addingItemsToOrder ? (
+          <div className="min-h-0 border-l bg-card">
+            <AddItemsPanel
+              orderNumber={resumed.order.orderNumber}
+              lines={lines}
+              onQuantityChange={handleQuantityChange}
+              onRemoveLine={(key) => setLines((prev) => prev.filter((l) => l.key !== key))}
+              onCancel={() => {
+                setAddingItemsToOrder(false);
+                setLines([]);
+              }}
+              onSubmit={handleAddItemsSubmit}
+              submitting={sending}
+            />
+          </div>
+        ) : resumed ? (
+          <div className="min-h-0 overflow-y-auto border-l bg-muted/30 p-4">
             <ResumedOrderPanel
               table={resumed.table}
               order={resumed.order}
               onClose={() => setResumed(null)}
               onTakePayment={() => setPayingOrder(resumed.order)}
+              onAddItems={() => {
+                setLines([]);
+                setAddingItemsToOrder(true);
+              }}
             />
           </div>
         ) : showQueue ? (
@@ -442,6 +507,7 @@ export function PosTerminal({
         <PaymentDialog
           key={payingOrder?.id ?? "closed"}
           open={!!payingOrder}
+          orderId={payingOrder?.id ?? null}
           totalPaisa={payingOrder?.totalPaisa ?? 0}
           onClose={() => setPayingOrder(null)}
           onConfirm={handleConfirmPayment}

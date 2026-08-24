@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { signupTenant } from "@/server/tenant-signup";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // Public, unauthenticated — this is the one route that legitimately creates a Tenant. No session
-// exists yet, so it does not go through defineHandler (which requires one).
+// exists yet, so it does not go through defineHandler (which requires one). This makes it the other
+// public write endpoint in the app besides online-order checkout, and the same class of target: a
+// script that keeps generating a new slug/email can otherwise farm unlimited free trials, and — per
+// the manual-billing model — a trial's expiry only ever flags it in the admin panel rather than
+// blocking access, so an unrate-limited signup was a genuinely free, self-renewing resource. Same
+// rate-limit pattern as src/app/api/online-order/[tenantSlug]/checkout/route.ts.
 const signupSchema = z.object({
   restaurantName: z.string().min(2).max(120),
   slug: z
@@ -19,6 +25,11 @@ const signupSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  if (!(await checkRateLimit(`signup:${ip}`, 3, 60 * 60 * 1000))) {
+    return NextResponse.json({ error: "Too many signup attempts from this connection — please wait a while and try again." }, { status: 429 });
+  }
+
   const raw = await req.json().catch(() => ({}));
   const parsed = signupSchema.safeParse(raw);
   if (!parsed.success) {

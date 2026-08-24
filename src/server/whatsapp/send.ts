@@ -2,7 +2,7 @@ import "server-only";
 import { tenantDb } from "@/server/db";
 import { sendWhatsAppCloudMessage } from "./adapter";
 import { getApprovedTemplate, renderTemplate, type TemplateKey } from "./templates";
-import { getTenantTier, tierMeets } from "@/server/tier";
+import { getTenantModules } from "@/server/tier";
 
 type MessageCategory = "lowStockAlertsEnabled" | "dailySummaryEnabled" | "winBackEnabled" | "deliveryUpdatesEnabled";
 
@@ -47,13 +47,14 @@ export async function notifyWhatsApp(input: NotifyInput) {
       },
     });
 
-  // WhatsApp is a Complete-tier feature — checked here (not just on the settings API/UI) so a
-  // downgraded tenant's *automated* triggers stop firing too, not only the settings page. Reuses
-  // SKIPPED_DISABLED rather than adding a new enum value: from the tenant's perspective it reads
-  // the same either way ("this didn't send"), and the audit-worthy distinction (tier vs. toggle)
-  // is a platform-level concern, not a tenant-facing one.
-  const tier = await getTenantTier(db);
-  if (!tierMeets(tier, "complete")) return log("SKIPPED_DISABLED");
+  // WhatsApp is a gateable module — checked here (not just on the settings API/UI) so a tenant
+  // whose WhatsApp toggle is off (downgraded, or explicitly disabled by a platform admin) has its
+  // *automated* triggers stop firing too, not only the settings page. Reuses SKIPPED_DISABLED
+  // rather than adding a new enum value: from the tenant's perspective it reads the same either way
+  // ("this didn't send"), and the audit-worthy distinction (tier vs. toggle) is a platform-level
+  // concern, not a tenant-facing one.
+  const enabledModules = await getTenantModules(db);
+  if (!enabledModules.includes("whatsapp")) return log("SKIPPED_DISABLED");
 
   const settings = await db.whatsAppSettings.findUnique({ where: { tenantId: input.tenantId } });
   if (!settings?.enabled || !settings[CATEGORY_BY_KEY[input.templateKey]]) {

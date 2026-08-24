@@ -62,7 +62,7 @@ export function CartPanel({
   sending: boolean;
 }) {
   return (
-    <div className="flex h-full flex-col border-l bg-card">
+    <div className="flex h-full min-h-0 flex-col border-l bg-card">
       <div className="space-y-2 border-b p-4">
         <Select value={orderType} onValueChange={(v) => v && onOrderTypeChange(v as OrderType)}>
           <SelectTrigger className="w-full font-medium">
@@ -154,8 +154,8 @@ export function CartPanel({
         <Row label="Subtotal" value={totals?.discountedSubtotalPaisa} />
         {!!totals?.serviceChargePaisa && <Row label="Service charge" value={totals.serviceChargePaisa} />}
         <Row label={`Tax (${((totals?.appliedRateBasisPoints ?? 0) / 100).toFixed(0)}%)`} value={totals?.taxPaisa} />
-        <div className="mt-2 flex items-center justify-between rounded-xl bg-primary/10 px-3.5 py-3 shadow-xs">
-          <span className="font-heading text-sm font-semibold">Total</span>
+        <div className="mt-2 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-3.5 py-3 shadow-xs">
+          <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Total</span>
           <span className="font-heading text-xl font-bold tabular-nums text-primary">
             {formatPkr(totals?.totalPaisa ?? 0)}
           </span>
