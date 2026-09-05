@@ -3,17 +3,29 @@ import { definePlatformHandler, platformDb, HttpError } from "@/server/platform-
 import { adminCreateTenant } from "@/server/tenant-signup";
 import { TIER_ORDER } from "@/server/tier";
 
-// GET /api/platform/tenants — every tenant, for the super-admin panel. Uses platformDb
-// (BYPASSRLS), never tenantDb — this route intentionally sees across all tenants.
-export const GET = definePlatformHandler({}, async () => {
-  const tenants = await platformDb.tenant.findMany({
-    orderBy: { createdAt: "desc" },
-    include: {
-      subscription: { include: { plan: true } },
-      branches: { select: { id: true } },
-      _count: { select: { users: true } },
-    },
-  });
+const listSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+// GET /api/platform/tenants — paginated, for the super-admin panel. Uses platformDb (BYPASSRLS),
+// never tenantDb — this route intentionally sees across all tenants. Unbounded before this (fine
+// at a handful of tenants, would only get worse as the platform grows) — page/pageSize query
+// params, capped at 100/page, with `total` returned so the UI can render real page controls.
+export const GET = definePlatformHandler({ input: listSchema }, async ({ input }) => {
+  const [tenants, total] = await Promise.all([
+    platformDb.tenant.findMany({
+      orderBy: { createdAt: "desc" },
+      skip: (input.page - 1) * input.pageSize,
+      take: input.pageSize,
+      include: {
+        subscription: { include: { plan: true } },
+        branches: { select: { id: true } },
+        _count: { select: { users: true } },
+      },
+    }),
+    platformDb.tenant.count(),
+  ]);
 
   return {
     tenants: tenants.map((t) => ({
@@ -31,6 +43,9 @@ export const GET = definePlatformHandler({}, async () => {
       currentPeriodEnd: t.subscription?.currentPeriodEnd ?? null,
       customMonthlyPricePaisa: t.subscription?.customMonthlyPricePaisa ?? null,
     })),
+    total,
+    page: input.page,
+    pageSize: input.pageSize,
   };
 });
 

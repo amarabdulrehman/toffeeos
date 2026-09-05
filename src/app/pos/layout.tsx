@@ -2,8 +2,11 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, UtensilsCrossed } from "lucide-react";
 import { auth } from "@/server/auth";
+import { getTenantLayoutDataForTenant } from "@/server/tier";
+import { tenantAcceptsLogin } from "@/server/auth/session-user";
 import { BRAND_NAME } from "@/config/brand";
 import { SignOutButton } from "@/components/sign-out-button";
+import { AccountSuspended } from "@/components/tier/account-suspended";
 
 // Fullscreen POS shell — deliberately NOT nested under the back-office layout: cashiers/waiters
 // live here for a whole shift on a tablet, so it gets its own minimal chrome, not a sidebar.
@@ -14,6 +17,29 @@ export default async function PosLayout({ children }: { children: React.ReactNod
   if (!session?.user || session.user.kind !== "tenant") redirect("/login");
   const user = session.user;
   if (user.mustChangePassword) redirect("/change-password");
+
+  // The API layer already rejects every request from a suspended/cancelled tenant — this closes
+  // the matching page-shell gap so a cashier sees why, instead of a POS that silently fails on
+  // every action (Send to Kitchen, Take Payment, etc.).
+  const { tenantStatus } = await getTenantLayoutDataForTenant(user.tenantId);
+  if (!tenantAcceptsLogin(tenantStatus ?? "")) {
+    return (
+      <div className="flex h-screen flex-col overflow-hidden bg-background">
+        <header className="flex shrink-0 items-center justify-between bg-sidebar px-5 py-3 text-sidebar-foreground shadow-md">
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+              <UtensilsCrossed className="size-4.5" />
+            </span>
+            <div className="font-heading text-base font-semibold tracking-tight">{BRAND_NAME}</div>
+          </div>
+          <div className="w-24">
+            <SignOutButton onDark />
+          </div>
+        </header>
+        <AccountSuspended />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">

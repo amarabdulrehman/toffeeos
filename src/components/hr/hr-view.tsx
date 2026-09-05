@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { subDays } from "date-fns";
 import { toast } from "sonner";
 import {
@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { formatPkr } from "@/lib/money";
 
 interface PayProfile {
@@ -50,13 +51,22 @@ interface AttendanceRecord {
 }
 interface PayrollLine {
   membershipId: string;
+  branchId: string;
   userName: string;
   branchName: string;
   payType: "HOURLY" | "MONTHLY";
   hoursWorked: number;
+  regularHours: number;
+  overtimeHours: number;
   hourlyRatePaisa: number | null;
   monthlySalaryPaisa: number | null;
   grossPayPaisa: number;
+}
+interface Disbursement {
+  membershipId: string;
+  grossPayPaisa: number;
+  paidAt: string;
+  method: string | null;
 }
 
 function useRange() {
@@ -107,8 +117,9 @@ export function HrView() {
           <h1 className="font-heading text-2xl font-bold tracking-tight">HR &amp; Payroll</h1>
           <p className="text-sm text-muted-foreground">
             Clock-in reuses staff PIN login at POS. Payroll is computed live from attendance for the period below — it
-            isn&apos;t saved as a standing run. Overtime isn&apos;t modeled (no policy was defined); hourly pay is rate
-            × hours worked. Disbursement (actually paying staff) stays outside the system.
+            isn&apos;t saved as a standing run. Overtime is off by default — set a policy in the Payroll tab to turn it
+            on. Marking a period as paid records who was actually disbursed and when; it doesn&apos;t move any money
+            itself.
           </p>
         </div>
       </div>
@@ -597,15 +608,138 @@ function PayRatesTab() {
   );
 }
 
+interface BranchSettingsForOvertime {
+  overtimeThresholdHoursPerWeek: number | null;
+  overtimeMultiplierBasisPoints: number;
+}
+
+/** Owner-configurable payroll policy — off by default (null threshold), matching this app's other
+ * pricing-policy toggles (tax rules, service charge). Only ever affects HOURLY staff; see
+ * computeHourlyBreakdown in src/server/hr.ts for how the threshold/multiplier are actually applied,
+ * bucketed per ISO week rather than per this page's arbitrary date range. Scoped to the signed-in
+ * admin's own branch, same convention as branches-view.tsx's Order settings card. */
+function OvertimePolicyCard() {
+  const [settings, setSettings] = useState<BranchSettingsForOvertime | null>(null);
+  const [saving, setSaving] = useState(false);
+  const thresholdInputRef = useRef<HTMLInputElement>(null);
+  const multiplierInputRef = useRef<HTMLInputElement>(null);
+
+  const load = useCallback(() => {
+    fetch("/api/branch-settings")
+      .then((r) => r.json())
+      .then((d) => setSettings(d.settings ?? null))
+      .catch(() => toast.error("Could not load overtime settings."));
+  }, []);
+
+  useEffect(load, [load]);
+
+  async function save(patch: Partial<BranchSettingsForOvertime>) {
+    if (!settings) return;
+    setSettings({ ...settings, ...patch });
+    setSaving(true);
+    try {
+      const res = await fetch("/api/branch-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        toast.error("Could not save overtime settings.");
+        load();
+        return;
+      }
+      toast.success("Overtime settings saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!settings) return null;
+  const enabled = settings.overtimeThresholdHoursPerWeek !== null;
+  const multiplierX = (settings.overtimeMultiplierBasisPoints / 10000).toFixed(2);
+
+  return (
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
+      <CardHeader className="flex flex-row items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Clock className="size-4" />
+          </span>
+          <div>
+            <CardTitle className="font-heading text-base">Overtime policy</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {enabled
+                ? `Hours beyond ${settings.overtimeThresholdHoursPerWeek}/week pay ${multiplierX}x, hourly staff only.`
+                : "Off — every hour pays the same rate."}
+            </p>
+          </div>
+        </div>
+        <Switch
+          checked={enabled}
+          disabled={saving}
+          onCheckedChange={(checked) => {
+            if (!checked) {
+              save({ overtimeThresholdHoursPerWeek: null });
+              return;
+            }
+            const threshold = Number(thresholdInputRef.current?.value);
+            save({ overtimeThresholdHoursPerWeek: threshold > 0 ? threshold : 48 });
+          }}
+        />
+      </CardHeader>
+      {enabled && (
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="ot-threshold">Threshold (hours/week)</Label>
+            <Input
+              id="ot-threshold"
+              ref={thresholdInputRef}
+              type="number"
+              min={1}
+              max={168}
+              step={1}
+              disabled={saving}
+              defaultValue={settings.overtimeThresholdHoursPerWeek ?? 48}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                if (Number.isInteger(v) && v >= 1 && v <= 168) save({ overtimeThresholdHoursPerWeek: v });
+              }}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ot-multiplier">Overtime rate multiplier (x)</Label>
+            <Input
+              id="ot-multiplier"
+              ref={multiplierInputRef}
+              type="number"
+              min={1}
+              max={10}
+              step={0.25}
+              disabled={saving}
+              defaultValue={multiplierX}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                if (!Number.isNaN(v) && v >= 1 && v <= 10) save({ overtimeMultiplierBasisPoints: Math.round(v * 10000) });
+              }}
+            />
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 function PayrollTab({ qs }: { qs: string }) {
   const [lines, setLines] = useState<PayrollLine[]>([]);
+  const [disbursements, setDisbursements] = useState<Disbursement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [payslip, setPayslip] = useState<{ userName: string; membershipId: string } | null>(null);
+  const [disbursing, setDisbursing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await safeGet<{ lines: PayrollLine[] }>(`/api/hr/payroll?${qs}`);
+    const res = await safeGet<{ lines: PayrollLine[]; disbursements: Disbursement[] }>(`/api/hr/payroll?${qs}`);
     if (res.error) {
       setError(res.error);
       setLoading(false);
@@ -613,6 +747,7 @@ function PayrollTab({ qs }: { qs: string }) {
     }
     setError(null);
     setLines(res.data?.lines ?? []);
+    setDisbursements(res.data?.disbursements ?? []);
     setLoading(false);
   }, [qs]);
 
@@ -623,69 +758,129 @@ function PayrollTab({ qs }: { qs: string }) {
   }, [load]);
 
   const totalPaisa = lines.reduce((a, l) => a + l.grossPayPaisa, 0);
+  const paidByMembership = new Map(disbursements.map((d) => [d.membershipId, d]));
+
+  async function markPaid(line: PayrollLine) {
+    const params = new URLSearchParams(qs);
+    const periodStart = params.get("from");
+    const periodEnd = params.get("to");
+    if (!periodStart || !periodEnd) return;
+    setDisbursing(line.membershipId);
+    try {
+      const res = await fetch("/api/hr/payroll/disburse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          membershipId: line.membershipId,
+          branchId: line.branchId,
+          periodStart,
+          periodEnd,
+          regularHours: line.regularHours,
+          overtimeHours: line.overtimeHours,
+          grossPayPaisa: line.grossPayPaisa,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not record disbursement.");
+        return;
+      }
+      toast.success(`Marked ${line.userName}'s pay for this period as paid.`);
+      load();
+    } finally {
+      setDisbursing(null);
+    }
+  }
 
   return (
-    <Card className="overflow-hidden shadow-md ring-1 ring-primary/10">
-      <CardHeader className="bg-gradient-to-b from-primary/[0.06] to-transparent">
-        <CardTitle className="font-heading text-base">Payroll for this period</CardTitle>
-        <div className="font-heading text-2xl font-bold tabular-nums text-primary">{formatPkr(totalPaisa)}</div>
-      </CardHeader>
-      <CardContent>
-        {error ? (
-          <LoadError message={error} />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Staff</TableHead>
-                <TableHead>Branch</TableHead>
-                <TableHead>Pay type</TableHead>
-                <TableHead>Hours</TableHead>
-                <TableHead className="text-right">Gross pay</TableHead>
-                <TableHead className="text-right">Payslip</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading &&
-                Array.from({ length: 3 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell><Skeleton className="h-4 w-28" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-10" /></TableCell>
-                    <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-16" /></TableCell>
-                    <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-10" /></TableCell>
-                  </TableRow>
-                ))}
-              {!loading && lines.length === 0 && (
+    <div className="space-y-4">
+      <OvertimePolicyCard />
+      <Card className="overflow-hidden shadow-md ring-1 ring-primary/10">
+        <CardHeader className="bg-gradient-to-b from-primary/[0.06] to-transparent">
+          <CardTitle className="font-heading text-base">Payroll for this period</CardTitle>
+          <div className="font-heading text-2xl font-bold tabular-nums text-primary">{formatPkr(totalPaisa)}</div>
+        </CardHeader>
+        <CardContent>
+          {error ? (
+            <LoadError message={error} />
+          ) : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                    No staff have a pay rate set yet — set one in the Pay rates tab.
-                  </TableCell>
+                  <TableHead>Staff</TableHead>
+                  <TableHead>Branch</TableHead>
+                  <TableHead>Pay type</TableHead>
+                  <TableHead>Hours</TableHead>
+                  <TableHead className="text-right">Gross pay</TableHead>
+                  <TableHead className="text-right">Payslip</TableHead>
+                  <TableHead className="text-right">Disbursement</TableHead>
                 </TableRow>
-              )}
-              {!loading &&
-                lines.map((l) => (
-                  <TableRow key={l.membershipId}>
-                    <TableCell className="font-medium">{l.userName}</TableCell>
-                    <TableCell className="text-muted-foreground">{l.branchName}</TableCell>
-                    <TableCell className="tabular-nums">{l.payType === "HOURLY" ? `${formatPkr(l.hourlyRatePaisa ?? 0)}/hr` : `${formatPkr(l.monthlySalaryPaisa ?? 0)}/mo`}</TableCell>
-                    <TableCell className="tabular-nums">{l.hoursWorked}</TableCell>
-                    <TableCell className="text-right font-semibold tabular-nums">{formatPkr(l.grossPayPaisa)}</TableCell>
-                    <TableCell className="text-right">
-                      <Button size="sm" variant="outline" onClick={() => setPayslip({ userName: l.userName, membershipId: l.membershipId })}>
-                        View
-                      </Button>
+              </TableHeader>
+              <TableBody>
+                {loading &&
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-10" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-16" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-10" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-16" /></TableCell>
+                    </TableRow>
+                  ))}
+                {!loading && lines.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                      No staff have a pay rate set yet — set one in the Pay rates tab.
                     </TableCell>
                   </TableRow>
-                ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
+                )}
+                {!loading &&
+                  lines.map((l) => {
+                    const paid = paidByMembership.get(l.membershipId);
+                    return (
+                      <TableRow key={l.membershipId}>
+                        <TableCell className="font-medium">{l.userName}</TableCell>
+                        <TableCell className="text-muted-foreground">{l.branchName}</TableCell>
+                        <TableCell className="tabular-nums">{l.payType === "HOURLY" ? `${formatPkr(l.hourlyRatePaisa ?? 0)}/hr` : `${formatPkr(l.monthlySalaryPaisa ?? 0)}/mo`}</TableCell>
+                        <TableCell className="tabular-nums">
+                          {l.hoursWorked}
+                          {l.overtimeHours > 0 && <span className="ml-1 text-xs text-warning">({l.overtimeHours} OT)</span>}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">{formatPkr(l.grossPayPaisa)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" onClick={() => setPayslip({ userName: l.userName, membershipId: l.membershipId })}>
+                            View
+                          </Button>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {paid ? (
+                            <Badge variant="success" title={new Date(paid.paidAt).toLocaleString()}>
+                              Paid {formatPkr(paid.grossPayPaisa)}
+                            </Badge>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={disbursing === l.membershipId}
+                              onClick={() => markPaid(l)}
+                            >
+                              {disbursing === l.membershipId ? "Marking…" : "Mark as paid"}
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
 
-      <PayslipDialog info={payslip} qs={qs} onClose={() => setPayslip(null)} />
-    </Card>
+        <PayslipDialog info={payslip} qs={qs} onClose={() => setPayslip(null)} />
+      </Card>
+    </div>
   );
 }
 
@@ -694,6 +889,8 @@ interface PayslipDetail {
   branchName: string;
   payType: "HOURLY" | "MONTHLY";
   hoursWorked: number;
+  regularHours: number;
+  overtimeHours: number;
   hourlyRatePaisa: number | null;
   monthlySalaryPaisa: number | null;
   grossPayPaisa: number;
@@ -738,7 +935,12 @@ function PayslipDialog({ info, qs, onClose }: { info: { userName: string; member
               </div>
               <div className="rounded-xl border bg-muted/30 p-3">
                 <div className="text-xs text-muted-foreground">Hours worked</div>
-                <div className="mt-0.5 font-semibold tabular-nums">{detail.hoursWorked}</div>
+                <div className="mt-0.5 font-semibold tabular-nums">
+                  {detail.hoursWorked}
+                  {detail.overtimeHours > 0 && (
+                    <span className="ml-1 text-xs font-normal text-warning">({detail.overtimeHours} OT)</span>
+                  )}
+                </div>
               </div>
               <div className="rounded-xl bg-gradient-to-br from-primary/15 via-primary/10 to-transparent p-3 ring-1 ring-primary/15">
                 <div className="text-xs text-muted-foreground">Net pay</div>

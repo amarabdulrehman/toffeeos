@@ -12,6 +12,7 @@ export default async function KdsPage() {
     <KdsBoard
       tenantId={user.tenantId}
       branchId={user.branchId}
+      branchName={user.branchName}
       canMarkReady={user.permissions.includes("kds.item.markReady")}
     />
   );

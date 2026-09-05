@@ -23,6 +23,11 @@ const envSchema = z.object({
   // `Authorization: Bearer <secret>` to /api/cron/*. Optional — unset means those endpoints
   // reject every request rather than running unauthenticated.
   CRON_SECRET: z.string().min(1).optional(),
+
+  // Optional — unset means src/server/email/adapter.ts falls back to its dev-stub (console.log)
+  // instead of actually sending. Set both to activate real password-reset emails.
+  RESEND_API_KEY: z.string().min(1).optional(),
+  EMAIL_FROM: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

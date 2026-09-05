@@ -4,7 +4,7 @@ import { sendWhatsAppCloudMessage } from "./adapter";
 import { getApprovedTemplate, renderTemplate, type TemplateKey } from "./templates";
 import { getTenantModules } from "@/server/tier";
 
-type MessageCategory = "lowStockAlertsEnabled" | "dailySummaryEnabled" | "winBackEnabled" | "deliveryUpdatesEnabled";
+type MessageCategory = "lowStockAlertsEnabled" | "dailySummaryEnabled" | "winBackEnabled" | "deliveryUpdatesEnabled" | "thankYouEnabled";
 
 const CATEGORY_BY_KEY: Record<TemplateKey, MessageCategory> = {
   low_stock_alert: "lowStockAlertsEnabled",
@@ -12,6 +12,7 @@ const CATEGORY_BY_KEY: Record<TemplateKey, MessageCategory> = {
   win_back_30d: "winBackEnabled",
   delivery_picked_up: "deliveryUpdatesEnabled",
   delivery_delivered: "deliveryUpdatesEnabled",
+  thank_you: "thankYouEnabled",
 };
 
 export interface NotifyInput {

@@ -16,6 +16,11 @@ const schema = z.object({
   serviceChargeAppliesTo: z.array(z.enum(["DINE_IN", "TAKEAWAY", "DELIVERY", "SERVICE"])).optional(),
   serviceChargeTaxable: z.boolean().optional(),
   roundingMode: z.enum(["NONE", "NEAREST_1", "NEAREST_5"]).optional(),
+  kdsEnabled: z.boolean().optional(),
+  // Null = overtime off. See the schema comment on BranchSettings and computeHourlyBreakdown in
+  // src/server/hr.ts for how these two are actually applied.
+  overtimeThresholdHoursPerWeek: z.number().int().min(1).max(168).nullable().optional(),
+  overtimeMultiplierBasisPoints: z.number().int().min(10000).max(100000).optional(),
 });
 
 export const PATCH = defineHandler(

@@ -1,4 +1,5 @@
 import "server-only";
+import { getISOWeek, getISOWeekYear } from "date-fns";
 import { tenantDb } from "@/server/db";
 import { HttpError } from "@/server/handler";
 import type { DateRange } from "@/server/reports";
@@ -141,13 +142,33 @@ export async function setPayProfile(tenantId: string, membershipId: string, inpu
 
 // ============================================================================
 // Payroll — computed live from attendance + pay profile each time this runs, not persisted as a
-// standing "payroll run" record (see the schema comment). Overtime is explicitly NOT handled: no
-// defined policy was given for this build, and the brief says to flag that as a decision needed
-// rather than guess at a formula — hourly pay here is rate × total hours worked, no multiplier for
-// hours beyond any threshold. Monthly staff are paid their fixed salary regardless of attendance,
-// the standard treatment for a salaried employee — attendance is still recorded and shown on their
-// payslip for reference, it just doesn't change what they're paid.
+// standing "payroll run" record (see the schema comment). Monthly staff are paid their fixed
+// salary regardless of attendance, the standard treatment for a salaried employee — attendance is
+// still recorded and shown on their payslip for reference, it just doesn't change what they're
+// paid. Overtime only ever applies to HOURLY staff, and only when a branch has opted in (see
+// computeHourlyBreakdown) — off by default, matching this app's other pricing-policy toggles.
 // ============================================================================
+
+interface OvertimePolicy {
+  thresholdHoursPerWeek: number | null;
+  multiplierBasisPoints: number;
+}
+
+async function getOvertimePolicyByBranch(
+  db: ReturnType<typeof tenantDb>,
+  branchIds: string[]
+): Promise<Map<string, OvertimePolicy>> {
+  const rows = await db.branchSettings.findMany({
+    where: { branchId: { in: branchIds } },
+    select: { branchId: true, overtimeThresholdHoursPerWeek: true, overtimeMultiplierBasisPoints: true },
+  });
+  return new Map(
+    rows.map((r) => [
+      r.branchId,
+      { thresholdHoursPerWeek: r.overtimeThresholdHoursPerWeek, multiplierBasisPoints: r.overtimeMultiplierBasisPoints },
+    ])
+  );
+}
 
 function hoursWorked(records: { clockInAt: Date; clockOutAt: Date | null }[]): number {
   return records.reduce((total, r) => {
@@ -156,13 +177,58 @@ function hoursWorked(records: { clockInAt: Date; clockOutAt: Date | null }[]): n
   }, 0);
 }
 
+interface HourlyBreakdown {
+  regularHours: number;
+  overtimeHours: number;
+  grossPayPaisa: number;
+}
+
+/** Buckets worked hours by ISO week (year+week, so week 1 of two different years is never
+ * conflated) and applies the threshold/multiplier per week, then sums across every week touched
+ * by the reporting range — overtime law/practice is universally week-based, not tied to whatever
+ * arbitrary from/to a payroll run happens to use. A shift that spans midnight into a new ISO week
+ * is counted entirely in the week it started, rather than split to the minute — a deliberate
+ * simplification, not a bug, for a POS-driven attendance system rather than a formal time clock. */
+function computeHourlyBreakdown(
+  records: { clockInAt: Date; clockOutAt: Date | null }[],
+  hourlyRatePaisa: number,
+  policy: OvertimePolicy | undefined
+): HourlyBreakdown {
+  if (!policy?.thresholdHoursPerWeek) {
+    const hours = hoursWorked(records);
+    return { regularHours: hours, overtimeHours: 0, grossPayPaisa: Math.round(hours * hourlyRatePaisa) };
+  }
+
+  const hoursByWeek = new Map<string, number>();
+  for (const r of records) {
+    if (!r.clockOutAt) continue;
+    const hrs = (r.clockOutAt.getTime() - r.clockInAt.getTime()) / (1000 * 60 * 60);
+    const key = `${getISOWeekYear(r.clockInAt)}-${getISOWeek(r.clockInAt)}`;
+    hoursByWeek.set(key, (hoursByWeek.get(key) ?? 0) + hrs);
+  }
+
+  let regularHours = 0;
+  let overtimeHours = 0;
+  for (const weekHours of hoursByWeek.values()) {
+    regularHours += Math.min(weekHours, policy.thresholdHoursPerWeek);
+    overtimeHours += Math.max(0, weekHours - policy.thresholdHoursPerWeek);
+  }
+
+  const regularPayPaisa = Math.round(regularHours * hourlyRatePaisa);
+  const overtimePayPaisa = Math.round(overtimeHours * hourlyRatePaisa * (policy.multiplierBasisPoints / 10000));
+  return { regularHours, overtimeHours, grossPayPaisa: regularPayPaisa + overtimePayPaisa };
+}
+
 export interface PayrollLine {
   membershipId: string;
   userId: string;
   userName: string;
+  branchId: string;
   branchName: string;
   payType: "HOURLY" | "MONTHLY";
   hoursWorked: number;
+  regularHours: number;
+  overtimeHours: number;
   hourlyRatePaisa: number | null;
   monthlySalaryPaisa: number | null;
   grossPayPaisa: number;
@@ -177,9 +243,12 @@ export async function runPayroll(tenantId: string, branchIds: string[], range: D
   if (memberships.length === 0) return [];
 
   const userIds = memberships.map((m) => m.userId);
-  const records = await db.attendanceRecord.findMany({
-    where: { userId: { in: userIds }, branchId: { in: branchIds }, clockInAt: { gte: range.from, lte: range.to } },
-  });
+  const [records, overtimeByBranch] = await Promise.all([
+    db.attendanceRecord.findMany({
+      where: { userId: { in: userIds }, branchId: { in: branchIds }, clockInAt: { gte: range.from, lte: range.to } },
+    }),
+    getOvertimePolicyByBranch(db, branchIds),
+  ]);
   const recordsByUser = new Map<string, typeof records>();
   for (const r of records) {
     const arr = recordsByUser.get(r.userId) ?? [];
@@ -188,16 +257,21 @@ export async function runPayroll(tenantId: string, branchIds: string[], range: D
   }
 
   return memberships.map((m) => {
-    const hours = hoursWorked(recordsByUser.get(m.userId) ?? []);
-    const grossPayPaisa =
-      m.payType === "HOURLY" ? Math.round(hours * (m.hourlyRatePaisa ?? 0)) : (m.monthlySalaryPaisa ?? 0);
+    const userRecords = recordsByUser.get(m.userId) ?? [];
+    const isHourly = m.payType === "HOURLY";
+    const { regularHours, overtimeHours, grossPayPaisa } = isHourly
+      ? computeHourlyBreakdown(userRecords, m.hourlyRatePaisa ?? 0, overtimeByBranch.get(m.branchId))
+      : { regularHours: hoursWorked(userRecords), overtimeHours: 0, grossPayPaisa: m.monthlySalaryPaisa ?? 0 };
     return {
       membershipId: m.id,
       userId: m.userId,
       userName: m.user.name,
+      branchId: m.branchId,
       branchName: m.branch.name,
       payType: m.payType as "HOURLY" | "MONTHLY",
-      hoursWorked: Math.round(hours * 100) / 100,
+      hoursWorked: Math.round((regularHours + overtimeHours) * 100) / 100,
+      regularHours: Math.round(regularHours * 100) / 100,
+      overtimeHours: Math.round(overtimeHours * 100) / 100,
       hourlyRatePaisa: m.hourlyRatePaisa,
       monthlySalaryPaisa: m.monthlySalaryPaisa,
       grossPayPaisa,
@@ -218,21 +292,28 @@ export async function getPayslip(tenantId: string, membershipId: string, range: 
   });
   if (!membership.payType) throw new HttpError(400, "This staff member has no pay profile set up yet.");
 
-  const records = await db.attendanceRecord.findMany({
-    where: { userId: membership.userId, branchId: membership.branchId, clockInAt: { gte: range.from, lte: range.to } },
-    orderBy: { clockInAt: "asc" },
-  });
-  const hours = hoursWorked(records);
-  const grossPayPaisa =
-    membership.payType === "HOURLY" ? Math.round(hours * (membership.hourlyRatePaisa ?? 0)) : (membership.monthlySalaryPaisa ?? 0);
+  const [records, overtimeByBranch] = await Promise.all([
+    db.attendanceRecord.findMany({
+      where: { userId: membership.userId, branchId: membership.branchId, clockInAt: { gte: range.from, lte: range.to } },
+      orderBy: { clockInAt: "asc" },
+    }),
+    getOvertimePolicyByBranch(db, [membership.branchId]),
+  ]);
+  const isHourly = membership.payType === "HOURLY";
+  const { regularHours, overtimeHours, grossPayPaisa } = isHourly
+    ? computeHourlyBreakdown(records, membership.hourlyRatePaisa ?? 0, overtimeByBranch.get(membership.branchId))
+    : { regularHours: hoursWorked(records), overtimeHours: 0, grossPayPaisa: membership.monthlySalaryPaisa ?? 0 };
 
   return {
     membershipId: membership.id,
     userId: membership.userId,
     userName: membership.user.name,
+    branchId: membership.branchId,
     branchName: membership.branch.name,
     payType: membership.payType,
-    hoursWorked: Math.round(hours * 100) / 100,
+    hoursWorked: Math.round((regularHours + overtimeHours) * 100) / 100,
+    regularHours: Math.round(regularHours * 100) / 100,
+    overtimeHours: Math.round(overtimeHours * 100) / 100,
     hourlyRatePaisa: membership.hourlyRatePaisa,
     monthlySalaryPaisa: membership.monthlySalaryPaisa,
     grossPayPaisa,
@@ -243,4 +324,59 @@ export async function getPayslip(tenantId: string, membershipId: string, range: 
       hours: r.clockOutAt ? Math.round(((r.clockOutAt.getTime() - r.clockInAt.getTime()) / (1000 * 60 * 60)) * 100) / 100 : 0,
     })),
   };
+}
+
+// ============================================================================
+// Disbursement — the one thing about payroll that IS persisted: a record that a specific period's
+// pay was actually handed to a specific person. Payroll itself stays a live computation (see the
+// section above); this just snapshots the numbers at the moment of marking paid, so a later pay-
+// rate change or overtime-policy edit can't silently rewrite what was actually disbursed.
+// ============================================================================
+
+export interface RecordDisbursementInput {
+  membershipId: string;
+  branchId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  regularHours: number;
+  overtimeHours: number;
+  grossPayPaisa: number;
+  method?: string;
+  note?: string;
+}
+
+export async function recordDisbursement(tenantId: string, paidById: string, input: RecordDisbursementInput) {
+  if (input.grossPayPaisa <= 0) throw new HttpError(400, "Nothing to disburse — gross pay is zero.");
+  const db = tenantDb(tenantId);
+  return db.payrollDisbursement.create({
+    data: {
+      tenantId,
+      branchId: input.branchId,
+      membershipId: input.membershipId,
+      periodStart: input.periodStart,
+      periodEnd: input.periodEnd,
+      regularHours: input.regularHours,
+      overtimeHours: input.overtimeHours,
+      grossPayPaisa: input.grossPayPaisa,
+      method: input.method,
+      note: input.note,
+      paidById,
+    },
+  });
+}
+
+/** Every disbursement whose period overlaps the given range, for the given branches — used to mark
+ * "already paid" against the live payroll computation above. Overlap (not exact match) on purpose:
+ * a manager re-running payroll with a slightly different date range shouldn't hide a disbursement
+ * that clearly covers the same period. */
+export async function listDisbursements(tenantId: string, branchIds: string[], range: DateRange) {
+  const db = tenantDb(tenantId);
+  return db.payrollDisbursement.findMany({
+    where: {
+      branchId: { in: branchIds },
+      periodStart: { lte: range.to },
+      periodEnd: { gte: range.from },
+    },
+    orderBy: { paidAt: "desc" },
+  });
 }

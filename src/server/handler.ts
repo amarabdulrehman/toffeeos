@@ -85,7 +85,7 @@ export function defineHandler<TSchema extends ZodType = ZodType<undefined>>(
       // require a re-login. Originally two separate round trips; consolidated after measuring real,
       // consistent per-request latency against this app's remote Postgres (~1.3s sequential, not a
       // dev-compile artifact) — this is a genuine fix, not premature optimization.
-      const gate = await getTenantGate(db);
+      const gate = await getTenantGate(user.tenantId);
       if (!gate.tenantStatus || !tenantAcceptsLogin(gate.tenantStatus)) {
         throw new HttpError(403, "This restaurant's account is no longer active.");
       }

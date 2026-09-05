@@ -1,7 +1,21 @@
 import "server-only";
-import { PrismaClient, type Prisma } from "@/generated/prisma/client";
+import { setDefaultResultOrder } from "node:dns";
+import { Pool } from "pg";
+import { PrismaClient, Prisma } from "@/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { env } from "@/lib/env";
+
+// Measured directly: on hosts where this runs, Node's default connection behavior for the Supabase
+// pooler host took ~2 seconds per NEW TCP connection even though its DNS record is IPv4-only (no
+// AAAA) — Node still attempts an IPv6 path first and eats the full timeout before falling back.
+// Forcing IPv4-first cut a raw connect test from ~2060ms to ~140ms. Every tenantDb() query opens
+// its own transaction (see the doc comment below), so with a small/cycling pg pool this ~2s tax
+// was being paid over and over, not once at boot — almost certainly the dominant cause of
+// system-wide perceived slowness, since the actual DB round trip once connected is fast. Set here,
+// at the module that actually opens connections, rather than in instrumentation.ts's register()
+// hook — Next.js dev mode's multi-worker architecture meant that ran in a different worker context
+// than the one handling requests, so the setting never reached the connections that mattered.
+setDefaultResultOrder("ipv4first");
 
 export type TenantTransactionClient = Prisma.TransactionClient;
 
@@ -29,7 +43,27 @@ export type TenantTransactionClient = Prisma.TransactionClient;
 const globalForPrisma = globalThis as unknown as {
   __tableosRawDb?: PrismaClient;
   __tableosPlatformDb?: PrismaClient;
+  __tableosRawPool?: Pool;
 };
+
+/**
+ * Same role/connection string as rawDb (app_user, RLS-bound) — for the handful of extremely hot,
+ * fixed-shape queries where Prisma's own $transaction([set_config, query]) array form costs 4
+ * separate network round trips (BEGIN, the set_config, the query, COMMIT — measured directly
+ * against this app's remote Postgres at ~150-180ms *each*, since Prisma doesn't pipeline them).
+ * A hand-written query combining set_config and the real SELECT into one multi-statement string,
+ * sent via node-postgres directly, executes as ONE round trip instead — Postgres's simple query
+ * protocol treats a multi-statement string as an implicit transaction, so set_config's
+ * transaction-local scope (is_local=true) is exactly as safe under pgbouncer's transaction-mode
+ * pooling as Prisma's version; nothing about the RLS/tenant-isolation guarantee changes, only the
+ * number of round trips. This is deliberately NOT how every query works — Prisma's adapter can't
+ * parse a multi-result-set raw response (confirmed: it throws), so this only applies where the SQL
+ * is simple and hand-written, which is why it's reserved for getTenantGateRaw/getTenantLayoutDataRaw
+ * in src/server/tier.ts (the one query every single authenticated request/page load pays for) and
+ * not generalized into tenantDb() itself.
+ */
+export const rawPool: Pool =
+  globalForPrisma.__tableosRawPool ?? new Pool({ connectionString: env.DATABASE_URL });
 
 // Prisma 7 connects only through a driver adapter (no more bare `datasourceUrl` string) — each
 // runtime role gets its own adapter instance over its own connection string, which is what
@@ -45,6 +79,7 @@ export const platformDb: PrismaClient =
 if (env.NODE_ENV !== "production") {
   globalForPrisma.__tableosRawDb = rawDb;
   globalForPrisma.__tableosPlatformDb = platformDb;
+  globalForPrisma.__tableosRawPool = rawPool;
 }
 
 /**
@@ -98,6 +133,11 @@ const TENANT_SCOPED_MODELS = new Set([
   "Shift",
   "AttendanceRecord",
   "SubscriptionPayment",
+  "PayrollDisbursement",
+  "OrderCancellation",
+  "ExpenseCategory",
+  "Expense",
+  "RecurringExpense",
 ]);
 
 const WHERE_OPERATIONS = new Set([
@@ -117,6 +157,37 @@ const WHERE_OPERATIONS = new Set([
 
 function lowerFirst(model: string): string {
   return model.charAt(0).toLowerCase() + model.slice(1);
+}
+
+/**
+ * P2028 ("Unable to start a transaction in the given time") is Prisma failing to acquire a pool
+ * slot before the transaction's first statement runs — observed under concurrent load against
+ * this app's pooled Supabase connection (confirmed via load testing: ~15% of requests fail this
+ * way at ~40 concurrent hits on one endpoint). Because it fails before anything executes, retrying
+ * is safe — there's no partial-write ambiguity, only "the pool was momentarily out of slots."
+ * Matches this app's own prior observation (see the OtpCode/RateLimitHit era comments) that these
+ * self-recover on retry. One retry after a short jittered backoff meaningfully cuts the user-facing
+ * failure rate without masking a real, non-transient error (anything other than P2028 rethrows
+ * immediately, unretried).
+ */
+// Prisma's defaults (maxWait: 2000ms to acquire a pool slot, timeout: 5000ms transaction body
+// budget) are tuned for a dedicated/local Postgres, not a shared pooled connection under real
+// concurrent load — the load test that surfaced P2028 (see withTransientRetry) hit that 2s ceiling
+// well before the transaction itself was ever slow. The transaction body here is always just
+// [set_config, one query], so the risk of raising `timeout` is minimal; the payoff is giving
+// contended requests real room to actually acquire a slot instead of failing fast.
+const TENANT_TX_OPTIONS = { maxWait: 8000, timeout: 10000 };
+
+async function withTransientRetry<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2028") {
+      await new Promise((resolve) => setTimeout(resolve, 100 + Math.random() * 150));
+      return run();
+    }
+    throw err;
+  }
 }
 
 /**
@@ -188,10 +259,32 @@ export function tenantDb(tenantId: string): PrismaClient {
           const delegate = (rawDb as unknown as Record<string, Record<string, (a: unknown) => unknown>>)[
             lowerFirst(model)
           ];
-          const [, result] = await rawDb.$transaction([
-            rawDb.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`,
-            delegate[operation](scopedArgs) as never,
-          ]);
+          // Tried switching this to an interactive transaction ($transaction(async (tx) => ...))
+          // to chase the "Calling client.query() when the client is already executing a query" pg
+          // deprecation warning this whole file trips on nearly every request — reverted after
+          // actually measuring it. Traced the real cause with `node --trace-deprecation`: it's
+          // Prisma's own client-side query interpreter (@prisma/query-plan-executor) fanning a
+          // findMany's nested `include`s out into separate sub-queries dispatched concurrently
+          // (Array.map over the plan's children) against the ONE connection this transaction holds
+          // — not the array-vs-interactive transaction form, which turned out to be unrelated
+          // (confirmed: switching it here didn't change the warning at all). It's also not
+          // deterministic — the same nested-include query triggered it on one request and not the
+          // next, meaning it depends on real request timing/latency, not on any query shape I could
+          // reliably restructure around. And it's confirmed harmless for correctness: set_config's
+          // transaction-local scope covers the whole transaction regardless of how many sub-queries
+          // race inside it, so RLS scoping is never in question. Fixing the warning itself would
+          // mean rewriting how nested `include` queries execute app-wide (or waiting on a Prisma/pg
+          // adapter fix upstream) — real work, but disproportionate to what is, today, a cosmetic
+          // warning with no observed correctness or security impact. Left as array-form, unchanged.
+          const [, result] = await withTransientRetry(() =>
+            rawDb.$transaction(
+              [
+                rawDb.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`,
+                delegate[operation](scopedArgs) as never,
+              ],
+              TENANT_TX_OPTIONS
+            )
+          );
           return result;
         },
       },
@@ -212,8 +305,10 @@ export async function runInTenantTransaction<T>(
   tenantId: string,
   fn: (tx: TenantTransactionClient) => Promise<T>
 ): Promise<T> {
-  return rawDb.$transaction(async (tx: TenantTransactionClient) => {
-    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
-    return fn(tx);
-  });
+  return withTransientRetry(() =>
+    rawDb.$transaction(async (tx: TenantTransactionClient) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+      return fn(tx);
+    }, TENANT_TX_OPTIONS)
+  );
 }

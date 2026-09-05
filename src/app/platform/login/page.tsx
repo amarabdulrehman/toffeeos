@@ -16,16 +16,41 @@ export default function PlatformLoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [needsTotp, setNeedsTotp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const result = await signIn("platform-credentials", { email, password, redirect: false });
+
+    // Two-step: check password (and whether 2FA applies) before ever calling signIn, so the form
+    // can reveal the code field only for accounts that actually have 2FA enabled — signIn itself
+    // is only called once we know whether totpCode is expected.
+    if (!needsTotp) {
+      try {
+        const res = await fetch("/api/platform/mfa/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (res.ok && data.requiresTotp) {
+          setNeedsTotp(true);
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // If the check itself fails (network blip), fall through to the normal sign-in attempt
+        // below rather than blocking login entirely on a non-essential pre-check.
+      }
+    }
+
+    const result = await signIn("platform-credentials", { email, password, totpCode, redirect: false });
     setLoading(false);
     if (result?.error) {
-      toast.error("Invalid platform admin credentials.");
+      toast.error(needsTotp ? "Invalid credentials or code." : "Invalid platform admin credentials.");
       return;
     }
     router.push("/platform/tenants");
@@ -70,11 +95,28 @@ export default function PlatformLoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                disabled={needsTotp}
                 required
               />
             </div>
+            {needsTotp && (
+              <div className="space-y-2">
+                <Label htmlFor="totp">Authenticator code</Label>
+                <Input
+                  id="totp"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="6-digit code or a backup code"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value)}
+                  autoFocus
+                  required
+                />
+              </div>
+            )}
             <Button type="submit" className="w-full" size="lg" disabled={loading}>
-              {loading ? "Signing in…" : "Sign in"}
+              {loading ? "Signing in…" : needsTotp ? "Verify & sign in" : "Sign in"}
             </Button>
           </form>
         </CardContent>

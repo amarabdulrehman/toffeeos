@@ -17,6 +17,8 @@ export interface UpdateSettingsInput {
   dailySummaryEnabled?: boolean;
   winBackEnabled?: boolean;
   deliveryUpdatesEnabled?: boolean;
+  thankYouEnabled?: boolean;
+  thankYouTrigger?: "ON_ORDER" | "ON_PAYMENT";
   businessPhoneNumberId?: string | null;
   businessAccountId?: string | null;
 }

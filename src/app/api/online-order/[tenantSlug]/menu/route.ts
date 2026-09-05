@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getStorefront, getPublicMenu } from "@/server/online-ordering";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 type RouteContext = { params: Promise<{ tenantSlug: string }> };
 const querySchema = z.object({ branchId: z.string().min(1) });
@@ -9,6 +10,10 @@ const querySchema = z.object({ branchId: z.string().min(1) });
 // identical data source to the POS product grid (see getPublicMenu's doc comment).
 export async function GET(req: NextRequest, ctx: RouteContext) {
   const { tenantSlug } = await ctx.params;
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  if (!(await checkRateLimit(`online-order-view:${tenantSlug}:${ip}`, 60, 60 * 1000))) {
+    return NextResponse.json({ error: "Too many requests — please slow down." }, { status: 429 });
+  }
   const parsed = querySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams.entries()));
   if (!parsed.success) return NextResponse.json({ error: "branchId is required" }, { status: 400 });
 

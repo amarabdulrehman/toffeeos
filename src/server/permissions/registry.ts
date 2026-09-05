@@ -194,6 +194,7 @@ export const SEED_ROLES: Record<string, { name: string; permissions: string[] }>
       "pos.order.editItems",
       "pos.order.changeType",
       "pos.order.voidLine",
+      "orders.cancel",
       "pos.discount.applyLine",
       "pos.discount.applyOrder",
       "pos.payment.take",

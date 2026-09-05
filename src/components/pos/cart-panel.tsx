@@ -66,7 +66,9 @@ export function CartPanel({
       <div className="space-y-2 border-b p-4">
         <Select value={orderType} onValueChange={(v) => v && onOrderTypeChange(v as OrderType)}>
           <SelectTrigger className="w-full font-medium">
-            <SelectValue />
+            {/* Without a render function, Select.Value shows the raw value ("DINE_IN") instead of
+             * the label ("Dine-in") — it never reads a SelectItem's children automatically. */}
+            <SelectValue>{(v: OrderType) => ORDER_TYPES.find((t) => t.value === v)?.label ?? v}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {ORDER_TYPES.map((t) => (

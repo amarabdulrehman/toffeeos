@@ -26,6 +26,11 @@ const MODULE_MIN_TIER: Partial<Record<string, TierKey>> = {
   recipe: "growth",
   costing: "growth",
   crm: "growth",
+  // `finance` (expense tracking) was ungated until Phase 8 simply because nothing consumed the
+  // finance.* permissions yet — they were declared in the original design and left unbuilt. Placed
+  // at growth alongside Inventory/Recipe/CRM: it's the "you're running a real business now" tier,
+  // and expense tracking is only useful to someone already tracking stock and costs.
+  finance: "growth",
   delivery: "complete",
   online: "complete",
   whatsapp: "complete",
@@ -39,6 +44,7 @@ const MODULE_MIN_TIER: Partial<Record<string, TierKey>> = {
 const GROWTH_REPORT_KEYS = new Set<string>([
   "reports.discountVoid.view",
   "reports.inventoryValuation.view",
+  "reports.cancellation.view",
 ]);
 const COMPLETE_REPORT_KEYS = new Set<string>(["reports.riderPerformance.view"]);
 
@@ -88,6 +94,7 @@ export const GATEABLE_MODULES: GateableModule[] = [
   { key: "inventory", label: "Inventory", minTier: "growth", storageKeys: ["inventory"] },
   { key: "recipe", label: "Recipe & Costing", minTier: "growth", storageKeys: ["recipe", "costing"] },
   { key: "crm", label: "CRM", minTier: "growth", storageKeys: ["crm"] },
+  { key: "finance", label: "Expenses", minTier: "growth", storageKeys: ["finance"] },
   { key: "reports", label: "Full Report Suite", minTier: "growth", storageKeys: ["reports"] },
   { key: "delivery", label: "Delivery & Rider Management", minTier: "complete", storageKeys: ["delivery"] },
   { key: "online", label: "Online Ordering", minTier: "complete", storageKeys: ["online"] },

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { BRAND_NAME } from "@/config/brand";
 
 function slugify(value: string): string {
   return value
@@ -55,7 +56,7 @@ export default function SignupPage() {
         router.push("/login");
         return;
       }
-      toast.success("Welcome to TableOS! Your 14-day trial has started.");
+      toast.success(`Welcome to ${BRAND_NAME}! Your 14-day trial has started.`);
       router.push("/app/dashboard");
       router.refresh();
     } finally {

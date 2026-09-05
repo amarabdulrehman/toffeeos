@@ -8,7 +8,9 @@ import { ProductGrid } from "./product-grid";
 import { CartPanel } from "./cart-panel";
 import { VariantDialog } from "./variant-dialog";
 import { PaymentDialog } from "./payment-dialog";
+import { ReceiptDialog } from "./receipt-dialog";
 import { OrderQueuePanel } from "./order-queue-panel";
+import { CancelOrderDialog } from "./cancel-order-dialog";
 import { TablesDialog, ResumedOrderPanel, AddItemsPanel } from "./tables-dialog";
 import { OfflineBanner } from "./offline-banner";
 import { useSync } from "@/lib/offline/use-sync";
@@ -37,15 +39,23 @@ function isNetworkFailure(err: unknown): boolean {
 export function PosTerminal({
   tenantId,
   branchId,
+  tenantName,
+  branchName,
   canTakePayment,
   canApplyDiscount,
   canVoid,
+  canCancel,
+  canReprintReceipt,
 }: {
   tenantId: string;
   branchId: string;
+  tenantName: string;
+  branchName: string;
   canTakePayment: boolean;
   canApplyDiscount: boolean;
   canVoid: boolean;
+  canCancel: boolean;
+  canReprintReceipt: boolean;
 }) {
   const sync = useSync();
   const [categories, setCategories] = useState<MenuCategoryDto[]>([]);
@@ -66,6 +76,8 @@ export function PosTerminal({
   const [queue, setQueue] = useState<OrderDto[]>([]);
   const [payingOrder, setPayingOrder] = useState<OrderDto | null>(null);
   const [paying, setPaying] = useState(false);
+  const [receiptOrder, setReceiptOrder] = useState<OrderDto | null>(null);
+  const [cancellingOrder, setCancellingOrder] = useState<OrderDto | null>(null);
   const idempotencyKey = useRef(crypto.randomUUID());
   const localOrderCounter = useRef(-1);
 
@@ -201,7 +213,12 @@ export function PosTerminal({
     idempotencyKey.current = crypto.randomUUID();
   }
 
-  async function handleSendToKitchen() {
+  // `andPay`: the cart panel's "Take Payment" button used to just open the Order Queue — a list of
+  // *other*, already-sent orders — leaving the cart's own order never created and never sent to
+  // the kitchen at all, with nothing telling the cashier that's what just happened. "Take Payment"
+  // now actually does what it says: create + send this order (identical to plain "Send to
+  // Kitchen"), then go straight to the payment dialog for it, skipping the queue detour entirely.
+  async function handleSendToKitchen(andPay = false) {
     if (orderType === "DINE_IN" && !table) {
       toast.error("Select a table for this dine-in order.");
       return;
@@ -233,7 +250,13 @@ export function PosTerminal({
       };
 
       if (!sync.isOnline) {
+        // Taking payment immediately requires a live pay-preview round trip (PaymentDialog fetches
+        // the authoritative total, which depends on the chosen tender's tax rate) — not something
+        // that works offline. Falls back to the normal queue-and-notify path either way; the
+        // cashier pays it from the Order Queue once the connection's back, same as any other order
+        // that was sent to the kitchen while offline.
         await queueOffline();
+        if (andPay) toast.error("You're offline — pay this order from the Order Queue once you're back online.");
         return;
       }
 
@@ -251,6 +274,11 @@ export function PosTerminal({
         await fetch(`/api/orders/${data.order.id}/send-to-kitchen`, { method: "POST" });
         toast.success(`Order #${data.order.orderNumber} sent to kitchen.`);
         resetCart();
+        if (andPay) {
+          const full = await fetch("/api/orders").then((r) => r.json());
+          const order: OrderDto | undefined = (full.orders ?? []).find((o: OrderDto) => o.id === data.order.id);
+          if (order) setPayingOrder(order);
+        }
         if (showQueue) loadQueue();
       } catch (err) {
         if (!isNetworkFailure(err)) throw err;
@@ -350,9 +378,11 @@ export function PosTerminal({
           return;
         }
         toast.success(`Order #${payingOrder.orderNumber} paid.`);
+        const paidOrderId = payingOrder.id;
         setPayingOrder(null);
         setResumed(null);
         loadQueue();
+        await openReceiptFor(paidOrderId);
       } catch (err) {
         if (!isNetworkFailure(err)) throw err;
         await queuePayOrder(payingOrder.id, tenders, payingOrder.version);
@@ -363,6 +393,20 @@ export function PosTerminal({
       }
     } finally {
       setPaying(false);
+    }
+  }
+
+  // The pay/lines endpoints both return the bare updated Order row (no lines/table/payments
+  // relations — see src/server/orders.ts) — not enough to print a real itemized receipt, so this
+  // refetches the full order the same way the order queue and the add-items flow already do.
+  async function openReceiptFor(orderId: string) {
+    try {
+      const data = await fetch("/api/orders").then((r) => r.json());
+      const full: OrderDto | undefined = (data.orders ?? []).find((o: OrderDto) => o.id === orderId);
+      if (full) setReceiptOrder(full);
+    } catch {
+      // Payment already succeeded — a failed refetch just means no receipt pops up automatically;
+      // not worth surfacing as an error on top of a successful payment.
     }
   }
 
@@ -395,6 +439,32 @@ export function PosTerminal({
       await queueVoidOrder(order.id, reason, order.version);
       toast.success(`Void for order #${order.orderNumber} queued offline.`);
       loadQueue();
+    }
+  }
+
+  // Online only, deliberately — same reasoning as handleAddItemsSubmit above: cancelSentOrder
+  // isn't one of the offline queue's three action types, so there's no replay path for it.
+  async function handleCancelOrder(order: OrderDto, reason: string) {
+    if (!sync.isOnline) {
+      toast.error("You're offline — cancelling an order needs a connection.");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/orders/${order.id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not cancel order.");
+        return;
+      }
+      toast.success(`Order #${order.orderNumber} cancelled.`);
+      setCancellingOrder(null);
+      loadQueue();
+    } catch {
+      toast.error("Could not cancel order.");
     }
   }
 
@@ -451,6 +521,9 @@ export function PosTerminal({
             onPay={(o) => setPayingOrder(o)}
             onVoid={handleVoidOrder}
             canVoid={canVoid}
+            onCancel={(o) => setCancellingOrder(o)}
+            canCancel={canCancel}
+            onReprintReceipt={canReprintReceipt ? (o) => openReceiptFor(o.id) : undefined}
             onClose={() => setShowQueue(false)}
           />
         ) : (
@@ -473,8 +546,8 @@ export function PosTerminal({
             onRemoveLine={(key) => setLines((prev) => prev.filter((l) => l.key !== key))}
             totals={lines.length === 0 ? null : totals}
             canTakePayment={canTakePayment}
-            onSendToKitchen={handleSendToKitchen}
-            onOpenPayment={() => setShowQueue(true)}
+            onSendToKitchen={() => handleSendToKitchen()}
+            onOpenPayment={() => handleSendToKitchen(true)}
             sending={sending}
           />
         )}
@@ -512,6 +585,19 @@ export function PosTerminal({
           onClose={() => setPayingOrder(null)}
           onConfirm={handleConfirmPayment}
           submitting={paying}
+        />
+
+        <ReceiptDialog
+          order={receiptOrder}
+          tenantName={tenantName}
+          branchName={branchName}
+          onClose={() => setReceiptOrder(null)}
+        />
+
+        <CancelOrderDialog
+          order={cancellingOrder}
+          onClose={() => setCancellingOrder(null)}
+          onConfirm={handleCancelOrder}
         />
       </div>
     </div>

@@ -14,6 +14,7 @@ import {
   MessageCircle,
   Globe,
   BarChart3,
+  Receipt,
   Wallet,
   RefreshCw,
   UserPlus,
@@ -42,6 +43,7 @@ const NAV: NavItem[] = [
   { href: "/app/inventory", label: "Inventory", icon: Package, anyPermission: ["inventory.view"], module: "inventory" },
   { href: "/app/delivery", label: "Delivery", icon: Truck, anyPermission: ["delivery.view"], module: "delivery" },
   { href: "/app/customers", label: "Customers", icon: Users, anyPermission: ["crm.view"], module: "crm" },
+  { href: "/app/expenses", label: "Expenses", icon: Receipt, anyPermission: ["finance.expense.create"], module: "finance" },
   { href: "/app/branches", label: "Branches", icon: Building2, anyPermission: ["branch.manage"] },
   { href: "/app/staff", label: "Staff", icon: UserPlus, anyPermission: ["staff.manage", "staff.invite"] },
   { href: "/app/whatsapp", label: "WhatsApp", icon: MessageCircle, anyPermission: ["whatsapp.manage"], module: "whatsapp" },
@@ -75,17 +77,30 @@ const NAV: NavItem[] = [
   { href: "/app/sync-conflicts", label: "Sync Conflicts", icon: RefreshCw, anyPermission: ["sync.conflict.resolve"] },
 ];
 
-export function AppSidebarNav({ permissions, enabledModules }: { permissions: string[]; enabledModules: string[] }) {
+export function AppSidebarNav({
+  permissions,
+  enabledModules,
+  kdsEnabled,
+}: {
+  permissions: string[];
+  enabledModules: string[];
+  /** Per-branch operational toggle (BranchSettings.kdsEnabled), not a subscription-tier module —
+   * see getBranchKdsEnabled in src/server/branch-settings.ts. Only affects the "/kds" item. */
+  kdsEnabled: boolean;
+}) {
   const pathname = usePathname();
 
   const visible = NAV.filter((item) => {
     if (item.anyPermission && !item.anyPermission.some((p) => permissions.includes(p))) return false;
     if (item.module && !enabledModules.includes(item.module)) return false;
+    if (item.href === "/kds" && !kdsEnabled) return false;
     return true;
   });
 
+  // min-h-0 is required for overflow-y-auto to work here: a flex item defaults to
+  // min-height:auto, which refuses to shrink below its content and defeats the scroll.
   return (
-    <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
+    <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
       {visible.map((item) => {
         // Exact match for /app/dashboard (it's also a prefix of nothing else), startsWith for
         // everything nested under a section (e.g. /app/inventory/recipes should still light up

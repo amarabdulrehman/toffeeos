@@ -83,7 +83,22 @@ export function PaymentDialog({
   }, [orderId, JSON.stringify(tenders)]);
 
   const dueTotalPaisa = preview?.totalPaisa ?? totalPaisa;
-  const tenderedPaisa = tenders.reduce((a, t) => a + Math.round((parseFloat(t.amountRs) || 0) * 100), 0);
+
+  // Single-tender amount must always track the live due total, not just the "Amount due" banner —
+  // switching CASH -> CARD changes the applicable tax rate (Punjab PRA: 16% vs 8%), which changes
+  // dueTotalPaisa, but the tender's amountRs was only ever set once at mount from the order's
+  // original (cash-assumed) total. Reproduced live: switching a Rs 290 cash bill to card silently
+  // left amountRs at "290.00" while the true card total was Rs 270 — "Fully covered" showed true
+  // (over-tendered, same as a cash overpayment) and Confirm charged the customer Rs 20 too much.
+  // There's no legitimate reason for a single (unsplit) tender to differ from the amount due — the
+  // "remaining" gate below never allows a single tender to be a genuine partial payment, that's
+  // what adding a second (split) tender is for — so derive it at render time instead of syncing
+  // `tenders` state via an effect (which would cascade renders and fight the split-payment case).
+  // Multi-tender (split) amounts are left exactly as entered; only their sum is checked below.
+  const effectiveTenders: Tender[] =
+    tenders.length === 1 ? [{ ...tenders[0], amountRs: (dueTotalPaisa / 100).toFixed(2) }] : tenders;
+
+  const tenderedPaisa = effectiveTenders.reduce((a, t) => a + Math.round((parseFloat(t.amountRs) || 0) * 100), 0);
   const remainingPaisa = dueTotalPaisa - tenderedPaisa;
   const changePaisa = Math.max(0, Math.round((parseFloat(cashGiven) || 0) * 100) - dueTotalPaisa);
 
@@ -101,7 +116,7 @@ export function PaymentDialog({
 
   function confirm() {
     onConfirm(
-      tenders
+      effectiveTenders
         .map((t) => ({ method: t.method, amountPaisa: Math.round((parseFloat(t.amountRs) || 0) * 100) }))
         .filter((t) => t.amountPaisa > 0)
     );
@@ -126,11 +141,13 @@ export function PaymentDialog({
         </div>
 
         <div className="space-y-3">
-          {tenders.map((t, i) => (
+          {effectiveTenders.map((t, i) => (
             <div key={i} className="flex items-center gap-2">
               <Select value={t.method} onValueChange={(v) => v && updateTender(i, { method: v as PaymentMethod })}>
                 <SelectTrigger className="w-40">
-                  <SelectValue />
+                  {/* Select.Value shows the raw value ("BANK_TRANSFER") without a render function —
+                   * it never reads a SelectItem's children automatically. */}
+                  <SelectValue>{(v: PaymentMethod) => METHODS.find((m) => m.value === v)?.label ?? v}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {METHODS.map((m) => (
@@ -145,6 +162,11 @@ export function PaymentDialog({
                 inputMode="decimal"
                 value={t.amountRs}
                 onChange={(e) => updateTender(i, { amountRs: e.target.value })}
+                // A single (unsplit) tender always equals the live amount due (see effectiveTenders
+                // above) — editing it here would just be reverted on the next render, so disable it
+                // instead of leaving a text box that silently refuses to keep what was typed. Split
+                // amounts (2+ tenders) stay freely editable, same as before.
+                disabled={effectiveTenders.length === 1}
                 className="flex-1 text-right font-medium tabular-nums"
               />
               {tenders.length > 1 && (

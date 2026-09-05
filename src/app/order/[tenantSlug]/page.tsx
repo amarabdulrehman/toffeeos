@@ -339,7 +339,12 @@ function OnlineOrderContent() {
                             ) : (
                               <Select onValueChange={(v) => v && addLine(item, item.variants.find((va) => va.id === v))}>
                                 <SelectTrigger className="h-8 w-28">
-                                  <SelectValue placeholder="Add" />
+                                  {/* Select.Value shows the raw value (a variant UUID) once picked,
+                                   * without a render function — it never reads a SelectItem's
+                                   * children automatically. */}
+                                  <SelectValue placeholder="Add">
+                                    {(v: string | undefined) => (v ? item.variants.find((va) => va.id === v)?.name ?? v : "Add")}
+                                  </SelectValue>
                                 </SelectTrigger>
                                 <SelectContent>
                                   {item.variants.map((v) => (
@@ -413,7 +418,9 @@ function OnlineOrderContent() {
               {!isQrOrder && (
                 <Select value={fulfillment} onValueChange={(v) => v && setFulfillment(v as "PICKUP" | "DELIVERY")}>
                   <SelectTrigger>
-                    <SelectValue />
+                    {/* Select.Value shows the raw value ("PICKUP") without a render function — it
+                     * never reads a SelectItem's children automatically. */}
+                    <SelectValue>{(v: "PICKUP" | "DELIVERY") => (v === "PICKUP" ? "Pickup" : "Delivery")}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="PICKUP">Pickup</SelectItem>

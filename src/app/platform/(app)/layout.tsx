@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { ShieldCheck, Settings } from "lucide-react";
 import { auth } from "@/server/auth";
 import { BRAND_NAME } from "@/config/brand";
 import { SignOutButton } from "@/components/sign-out-button";
@@ -24,8 +25,17 @@ export default async function PlatformAppLayout({ children }: { children: React.
             <div className="text-xs text-sidebar-foreground/55">{session.user.email}</div>
           </div>
         </div>
-        <div className="w-28">
-          <SignOutButton onDark callbackUrl="/platform/login" />
+        <div className="flex items-center gap-3">
+          <Link
+            href="/platform/settings"
+            className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <Settings className="size-4" />
+            Settings
+          </Link>
+          <div className="w-28">
+            <SignOutButton onDark callbackUrl="/platform/login" />
+          </div>
         </div>
       </header>
       <main className="flex-1">{children}</main>

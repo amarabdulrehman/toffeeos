@@ -1,8 +1,52 @@
 import "server-only";
 import { cache } from "react";
+import type { QueryResult } from "pg";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { tenantDb } from "@/server/db";
+import { rawPool } from "@/server/db";
 import { TIER_ORDER, defaultModulesForTier, type TierKey } from "@/lib/tiers";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+interface RawTenantRow {
+  enabledModules: string[];
+  plan_key: string;
+  tenant_status: string;
+  trial_ends_at: Date | null;
+  current_period_end: Date | null;
+}
+
+/**
+ * Shared by getTenantGate and getTenantLayoutDataForTenant — both need the identical
+ * subscription+plan+tenant join (the layout just also wants two date columns for its renewal
+ * banner, included here unconditionally since selecting a couple of extra columns costs nothing
+ * extra over the network). Deliberately NOT wrapped in React's cache() here — getTenantGate is
+ * called from API route handlers, outside any React render pass, where cache() is a no-op;
+ * getTenantLayoutDataForTenant applies its own cache() wrapper below, same as it already did.
+ *
+ * Bypasses Prisma for this one query on purpose — see rawPool's doc comment in src/server/db.ts
+ * for the measured, concrete reason (4 network round trips via Prisma's $transaction([...]) vs. 1
+ * via a hand-written multi-statement query here) and why this isn't generalized into tenantDb().
+ * Same role (app_user, RLS-bound) and same set_config mechanism as every other tenant-scoped
+ * query — this changes round-trip count, not the tenant-isolation guarantee.
+ */
+async function fetchTenantRow(tenantId: string): Promise<RawTenantRow | null> {
+  if (!UUID_RE.test(tenantId)) throw new Error("Invalid tenantId");
+  const client = await rawPool.connect();
+  try {
+    const result = (await client.query(`
+      SELECT set_config('app.tenant_id', '${tenantId}', true);
+      SELECT s."enabledModules" AS "enabledModules", p.key AS plan_key, t.status AS tenant_status,
+             s."trialEndsAt" AS trial_ends_at, s."currentPeriodEnd" AS current_period_end
+      FROM "Subscription" s
+      JOIN "Plan" p ON s."planId" = p.id
+      JOIN "Tenant" t ON s."tenantId" = t.id
+      WHERE s."tenantId" = '${tenantId}';
+    `)) as unknown as QueryResult<RawTenantRow>[];
+    return result[1].rows[0] ?? null;
+  } finally {
+    client.release();
+  }
+}
 
 export {
   TIER_ORDER,
@@ -51,22 +95,22 @@ export async function getTenantSubscriptionInfo(
  * only — see moduleForPermission's doc comment), the tenant's per-feature toggle set (what
  * enforcement actually checks), and the tenant's lifecycle status (suspended/cancelled tenants lose
  * API access immediately, not just new logins) — fetched together via Subscription's own `tenant`
- * relation instead of separate round trips to a remote Postgres instance — each of those was
- * independently measured adding real, consistent per-request latency (~1.3s sequential, not a
- * dev-compile artifact), so this consolidation is a genuine fix, not premature optimization.
+ * relation, and via fetchTenantRow's single-round-trip raw query (see its doc comment) rather than
+ * Prisma's own $transaction([...]), since this runs on literally every authenticated request.
+ * Takes tenantId directly now, not a tenantDb() client — there's no Prisma query left to scope.
  */
 export async function getTenantGate(
-  db: PrismaClient
+  tenantId: string
 ): Promise<{ tier: TierKey; tenantStatus: string | null; enabledModules: string[] }> {
-  const subscription = await db.subscription.findFirst({ include: { plan: true, tenant: { select: { status: true } } } });
-  const tier = isTierKey(subscription?.plan.key) ? subscription!.plan.key : "starter";
+  const row = await fetchTenantRow(tenantId);
+  const tier = isTierKey(row?.plan_key) ? row!.plan_key : "starter";
   return {
     tier,
-    tenantStatus: subscription?.tenant.status ?? null,
+    tenantStatus: row?.tenant_status ?? null,
     // No subscription row at all shouldn't happen for a real tenant, but falls back to the tier's
     // own defaults rather than an empty set — "no toggles configured yet" reads as "not entitled to
     // anything," which a starter default already correctly represents (starter's defaults are []).
-    enabledModules: subscription?.enabledModules ?? defaultModulesForTier(tier),
+    enabledModules: row?.enabledModules ?? defaultModulesForTier(tier),
   };
 }
 
@@ -97,14 +141,13 @@ export interface TenantLayoutData {
  * admin's tier/feature/billing change still reaches this tenant's very next page load — this is a
  * pure dedup, not a staleness trade-off. */
 export const getTenantLayoutDataForTenant = cache(async (tenantId: string): Promise<TenantLayoutData> => {
-  const db = tenantDb(tenantId);
-  const subscription = await db.subscription.findFirst({ include: { plan: true, tenant: { select: { status: true } } } });
-  const tier = isTierKey(subscription?.plan.key) ? subscription!.plan.key : "starter";
+  const row = await fetchTenantRow(tenantId);
+  const tier = isTierKey(row?.plan_key) ? row!.plan_key : "starter";
   return {
-    enabledModules: subscription?.enabledModules ?? defaultModulesForTier(tier),
-    tenantStatus: subscription?.tenant.status ?? null,
-    trialEndsAt: subscription?.trialEndsAt ?? null,
-    currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
+    enabledModules: row?.enabledModules ?? defaultModulesForTier(tier),
+    tenantStatus: row?.tenant_status ?? null,
+    trialEndsAt: row?.trial_ends_at ?? null,
+    currentPeriodEnd: row?.current_period_end ?? null,
   };
 });
 

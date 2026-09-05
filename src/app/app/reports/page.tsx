@@ -12,10 +12,14 @@ import { ReportsView } from "@/components/reports/reports-view";
 const REPORTS_PERMISSIONS = [
   "reports.sales.view",
   "reports.discountVoid.view",
+  "reports.cancellation.view",
   "reports.inventoryValuation.view",
   "reports.riderPerformance.view",
   "reports.staff.view",
   "costing.viewMargins",
+  // Not a reports.* key, but the P&L tab lives on this page — without it here, a role granted only
+  // finance.pnl.view would be redirected off the one page that renders it.
+  "finance.pnl.view",
 ];
 
 export default async function ReportsPage() {

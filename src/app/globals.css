@@ -195,3 +195,25 @@
     @apply font-sans;
   }
 }
+
+/* Print-only isolation, shared by every printable ticket/receipt in the app (POS receipt —
+   src/components/pos/receipt.tsx — and the KDS kitchen ticket — src/components/kds/kitchen-ticket.tsx).
+   window.print() prints the whole page by default, and both of these render inside a Dialog/portal
+   (not nested under the rest of the app's DOM in any way scoped visibility would reach), so this
+   hides literally everything else and un-hides only the one currently-mounted `.print-area`,
+   regardless of where it sits in the tree. Only one such element is ever mounted at a time. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}

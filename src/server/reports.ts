@@ -34,6 +34,18 @@ function previousEquivalentRange({ from, to }: DateRange): DateRange {
   return { from: new Date(from.getTime() - rangeMs), to: new Date(from.getTime()) };
 }
 
+/** What counts as realised revenue: a PAID order, dated by when the money actually came in
+ * (`paidAt`, not `createdAt`). Shared by salesReport and pnlReport specifically so the P&L's
+ * revenue line can never drift from the Sales tab's total — two screens quoting different revenue
+ * for the same period is the fastest way to lose an owner's trust in both. */
+function paidOrdersWhere(branchIds: string[], range: DateRange) {
+  return {
+    branchId: { in: branchIds },
+    status: "PAID" as const,
+    paidAt: { gte: range.from, lte: range.to },
+  };
+}
+
 // ============================================================================
 // Sales report — by day, by branch, by category, by payment method, with a
 // comparison to the immediately-preceding equivalent period.
@@ -43,9 +55,9 @@ export async function salesReport(tenantId: string, branchIds: string[], range: 
   const db = tenantDb(tenantId);
   const previous = previousEquivalentRange(range);
 
-  const [orders, prevAgg, menuItems] = await Promise.all([
+  const [orders, prevAgg, menuItems, categories] = await Promise.all([
     db.order.findMany({
-      where: { branchId: { in: branchIds }, status: "PAID", paidAt: { gte: range.from, lte: range.to } },
+      where: paidOrdersWhere(branchIds, range),
       include: { lines: true, payments: true, branch: { select: { id: true, name: true } } },
     }),
     db.order.aggregate({
@@ -54,9 +66,9 @@ export async function salesReport(tenantId: string, branchIds: string[], range: 
       _count: { _all: true },
     }),
     db.menuItem.findMany({ select: { id: true, categoryId: true } }),
+    db.category.findMany({ select: { id: true, name: true } }),
   ]);
   const categoryByMenuItem = new Map(menuItems.map((m) => [m.id, m.categoryId]));
-  const categories = await db.category.findMany({ select: { id: true, name: true } });
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
 
   let totalPaisa = 0;
@@ -329,4 +341,120 @@ export async function riderPerformanceReport(tenantId: string, branchIds: string
       avgDeliveryMinutes: v.deliveries > 0 ? Math.round(v.totalMinutes / v.deliveries) : 0,
     }))
     .sort((a, b) => b.deliveries - a.deliveries);
+}
+
+// ============================================================================
+// Profit & Loss — cash-basis: money that actually came in vs money that actually
+// went out in the range. Deliberately NOT accrual/COGS accounting; see the notes
+// on pnlReport below for exactly what that does and doesn't mean.
+// ============================================================================
+
+export interface PnlReport {
+  grossSalesPaisa: number;
+  salesTaxPaisa: number;
+  netRevenuePaisa: number;
+  orderCount: number;
+  stockPurchasesPaisa: number;
+  /** GRNs in range whose cost was left blank. The cost field is optional at entry, so this is the
+   * count of purchases silently missing from stockPurchasesPaisa — surfaced so an understated
+   * cost line is visible rather than quietly wrong. */
+  stockPurchasesMissingCost: number;
+  salariesPaisa: number;
+  expensesPaisa: number;
+  expensesByCategory: { category: string; amountPaisa: number }[];
+  totalCostsPaisa: number;
+  netProfitPaisa: number;
+  /** Net profit as a percentage of net revenue. Null when there's no revenue to divide by. */
+  marginPct: number | null;
+}
+
+/**
+ * Cash-basis P&L. Three things worth being explicit about, because each one is a place a reader
+ * could reasonably expect a different number:
+ *
+ * 1. **Revenue is net of sales tax.** Order.totalPaisa includes taxPaisa, but PRA tax is collected
+ *    on the government's behalf and remitted — it was never the restaurant's money. Counting it as
+ *    revenue would overstate profit by the entire tax take. Gross and tax are both returned so the
+ *    gross figure still reconciles exactly against the Sales tab.
+ * 2. **Costs are purchases, not consumption.** Stock cost is what was *bought* in the range (GRN),
+ *    not what was *used* — real COGS would need a recipe on every menu item, and most don't have
+ *    one, so a "true" COGS line here would be confidently wrong rather than honestly approximate.
+ *    A month with a big restock looks worse than it was; over a quarter it evens out.
+ * 3. **Salaries come from PayrollDisbursement.paidAt, never runPayroll.** runPayroll returns a
+ *    whole month's computed salary for *any* range you hand it, so using it would make a one-day
+ *    P&L show a full month of wages. Only money actually disbursed inside the range counts.
+ *
+ * Expenses are APPROVED-only — the same rule the Expenses screen's totals use, so the two agree.
+ */
+export async function pnlReport(tenantId: string, branchIds: string[], range: DateRange): Promise<PnlReport> {
+  const db = tenantDb(tenantId);
+
+  const [orderAgg, grnAgg, grnMissingCost, payrollAgg, expenses, categories] = await Promise.all([
+    db.order.aggregate({
+      where: paidOrdersWhere(branchIds, range),
+      _sum: { totalPaisa: true, taxPaisa: true },
+      _count: { _all: true },
+    }),
+    db.stockMovement.aggregate({
+      where: { branchId: { in: branchIds }, type: "GRN", createdAt: { gte: range.from, lte: range.to } },
+      _sum: { costPaisa: true },
+    }),
+    db.stockMovement.count({
+      where: {
+        branchId: { in: branchIds },
+        type: "GRN",
+        createdAt: { gte: range.from, lte: range.to },
+        costPaisa: null,
+      },
+    }),
+    db.payrollDisbursement.aggregate({
+      where: { branchId: { in: branchIds }, paidAt: { gte: range.from, lte: range.to } },
+      _sum: { grossPayPaisa: true },
+    }),
+    db.expense.findMany({
+      where: {
+        branchId: { in: branchIds },
+        status: "APPROVED",
+        spentAt: { gte: range.from, lte: range.to },
+      },
+      select: { categoryId: true, amountPaisa: true },
+    }),
+    db.expenseCategory.findMany({ select: { id: true, name: true } }),
+  ]);
+
+  const grossSalesPaisa = orderAgg._sum.totalPaisa ?? 0;
+  const salesTaxPaisa = orderAgg._sum.taxPaisa ?? 0;
+  const netRevenuePaisa = grossSalesPaisa - salesTaxPaisa;
+
+  const stockPurchasesPaisa = grnAgg._sum.costPaisa ?? 0;
+  const salariesPaisa = payrollAgg._sum.grossPayPaisa ?? 0;
+
+  const nameById = new Map(categories.map((c) => [c.id, c.name]));
+  const byCategory = new Map<string, number>();
+  let expensesPaisa = 0;
+  for (const e of expenses) {
+    expensesPaisa += e.amountPaisa;
+    const name = nameById.get(e.categoryId) ?? "Uncategorised";
+    byCategory.set(name, (byCategory.get(name) ?? 0) + e.amountPaisa);
+  }
+
+  const totalCostsPaisa = stockPurchasesPaisa + salariesPaisa + expensesPaisa;
+  const netProfitPaisa = netRevenuePaisa - totalCostsPaisa;
+
+  return {
+    grossSalesPaisa,
+    salesTaxPaisa,
+    netRevenuePaisa,
+    orderCount: orderAgg._count._all,
+    stockPurchasesPaisa,
+    stockPurchasesMissingCost: grnMissingCost,
+    salariesPaisa,
+    expensesPaisa,
+    expensesByCategory: [...byCategory.entries()]
+      .map(([category, amountPaisa]) => ({ category, amountPaisa }))
+      .sort((a, b) => b.amountPaisa - a.amountPaisa),
+    totalCostsPaisa,
+    netProfitPaisa,
+    marginPct: netRevenuePaisa > 0 ? (netProfitPaisa / netRevenuePaisa) * 100 : null,
+  };
 }

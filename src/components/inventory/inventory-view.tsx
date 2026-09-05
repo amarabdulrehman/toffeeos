@@ -10,6 +10,7 @@ import {
   Package,
   PackagePlus,
   SlidersHorizontal,
+  Trash2,
   TriangleAlert,
   Warehouse,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 interface Location {
   id: string;
@@ -331,6 +333,8 @@ function ItemsTab({ items, onChanged }: { items: Item[]; onChanged: () => void }
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("");
   const [threshold, setThreshold] = useState("0");
+  const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function create() {
     if (!name.trim() || !unit.trim()) return;
@@ -347,6 +351,24 @@ function ItemsTab({ items, onChanged }: { items: Item[]; onChanged: () => void }
     setUnit("");
     setThreshold("0");
     onChanged();
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/inventory/items/${deleteTarget.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? "Could not delete item.");
+        return;
+      }
+      toast.success(`${deleteTarget.name} deleted.`);
+      setDeleteTarget(null);
+      onChanged();
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -372,19 +394,56 @@ function ItemsTab({ items, onChanged }: { items: Item[]; onChanged: () => void }
               <TableHead>Name</TableHead>
               <TableHead>Unit</TableHead>
               <TableHead>Threshold</TableHead>
+              <TableHead className="w-px" />
             </TableRow>
           </TableHeader>
           <TableBody>
+            {items.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                  No items yet.
+                </TableCell>
+              </TableRow>
+            )}
             {items.map((i) => (
               <TableRow key={i.id}>
                 <TableCell className="font-medium">{i.name}</TableCell>
                 <TableCell className="text-muted-foreground">{i.unitOfMeasure}</TableCell>
                 <TableCell className="tabular-nums">{i.lowStockThresholdQty}</TableCell>
+                <TableCell>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={() => setDeleteTarget(i)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </CardContent>
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {deleteTarget?.name}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This removes it from stock-in, adjustment, transfer, and recipe pickers going forward. Past
+            stock movements, reports, and any recipes already using it are kept exactly as they are.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+              Never mind
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete item"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

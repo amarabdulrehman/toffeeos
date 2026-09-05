@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { AreaTrendChart } from "@/components/charts/area-trend-chart";
 import { LowStockBanner } from "@/components/dashboard/low-stock-banner";
+import { CancellationBanner } from "@/components/dashboard/cancellation-banner";
+import { getBranchKdsEnabled } from "@/server/branch-settings";
 import { formatPkr } from "@/lib/money";
 
 const QUICK_ACTIONS = [
@@ -63,13 +65,18 @@ export default async function DashboardPage() {
   const user = session?.user;
   if (!user || user.kind !== "tenant") return null;
   const canViewSales = user.permissions.includes("reports.sales.view");
+  const canViewInventory = user.permissions.includes("inventory.view");
+  const canReviewCancellations = user.permissions.includes("reports.cancellation.view");
+  const kdsEnabled = await getBranchKdsEnabled(user.tenantId, user.branchId);
+  const quickActions = QUICK_ACTIONS.filter((a) => a.href !== "/kds" || kdsEnabled);
 
   return (
     <div className="p-8">
       <h1 className="font-heading text-[1.75rem] font-bold tracking-tight">Welcome back, {user.name.split(" ")[0]}</h1>
       <p className="mt-1 text-sm text-muted-foreground">{user.tenantName} · {user.branchName}</p>
 
-      <LowStockBanner />
+      {canViewInventory && <LowStockBanner />}
+      {canReviewCancellations && <CancellationBanner />}
 
       {canViewSales && (
         <div className="mt-8">
@@ -78,7 +85,7 @@ export default async function DashboardPage() {
       )}
 
       <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {QUICK_ACTIONS.map((action) => (
+        {quickActions.map((action) => (
           <Card
             key={action.href}
             className="group shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"

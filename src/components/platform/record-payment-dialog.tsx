@@ -164,7 +164,9 @@ export function RecordPaymentDialog({
               <Label>Method</Label>
               <Select value={method} onValueChange={(v) => v && setMethod(v as PaymentMethodKey)}>
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  {/* Select.Value shows the raw value ("bank_transfer") without a render function —
+                   * it never reads a SelectItem's children automatically. */}
+                  <SelectValue>{(v: PaymentMethodKey) => PAYMENT_METHODS.find((m) => m.value === v)?.label ?? v}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {PAYMENT_METHODS.map((m) => (

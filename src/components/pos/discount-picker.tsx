@@ -66,7 +66,9 @@ export function DiscountPicker({
           <div className="flex gap-2">
             <Select value={type} onValueChange={(v) => v && setType(v as DiscountType)}>
               <SelectTrigger className="w-32">
-                <SelectValue />
+                {/* Select.Value shows the raw value ("PERCENT") without a render function — it
+                 * never reads a SelectItem's children automatically. */}
+                <SelectValue>{(v: DiscountType) => (v === "PERCENT" ? "% off" : "Rs off")}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="PERCENT">% off</SelectItem>

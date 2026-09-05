@@ -9,8 +9,11 @@ import {
   CircleDollarSign,
   Lock,
   Package,
+  Scale,
+  TriangleAlert,
   Truck,
   Users,
+  XCircle,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,8 +39,12 @@ const TAB_MODULE: Record<string, string | null> = {
   staff: null,
   recipe: "costing", // "Recipe Cost" tab -> costing.viewMargins
   discounts: "reports",
+  cancellations: "reports",
   valuation: "reports",
   riders: "delivery", // reports.riderPerformance.view is meaningless without Delivery
+  // P&L rides the Expenses toggle, not the report-suite one: its cost side is expense data, and
+  // without Expenses enabled it would show revenue with no costs — misleading, not just partial.
+  pnl: "finance",
 };
 
 function useDateRange() {
@@ -156,25 +163,43 @@ export function ReportsView({ enabledModules }: { enabledModules: string[] }) {
       </div>
 
       <Tabs defaultValue="sales">
-        <TabsList className="h-auto flex-wrap gap-1 bg-muted/60 p-1">
+        {/* This is the one tab bar in the app long enough to wrap (up to 9 tabs on a fully-enabled
+            tenant), so it overrides two defaults that only suit short bars: `justify-center`, which
+            strands a lone wrapped tab floating in the middle of row two, and the triggers' `flex-1`,
+            which stretches each row's tabs to fill the width and makes the same tab a different
+            size per row. Left-aligned and natural-width means a wrap reads as a deliberate second
+            row instead of looking broken. */}
+        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-muted/60 p-1 [&>*]:flex-none">
           <TabsTrigger value="sales" className="gap-1.5"><CircleDollarSign className="size-3.5" />Sales</TabsTrigger>
+          {has("pnl") && <TabsTrigger value="pnl" className="gap-1.5"><Scale className="size-3.5" />P&amp;L</TabsTrigger>}
           <TabsTrigger value="items" className="gap-1.5"><Package className="size-3.5" />Item-wise</TabsTrigger>
           {has("recipe") && <TabsTrigger value="recipe" className="gap-1.5"><ChefHat className="size-3.5" />Recipe Cost</TabsTrigger>}
           <TabsTrigger value="staff" className="gap-1.5"><Users className="size-3.5" />Staff</TabsTrigger>
           {has("discounts") && (
             <TabsTrigger value="discounts" className="gap-1.5"><BadgePercent className="size-3.5" />Discounts & Voids</TabsTrigger>
           )}
-          {has("valuation") && (
-            <TabsTrigger value="valuation" className="gap-1.5"><Package className="size-3.5" />Inventory Valuation</TabsTrigger>
+          {has("cancellations") && (
+            <TabsTrigger value="cancellations" className="gap-1.5"><XCircle className="size-3.5" />Cancellations</TabsTrigger>
           )}
+          {has("valuation") && (
+            <TabsTrigger value="valuation" className="gap-1.5"><Package className="size-3.5" />Valuation</TabsTrigger>
+          )}
+          {/* "Riders", not "Rider Performance" — the Staff tab next to it is likewise just "Staff"
+              and also shows performance, so the shorter label is the consistent one as well as the
+              one that fits. Same reasoning for "Valuation" above. */}
           {has("riders") && (
-            <TabsTrigger value="riders" className="gap-1.5"><Truck className="size-3.5" />Rider Performance</TabsTrigger>
+            <TabsTrigger value="riders" className="gap-1.5"><Truck className="size-3.5" />Riders</TabsTrigger>
           )}
         </TabsList>
 
         <TabsContent value="sales" className="mt-4">
           <SalesTab qs={range.qs} />
         </TabsContent>
+        {has("pnl") && (
+          <TabsContent value="pnl" className="mt-4">
+            <PnlTab qs={range.qs} />
+          </TabsContent>
+        )}
         <TabsContent value="items" className="mt-4">
           <ItemWiseTab qs={range.qs} />
         </TabsContent>
@@ -189,6 +214,11 @@ export function ReportsView({ enabledModules }: { enabledModules: string[] }) {
         {has("discounts") && (
           <TabsContent value="discounts" className="mt-4">
             <DiscountVoidTab qs={range.qs} />
+          </TabsContent>
+        )}
+        {has("cancellations") && (
+          <TabsContent value="cancellations" className="mt-4">
+            <CancellationsTab />
           </TabsContent>
         )}
         {has("valuation") && (
@@ -587,6 +617,105 @@ function DiscountVoidTab({ qs }: { qs: string }) {
   );
 }
 
+interface CancellationRow {
+  id: string;
+  orderNumber: number | null;
+  orderType: string | null;
+  totalPaisa: number | null;
+  reason: string;
+  cancelledByName: string;
+  createdAt: string;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+}
+
+/** Not date-ranged like the other tabs — this is a review queue (what needs a manager/owner's
+ * attention) as much as a historical report, so it always shows the most recent 100 regardless of
+ * the page's date picker. See cancelSentOrder in src/server/orders.ts for how these rows get
+ * created — every one of them is a cashier cancelling an order already sent to the kitchen. */
+function CancellationsTab() {
+  const { data, error, loading } = useReportFetch<{ cancellations: CancellationRow[] }>("/api/order-cancellations");
+  // Optimistic local overrides for rows just marked reviewed — avoids re-deriving state from the
+  // fetched `data` in an effect (which only ever needs to run once per fetch anyway).
+  const [reviewedOverrides, setReviewedOverrides] = useState<Record<string, { reviewedAt: string; reviewedByName: string }>>({});
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+
+  const rows = (data?.cancellations ?? []).map((r) => (reviewedOverrides[r.id] ? { ...r, ...reviewedOverrides[r.id] } : r));
+
+  async function markReviewed(id: string) {
+    setReviewingId(id);
+    try {
+      const res = await fetch(`/api/order-cancellations/${id}/review`, { method: "POST" });
+      if (!res.ok) return;
+      setReviewedOverrides((prev) => ({ ...prev, [id]: { reviewedAt: new Date().toISOString(), reviewedByName: "You" } }));
+    } finally {
+      setReviewingId(null);
+    }
+  }
+
+  const unreviewedCount = rows.filter((r) => !r.reviewedAt).length;
+
+  return (
+    <Card className="shadow-sm transition-shadow hover:shadow-md">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="font-heading">Order cancellations</CardTitle>
+          {unreviewedCount > 0 && (
+            <p className="mt-1 text-sm text-destructive">{unreviewedCount} awaiting review</p>
+          )}
+        </div>
+        <ExportButton rows={rows} filename="order-cancellations" />
+      </CardHeader>
+      <CardContent>
+        {error ? (
+          <ReportError message={error} />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Order #</TableHead>
+                <TableHead>Total</TableHead>
+                <TableHead>Reason</TableHead>
+                <TableHead>Cancelled by</TableHead>
+                <TableHead>When</TableHead>
+                <TableHead>Review</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && <TableSkeletonRows widths={["w-10", "w-16", "w-32", "w-24", "w-28", "w-24"]} rows={4} />}
+              {!loading && rows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                    No cancellations — every sent-to-kitchen order has run its course.
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && rows.map((r) => (
+                <TableRow key={r.id} className={!r.reviewedAt ? "bg-destructive/[0.03]" : undefined}>
+                  <TableCell className="tabular-nums">{r.orderNumber ? `#${r.orderNumber}` : "—"}</TableCell>
+                  <TableCell className="tabular-nums">{r.totalPaisa !== null ? formatPkr(r.totalPaisa) : "—"}</TableCell>
+                  <TableCell className="max-w-64">{r.reason}</TableCell>
+                  <TableCell className="font-medium">{r.cancelledByName}</TableCell>
+                  <TableCell className="text-muted-foreground">{new Date(r.createdAt).toLocaleString()}</TableCell>
+                  <TableCell>
+                    {r.reviewedAt ? (
+                      <Badge variant="outline">Reviewed by {r.reviewedByName}</Badge>
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={() => markReviewed(r.id)} disabled={reviewingId === r.id}>
+                        {reviewingId === r.id ? "Marking…" : "Mark reviewed"}
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 interface ValuationRow {
   locationName: string;
   itemName: string;
@@ -690,5 +819,226 @@ function RiderTab({ qs }: { qs: string }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+interface PnlReportData {
+  grossSalesPaisa: number;
+  salesTaxPaisa: number;
+  netRevenuePaisa: number;
+  orderCount: number;
+  stockPurchasesPaisa: number;
+  stockPurchasesMissingCost: number;
+  salariesPaisa: number;
+  expensesPaisa: number;
+  expensesByCategory: { category: string; amountPaisa: number }[];
+  totalCostsPaisa: number;
+  netProfitPaisa: number;
+  marginPct: number | null;
+}
+
+/** One line of the statement. `emphasis` marks a subtotal row; `deduction` wraps the value in
+ * parentheses — the accounting convention for a subtraction — so the arithmetic reads correctly
+ * down the column instead of looking like a list of unrelated positive numbers. */
+function PnlRow({
+  label,
+  amountPaisa,
+  emphasis,
+  deduction,
+  indent,
+  hint,
+}: {
+  label: string;
+  amountPaisa: number;
+  emphasis?: boolean;
+  deduction?: boolean;
+  indent?: boolean;
+  hint?: string;
+}) {
+  return (
+    <div
+      className={`flex items-baseline justify-between gap-4 py-2 ${
+        emphasis ? "border-t font-semibold" : "text-sm"
+      } ${indent ? "pl-4" : ""}`}
+    >
+      <span className={emphasis ? "" : "text-muted-foreground"}>
+        {label}
+        {hint && <span className="ml-2 text-xs text-muted-foreground/70">{hint}</span>}
+      </span>
+      <span className="shrink-0 tabular-nums">
+        {deduction ? `(${formatPkr(amountPaisa)})` : formatPkr(amountPaisa)}
+      </span>
+    </div>
+  );
+}
+
+function PnlTab({ qs }: { qs: string }) {
+  const { data, error, loading } = useReportFetch<PnlReportData>(`/api/reports/pnl?${qs}`);
+
+  if (error) {
+    return (
+      <Card className="shadow-sm transition-shadow hover:shadow-md">
+        <CardContent className="pt-6">
+          <ReportError message={error} />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (loading || !data) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="shadow-sm">
+              <CardContent className="space-y-2 pt-6">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-7 w-24" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card className="shadow-md">
+          <CardHeader>
+            <Skeleton className="h-5 w-40" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-5 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const profitable = data.netProfitPaisa >= 0;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard label="Net revenue" value={formatPkr(data.netRevenuePaisa)} icon={CircleDollarSign} />
+        <StatCard label="Total costs" value={formatPkr(data.totalCostsPaisa)} icon={Package} />
+        <StatCard
+          label={profitable ? "Net profit" : "Net loss"}
+          value={formatPkr(Math.abs(data.netProfitPaisa))}
+          icon={Scale}
+          tone={profitable ? "success" : "destructive"}
+          hero
+        />
+        <StatCard
+          label="Margin"
+          value={data.marginPct === null ? "—" : `${data.marginPct.toFixed(1)}%`}
+          icon={BarChart3}
+          tone={data.marginPct !== null && data.marginPct < 0 ? "destructive" : undefined}
+        />
+      </div>
+
+      <Card className="shadow-md">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="font-heading">Profit &amp; loss statement</CardTitle>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              // toCsv takes header names from the first row's keys, so every row must be an
+              // object with the same shape. Costs are exported negative so the column sums to
+              // net profit in a spreadsheet.
+              downloadCsv("profit-and-loss", [
+                { line: "Gross sales", amountRs: (data.grossSalesPaisa / 100).toFixed(2) },
+                { line: "Less: sales tax collected", amountRs: (-data.salesTaxPaisa / 100).toFixed(2) },
+                { line: "Net revenue", amountRs: (data.netRevenuePaisa / 100).toFixed(2) },
+                { line: "Stock purchases", amountRs: (-data.stockPurchasesPaisa / 100).toFixed(2) },
+                { line: "Salaries paid", amountRs: (-data.salariesPaisa / 100).toFixed(2) },
+                ...data.expensesByCategory.map((c) => ({
+                  line: `Expense: ${c.category}`,
+                  amountRs: (-c.amountPaisa / 100).toFixed(2),
+                })),
+                { line: "Total costs", amountRs: (-data.totalCostsPaisa / 100).toFixed(2) },
+                { line: "Net profit", amountRs: (data.netProfitPaisa / 100).toFixed(2) },
+              ])
+            }
+          >
+            Export CSV
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <PnlRow label="Gross sales" amountPaisa={data.grossSalesPaisa} hint={`${data.orderCount} paid orders`} />
+          <PnlRow label="Less: sales tax collected" amountPaisa={data.salesTaxPaisa} deduction indent />
+          <PnlRow label="Net revenue" amountPaisa={data.netRevenuePaisa} emphasis />
+
+          <div className="mt-4" />
+          <PnlRow
+            label="Stock purchases"
+            amountPaisa={data.stockPurchasesPaisa}
+            deduction
+            hint={
+              data.stockPurchasesMissingCost > 0
+                ? `${data.stockPurchasesMissingCost} receipt${data.stockPurchasesMissingCost === 1 ? "" : "s"} with no cost recorded`
+                : undefined
+            }
+          />
+          <PnlRow label="Salaries paid" amountPaisa={data.salariesPaisa} deduction />
+          <PnlRow label="Expenses" amountPaisa={data.expensesPaisa} deduction />
+          {data.expensesByCategory.map((c) => (
+            <PnlRow key={c.category} label={c.category} amountPaisa={c.amountPaisa} deduction indent />
+          ))}
+          <PnlRow label="Total costs" amountPaisa={data.totalCostsPaisa} deduction emphasis />
+
+          <div className="mt-4" />
+          <div className="flex items-baseline justify-between gap-4 border-t-2 py-3">
+            <span className="font-heading text-base font-bold">{profitable ? "Net profit" : "Net loss"}</span>
+            <span
+              className={`shrink-0 text-lg font-bold tabular-nums ${profitable ? "text-success" : "text-destructive"}`}
+            >
+              {formatPkr(Math.abs(data.netProfitPaisa))}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {data.expensesByCategory.length > 0 && (
+        <Card className="shadow-sm transition-shadow hover:shadow-md">
+          <CardHeader>
+            <CardTitle className="font-heading">Expenses by category</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RankedBarChart
+              rows={data.expensesByCategory.map((c) => ({ label: c.category, value: c.amountPaisa }))}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Stating the method plainly, because every line above can legitimately differ from what an
+          accountant would produce, and an owner acting on a number they've misread is worse off
+          than one who knows the number's limits. */}
+      <Card className="border-dashed shadow-none">
+        <CardContent className="space-y-2 pt-6 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 font-medium text-foreground">
+            <TriangleAlert className="size-4 text-warning-foreground" />
+            How to read this
+          </div>
+          <p>
+            This is a <strong>cash-basis</strong> summary — money that came in versus money that went
+            out in this period. It is not full accrual accounting, and it is not a tax return.
+          </p>
+          <p>
+            <strong>Stock is counted when bought, not when used.</strong> A month with a big restock
+            looks worse than it really was, and the next month looks better. Over a quarter it evens
+            out. A true cost-of-goods figure would need a recipe set on every menu item.
+          </p>
+          <p>
+            <strong>Sales tax is excluded from revenue</strong> — it is collected for the FBR/PRA and
+            passed on, so it was never income. Gross sales above still matches the Sales tab exactly.
+          </p>
+          <p>
+            <strong>Don&apos;t record the same cost twice.</strong> If a supplier delivery is entered
+            as a stock receipt with a cost, don&apos;t also log it as an expense — and leave staff
+            wages to Payroll rather than adding a &ldquo;Salaries&rdquo; expense.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

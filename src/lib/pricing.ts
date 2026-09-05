@@ -125,6 +125,18 @@ export function resolveTaxRate(taxRules: TaxRuleInput[], method: PaymentMethodKe
   return catchAll ? catchAll.rateBasisPoints : 0;
 }
 
+/** Two rules "overlap" if some payment method would match both — an empty array (catch-all)
+ * overlaps with everything. Used to stop two ACTIVE rules from ever covering the same method at
+ * once: resolveTaxRate() above has no way to prefer one over the other in that case (it just takes
+ * whichever `Array.find` sees first, which is DB row order — effectively arbitrary), so allowing
+ * that state at all means the tax actually charged on a real order is undefined behavior, not a
+ * choice anyone made. Reproduced live: a branch with both an 8% and a 5% active rule on CARD
+ * charged 5% card-payment tax purely because that row happened to come first. */
+export function taxRulesOverlap(a: PaymentMethodKey[], b: PaymentMethodKey[]): boolean {
+  if (a.length === 0 || b.length === 0) return true;
+  return a.some((m) => b.includes(m));
+}
+
 export interface ProvisionalTotals {
   subtotalPaisa: Paisa;
   discountedSubtotalPaisa: Paisa;

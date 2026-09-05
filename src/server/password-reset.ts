@@ -5,6 +5,7 @@ import { hashPassword } from "@/lib/password";
 import { sendEmail } from "@/server/email/adapter";
 import { findTenantBySlug } from "@/server/auth/session-user";
 import { env } from "@/lib/env";
+import { BRAND_NAME } from "@/config/brand";
 
 const TOKEN_TTL_MS = 30 * 60 * 1000;
 
@@ -34,7 +35,7 @@ export async function requestTenantPasswordReset(tenantSlug: string, email: stri
   const link = `${env.NEXT_PUBLIC_APP_URL}/reset-password?token=${token}`;
   await sendEmail(
     email,
-    "Reset your TableOS password",
+    `Reset your ${BRAND_NAME} password`,
     `Someone (hopefully you) asked to reset the password for this account.\n\nReset it here (expires in 30 minutes): ${link}\n\nIf you didn't request this, you can ignore this email.`
   );
 }
@@ -47,7 +48,7 @@ export async function requestPlatformPasswordReset(email: string): Promise<void>
   const link = `${env.NEXT_PUBLIC_APP_URL}/reset-password?token=${token}`;
   await sendEmail(
     email,
-    "Reset your TableOS platform admin password",
+    `Reset your ${BRAND_NAME} platform admin password`,
     `Someone (hopefully you) asked to reset the password for this account.\n\nReset it here (expires in 30 minutes): ${link}\n\nIf you didn't request this, you can ignore this email.`
   );
 }

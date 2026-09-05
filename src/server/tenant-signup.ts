@@ -5,6 +5,7 @@ import { newId } from "@/lib/ids";
 import { hashPassword, generateTempPassword } from "@/lib/password";
 import { SEED_ROLES } from "@/server/permissions/registry";
 import { defaultModulesForTier, type TierKey } from "@/server/tier";
+import { defaultExpenseCategoryRows } from "@/lib/expense-categories";
 
 export interface ProvisionTenantInput {
   restaurantName: string;
@@ -102,6 +103,10 @@ async function provisionTenant(
         },
       ],
     });
+
+    // Expense categories are tenant-wide (not per-branch), so unlike the tax rules above these are
+    // seeded once regardless of how many branches the tenant later adds.
+    await tx.expenseCategory.createMany({ data: defaultExpenseCategoryRows(tenantId) });
 
     for (const [key, def] of Object.entries(SEED_ROLES)) {
       await tx.role.create({

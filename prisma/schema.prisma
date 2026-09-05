@@ -160,6 +160,17 @@ model PlatformUser {
   passwordHash String
   name         String
   createdAt    DateTime @default(now())
+
+  /// TOTP secret (base32), set once 2FA enrollment is confirmed — see src/server/platform-mfa.ts.
+  /// Null/totpEnabled=false means this account has no second factor at all, which for the single
+  /// most powerful account in the whole system (BYPASSRLS, every tenant) is a real gap worth
+  /// closing given how few platform admin accounts typically exist.
+  totpSecret      String?
+  totpEnabled     Boolean  @default(false)
+  /// Hashed (bcrypt, same as passwordHash) one-time recovery codes — losing the authenticator app
+  /// with no recovery path would lock out the only platform admin account. Each is removed from
+  /// the array the moment it's used.
+  totpBackupCodes String[] @default([])
 }
 
 /// Persistent backing for src/server/auth/otp-store.ts's issueOtp/verifyOtp — was an in-memory Map
@@ -271,23 +282,45 @@ enum RoundingMode {
   NEAREST_5
 }
 
+enum ThankYouTrigger {
+  ON_ORDER
+  ON_PAYMENT
+}
+
 model BranchSettings {
-  id                       String       @id @default(uuid())
-  branch                   Branch       @relation(fields: [branchId], references: [id])
-  branchId                 String       @unique
-  tenantId                 String
-  currency                 String       @default("PKR")
-  serviceChargeBasisPoints Int          @default(0)
-  serviceChargeAppliesTo   OrderType[]  @default([DINE_IN])
-  serviceChargeTaxable     Boolean      @default(true)
-  roundingMode             RoundingMode @default(NEAREST_1)
-  kdsSlaSeconds            Int          @default(600)
-  receiptHeader            String?
-  locale                   String       @default("en")
+  id                            String       @id @default(uuid())
+  branch                        Branch       @relation(fields: [branchId], references: [id])
+  branchId                      String       @unique
+  tenantId                      String
+  currency                      String       @default("PKR")
+  serviceChargeBasisPoints      Int          @default(0)
+  serviceChargeAppliesTo        OrderType[]  @default([DINE_IN])
+  serviceChargeTaxable          Boolean      @default(true)
+  roundingMode                  RoundingMode @default(NEAREST_1)
+  kdsSlaSeconds                 Int          @default(600)
+  /// Off for a branch where the kitchen just works off a printed KOT at the counter (typical for
+  /// a small cafe) and has no use for a dedicated Kitchen Display screen. Purely an operational
+  /// preference the owner sets per branch — unrelated to subscription tier (unlike
+  /// GATEABLE_MODULES), so a multi-branch tenant can have this on for one location and off for
+  /// another. Doesn't touch the order lifecycle at all: sendToKitchen/kitchenReady/KOT printing
+  /// all keep working exactly the same — this only hides the KDS nav link/dashboard tile and
+  /// blocks the /kds route itself (see getBranchKdsEnabled in src/server/branch-settings.ts).
+  kdsEnabled                    Boolean      @default(true)
+  receiptHeader                 String?
+  locale                        String       @default("en")
   /// Which StockLocation recipe consumption deducts from on order payment. Not a DB relation
   /// (deliberately soft) — src/server/recipes.ts falls back to the branch's oldest active
   /// location, or skips deduction entirely, if this is unset or points at a deleted location.
-  defaultStockLocationId   String?
+  defaultStockLocationId        String?
+  /// Null = overtime is off (src/server/hr.ts's runPayroll/getPayslip treat every hour as regular
+  /// pay, the original behavior). Only ever applies to HOURLY staff — a fixed monthly salary isn't
+  /// affected by attendance at all, so overtime has no meaning there. Computed per ISO week within
+  /// whatever date range payroll is run over, not per the range as a whole, since overtime law/
+  /// practice is universally week-based, not tied to an arbitrary reporting window.
+  overtimeThresholdHoursPerWeek Int?
+  /// Basis points, same convention as every other rate in this schema (10000 = 1.00x). Only read
+  /// when overtimeThresholdHoursPerWeek is set. Default 15000 = time-and-a-half.
+  overtimeMultiplierBasisPoints Int          @default(15000)
 
   @@index([tenantId])
 }
@@ -758,17 +791,26 @@ model CustomerAddress {
 // ============================================================================
 
 model WhatsAppSettings {
-  id                     String   @id @default(uuid())
-  tenantId               String   @unique
-  enabled                Boolean  @default(false)
-  lowStockAlertsEnabled  Boolean  @default(true)
-  dailySummaryEnabled    Boolean  @default(true)
-  winBackEnabled         Boolean  @default(true)
-  deliveryUpdatesEnabled Boolean  @default(true)
+  id                     String          @id @default(uuid())
+  tenantId               String          @unique
+  enabled                Boolean         @default(false)
+  lowStockAlertsEnabled  Boolean         @default(true)
+  dailySummaryEnabled    Boolean         @default(true)
+  winBackEnabled         Boolean         @default(true)
+  deliveryUpdatesEnabled Boolean         @default(true)
+  /// "Thanks for dining with us at {restaurant}" — sent to the customer attached to a
+  /// dine-in/takeaway/service order (never DELIVERY, which already gets its own pickup/delivered
+  /// messages — a third message on top would be redundant, and "hope you loved it" reads oddly at
+  /// the moment a delivery order is paid, often before the food is even made).
+  thankYouEnabled        Boolean         @default(true)
+  /// Per-restaurant choice of when that message actually fires — some want it the instant the
+  /// order is punched, others only once it's actually paid for. Defaults to ON_PAYMENT, matching
+  /// this feature's original behavior before the trigger became configurable.
+  thankYouTrigger        ThankYouTrigger @default(ON_PAYMENT)
   businessPhoneNumberId  String? // Cloud API phone_number_id — unused until a real adapter replaces the stub
   businessAccountId      String? // Cloud API WhatsApp Business Account id — unused until a real adapter replaces the stub
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
 }
 
 /// Staff phone numbers that receive low-stock alerts and the daily summary for a branch — these
@@ -942,6 +984,7 @@ model Order {
   servedAt        DateTime?
   paidAt          DateTime?
   voidedAt        DateTime?
+  cancelledAt     DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -1141,4 +1184,130 @@ model AttendanceRecord {
 
   @@index([tenantId, branchId, clockInAt])
   @@index([tenantId, userId])
+}
+
+/// Payroll itself is still computed live, never persisted (see the comment on runPayroll in
+/// src/server/hr.ts) — this is the one thing that IS persisted: a record that a specific period's
+/// pay was actually handed to a specific person, snapshotting the numbers at the moment it was
+/// marked paid so a later change to their pay rate or a payroll-settings edit can't silently
+/// rewrite history. No FK relation to Membership (same soft-reference convention as Shift/
+/// AttendanceRecord above) — a membership can be deactivated or reassigned without orphaning the
+/// record of what they were actually paid.
+/// A cashier cancelling an order that's already been sent to the kitchen (Order.status ->
+/// CANCELLED, distinct from a plain pre-kitchen VOIDED) always creates one of these, with a
+/// mandatory reason — see cancelSentOrder in src/server/orders.ts. reviewedAt/reviewedById is the
+/// manager/owner side of the loop: unreviewed rows are what the dashboard cancellation banner and
+/// the Reports > Cancellations tab surface, so a kitchen-stage cancellation can't just happen
+/// silently with nobody accountable for the wasted food/labor noticing it.
+model OrderCancellation {
+  id            String    @id @default(uuid())
+  tenantId      String
+  branchId      String
+  orderId       String
+  reason        String
+  cancelledById String
+  createdAt     DateTime  @default(now())
+  reviewedById  String?
+  reviewedAt    DateTime?
+
+  @@index([tenantId, branchId, reviewedAt])
+}
+
+model PayrollDisbursement {
+  id            String   @id @default(uuid())
+  tenantId      String
+  branchId      String
+  membershipId  String
+  periodStart   DateTime
+  periodEnd     DateTime
+  regularHours  Float
+  overtimeHours Float    @default(0)
+  grossPayPaisa Int
+  method        String?
+  note          String?
+  paidById      String
+  paidAt        DateTime @default(now())
+
+  @@index([tenantId, branchId])
+  @@index([tenantId, membershipId])
+}
+
+/// PENDING only ever happens if a role is granted finance.expense.create WITHOUT
+/// finance.expense.approve — the two seeded roles that can record expenses (owner, branch_manager)
+/// both hold approve, so in practice everything lands APPROVED today. The field exists from day one
+/// so the review workflow those permissions imply can be built later without a migration. The rule
+/// that matters for reporting: PENDING never counts toward any total.
+enum ExpenseStatus {
+  PENDING
+  APPROVED
+}
+
+/// Tenant-defined expense buckets (Rent, Utilities, ...). Seeded with sensible defaults at signup
+/// (see provisionTenant in src/server/tenant-signup.ts) but fully editable afterward — every
+/// restaurant's cost lines differ. Archived via isActive rather than deleted, same as InventoryItem:
+/// a category that's been retired must keep resolving for the historical expenses pointing at it.
+/// Deliberately NOT unique on (tenantId, name) — InventoryItem isn't either, and a unique index
+/// would make archive-then-recreate of the same name fail in a way nobody would understand.
+model ExpenseCategory {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+/// A single cost the business actually incurred. `spentAt` is the date the money went out and is
+/// what every filter and report uses — never `createdAt`, so entering January's rent in February
+/// still lands in January. `recurringExpenseId` is set only on rows generated from a
+/// RecurringExpense template, which is what keeps that generation idempotent.
+model Expense {
+  id                 String         @id @default(uuid())
+  tenantId           String
+  branchId           String
+  categoryId         String
+  spentAt            DateTime
+  amountPaisa        Int
+  vendorName         String? // free text — no Supplier module (same convention as StockMovement.supplierName)
+  method             PaymentMethod?
+  note               String?
+  status             ExpenseStatus  @default(APPROVED)
+  recordedById       String
+  approvedById       String?
+  approvedAt         DateTime?
+  recurringExpenseId String?
+  createdAt          DateTime       @default(now())
+
+  @@index([tenantId, branchId, spentAt])
+  @@index([tenantId, categoryId])
+  @@index([recurringExpenseId, spentAt])
+}
+
+/// A fixed monthly cost (rent, utilities, a service contract) that should appear every month without
+/// anyone re-typing it. Materialised into real Expense rows by materialiseRecurringExpenses in
+/// src/server/expenses.ts, called from the existing daily cron rather than a new one.
+/// `dayOfMonth` is constrained to 1-28 at the API layer: every month has those days, which sidesteps
+/// "what does the 31st mean in February" entirely instead of hiding clamping logic somewhere.
+/// `lastGeneratedFor` holds the spentAt of the most recent generated row and is the idempotency
+/// guard — generation catches up from there, so a paused cron backfills instead of losing months.
+model RecurringExpense {
+  id               String         @id @default(uuid())
+  tenantId         String
+  branchId         String
+  categoryId       String
+  amountPaisa      Int
+  vendorName       String?
+  method           PaymentMethod?
+  note             String?
+  dayOfMonth       Int
+  isActive         Boolean        @default(true)
+  startsOn         DateTime
+  endsOn           DateTime?
+  lastGeneratedFor DateTime?
+  createdById      String
+  createdAt        DateTime       @default(now())
+
+  @@index([tenantId, branchId, isActive])
 }

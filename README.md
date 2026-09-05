@@ -1,4 +1,4 @@
-# TableOS
+# ToffeeOS
 
 Multi-tenant restaurant management SaaS for Pakistan's restaurants, cafés, and cloud kitchens —
 POS, Kitchen Display System, staff/permissions, reports, and a super-admin panel, all in one

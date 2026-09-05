@@ -7,6 +7,7 @@ import { newId, newOrderId, newOrderLineId } from "@/lib/ids";
 import { hashPassword, hashPin } from "@/lib/password";
 import { SEED_ROLES } from "@/server/permissions/registry";
 import { finalizeOrder, type PricingLineInput, type TaxRuleInput } from "@/lib/pricing";
+import { defaultExpenseCategoryRows } from "@/lib/expense-categories";
 
 // Every write below the initial Tenant row goes through tenantDb(tenantId), never rawDb directly —
 // rawDb is RLS-bound (app_user) and, with no app.tenant_id session var set, RLS's WITH CHECK would
@@ -346,6 +347,9 @@ async function seedDemoTenant() {
 
   await seedTaxAndSettings(db, tenantId, branch1Id);
   await seedTaxAndSettings(db, tenantId, branch2Id);
+  // Tenant-wide, not per-branch — hence one call here rather than inside seedTaxAndSettings, which
+  // runs once per branch. Mirrors the same seeding in provisionTenant.
+  await db.expenseCategory.createMany({ data: defaultExpenseCategoryRows(tenantId) });
   await seedFloorAndTables(db, tenantId, branch1Id);
   await seedFloorAndTables(db, tenantId, branch2Id);
   await seedMenu(db, tenantId, [branch1Id, branch2Id]);

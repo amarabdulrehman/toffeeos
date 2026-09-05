@@ -12,6 +12,8 @@ const patchSchema = z.object({
   dailySummaryEnabled: z.boolean().optional(),
   winBackEnabled: z.boolean().optional(),
   deliveryUpdatesEnabled: z.boolean().optional(),
+  thankYouEnabled: z.boolean().optional(),
+  thankYouTrigger: z.enum(["ON_ORDER", "ON_PAYMENT"]).optional(),
   businessPhoneNumberId: z.string().max(120).nullable().optional(),
   businessAccountId: z.string().max(120).nullable().optional(),
 });

@@ -1,7 +1,7 @@
 import "server-only";
 import { fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
-import { tenantDb } from "@/server/db";
+import { tenantDb, rawDb } from "@/server/db";
 import { formatPkr } from "@/lib/money";
 import { salesReport, itemWiseReport } from "@/server/reports";
 import { inactiveCustomers } from "@/server/crm";
@@ -120,6 +120,38 @@ export async function sendWinBackBatch(tenantId: string, inactiveDays = 30) {
     sent: results.filter((r) => r.status === "SENT").length,
     skipped: results.filter((r) => r.status !== "SENT").length,
   };
+}
+
+/** Called from both createOrder (stage "ON_ORDER") and takePayment (stage "ON_PAYMENT") — each
+ * tenant picks which one actually fires via WhatsAppSettings.thankYouTrigger (defaults to
+ * ON_PAYMENT), so this bails immediately unless `stage` matches their choice. Never DELIVERY —
+ * that type already gets its own pickup/delivered messages via
+ * notifyDeliveryPickedUp/notifyDeliveryDelivered, and a "hope you loved it" the moment a delivery
+ * order is placed or paid — often well before the food is even made — reads oddly either way.
+ * Only sends if the order has a customer attached with a phone number; a walk-in with no CRM
+ * record just silently gets nothing, same as every other trigger here. */
+export async function notifyOrderThankYou(
+  tenantId: string,
+  branchId: string,
+  orderId: string,
+  stage: "ON_ORDER" | "ON_PAYMENT"
+) {
+  const db = tenantDb(tenantId);
+  const settings = await db.whatsAppSettings.findUnique({ where: { tenantId } });
+  if ((settings?.thankYouTrigger ?? "ON_PAYMENT") !== stage) return null;
+
+  const order = await db.order.findUnique({ where: { id: orderId }, include: { customer: true } });
+  if (!order?.customer?.phone || order.type === "DELIVERY") return null;
+
+  const tenant = await rawDb.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } });
+  return notifyWhatsApp({
+    tenantId,
+    branchId,
+    customerId: order.customer.id,
+    toPhone: order.customer.phone,
+    templateKey: "thank_you",
+    params: [order.customer.name ?? "there", tenant.name],
+  });
 }
 
 export async function notifyDeliveryPickedUp(tenantId: string, branchId: string, orderId: string) {

@@ -74,7 +74,10 @@ export function DeliveryView() {
 
 function DeliveryBoard() {
   const [board, setBoard] = useState<Board>({ readyForPickup: [], inProgress: [], delivered: [] });
-  const [riders, setRiders] = useState<Rider[]>([]);
+  // null = riders haven't loaded yet, distinct from "loaded, zero riders". Unfiltered otherwise —
+  // an order assigned before a rider was deactivated still needs their name to resolve in the
+  // Select below (see activeRiders/assignedInactiveRider split in the render).
+  const [riders, setRiders] = useState<Rider[] | null>(null);
 
   const load = useCallback(() => {
     fetch("/api/delivery/board")
@@ -83,7 +86,7 @@ function DeliveryBoard() {
       .catch(() => {});
     fetch("/api/riders")
       .then((r) => r.json())
-      .then((d) => setRiders((d.riders ?? []).filter((r: Rider) => r.isActive)))
+      .then((d) => setRiders(d.riders ?? []))
       .catch(() => {});
   }, []);
 
@@ -106,20 +109,44 @@ function DeliveryBoard() {
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       <BoardColumn title="Ready for Pickup" orders={board.readyForPickup}>
-        {(order) => (
-          <Select value={order.assignedRiderId ?? undefined} onValueChange={(v) => v && assign(order.id, v)}>
-            <SelectTrigger className="mt-2 h-8 text-xs">
-              <SelectValue placeholder="Assign rider" />
-            </SelectTrigger>
-            <SelectContent>
-              {riders.map((r) => (
-                <SelectItem key={r.userId} value={r.userId}>
-                  {r.name} ({r.activeDeliveryCount} active)
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        {(order) => {
+          if (riders === null) {
+            return <div className="mt-2 h-8 w-full animate-pulse rounded-lg bg-muted" />;
+          }
+          const activeRiders = riders.filter((r) => r.isActive);
+          // A rider assigned before being deactivated won't be in activeRiders — surfaced as a
+          // disabled option (with the current-value lookup below) instead of just vanishing, so
+          // dispatch can still see who it's currently sitting with.
+          const assignedInactiveRider =
+            order.assignedRiderId && !activeRiders.some((r) => r.userId === order.assignedRiderId)
+              ? riders.find((r) => r.userId === order.assignedRiderId)
+              : undefined;
+          return (
+            <Select value={order.assignedRiderId ?? undefined} onValueChange={(v) => v && assign(order.id, v)}>
+              <SelectTrigger className="mt-2 h-8 text-xs">
+                {/* Select.Value never auto-resolves a SelectItem's children as its label — Base UI
+                 * only does that when given the root `items` prop; otherwise it renders the raw
+                 * `value` verbatim (a rider id/UUID here). A custom render function is this
+                 * codebase's established fix for that — see e.g. menu-view.tsx's category picker. */}
+                <SelectValue placeholder="Assign rider">
+                  {(v: string | undefined) => (v ? (riders.find((r) => r.userId === v)?.name ?? v) : "Assign rider")}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {assignedInactiveRider && (
+                  <SelectItem value={assignedInactiveRider.userId} disabled>
+                    {assignedInactiveRider.name} (inactive)
+                  </SelectItem>
+                )}
+                {activeRiders.map((r) => (
+                  <SelectItem key={r.userId} value={r.userId}>
+                    {r.name} ({r.activeDeliveryCount} active)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          );
+        }}
       </BoardColumn>
       <BoardColumn title="In Progress" orders={board.inProgress} />
       <BoardColumn title="Delivered" orders={board.delivered}>

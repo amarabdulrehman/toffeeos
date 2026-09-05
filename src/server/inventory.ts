@@ -29,6 +29,19 @@ export async function listItems(tenantId: string) {
   return db.inventoryItem.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
 }
 
+/** Soft-delete only — an InventoryItem can be referenced by StockMovement (append-only ledger),
+ * StockLevel, and RecipeLine, all of which are required (non-nullable) foreign keys. A hard delete
+ * would either fail outright once any history exists, or (if forced) silently corrupt past stock
+ * reports and recipe costings. Archiving just flips isActive to false, which listItems/stockReport
+ * already filter on — the item drops out of every "add new" picker immediately, while existing
+ * StockMovement rows, StockLevel rows, and RecipeLine references keep resolving exactly as before. */
+export async function archiveItem(tenantId: string, itemId: string) {
+  const db = tenantDb(tenantId);
+  const existing = await db.inventoryItem.findUnique({ where: { id: itemId } });
+  if (!existing) throw new HttpError(404, "Item not found.");
+  return db.inventoryItem.update({ where: { id: itemId }, data: { isActive: false } });
+}
+
 /** Every item × location combination for a branch, including zero-quantity rows for items that
  * have never had stock recorded at that location — the report is meant to show gaps, not hide them. */
 export async function stockReport(tenantId: string, branchId: string, opts: { belowThresholdOnly?: boolean } = {}) {

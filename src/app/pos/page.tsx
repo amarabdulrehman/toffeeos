@@ -12,9 +12,13 @@ export default async function PosPage() {
     <PosTerminal
       tenantId={user.tenantId}
       branchId={user.branchId}
+      tenantName={user.tenantName}
+      branchName={user.branchName}
       canTakePayment={user.permissions.includes("pos.payment.take")}
       canApplyDiscount={user.permissions.includes("pos.discount.applyOrder")}
       canVoid={user.permissions.includes("pos.order.void")}
+      canCancel={user.permissions.includes("orders.cancel")}
+      canReprintReceipt={user.permissions.includes("pos.receipt.reprint")}
     />
   );
 }

@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChannel } from "@/lib/realtime-client";
 import { topic } from "@/lib/realtime-topics";
+import { KotDialog } from "./kot-dialog";
 
 const SLA_SECONDS = 600; // default KDS SLA; BranchSettings.kdsSlaSeconds makes this configurable server-side
 
@@ -63,8 +64,21 @@ function formatElapsed(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function OrderCard({ order, canMarkReady, onChanged }: { order: KdsOrder; canMarkReady: boolean; onChanged: () => void }) {
-  const isReady = order.status === "READY";
+function OrderCard({
+  order,
+  canMarkReady,
+  onChanged,
+  onPrint,
+}: {
+  order: KdsOrder;
+  canMarkReady: boolean;
+  onChanged: () => void;
+  onPrint: (order: KdsOrder) => void;
+}) {
+  // Not order.status === "READY" — an order paid before the kitchen finishes stays at status
+  // PAID (see the KDS route's doc comment), so readyAt is the only reliable "is this ready"
+  // signal once payment and kitchen progress can diverge on the same status column.
+  const isReady = order.readyAt !== null;
   const elapsed = useElapsedSeconds(order.sentToKitchenAt, isReady ? order.readyAt : null);
   // Once the kitchen has marked it ready, an old SLA breach is no longer something they need to
   // act on — that alarm belongs to whoever hasn't served/picked it up yet, not this board.
@@ -133,11 +147,11 @@ function OrderCard({ order, canMarkReady, onChanged }: { order: KdsOrder; canMar
       </div>
       {canMarkReady && (
         <div className="flex gap-2 border-t border-border/60 p-3">
-          <Button size="lg" variant="secondary" className="flex-1" onClick={() => window.print()}>
+          <Button size="lg" variant="secondary" className="flex-1" onClick={() => onPrint(order)}>
             Print
           </Button>
-          <Button size="lg" variant="success" className="flex-1" onClick={markOrderReady} disabled={order.status === "READY"}>
-            {order.status === "READY" ? "Ready" : "Mark Ready"}
+          <Button size="lg" variant="success" className="flex-1" onClick={markOrderReady} disabled={isReady}>
+            {isReady ? "Ready" : "Mark Ready"}
           </Button>
         </div>
       )}
@@ -174,16 +188,19 @@ function OrderCardSkeleton() {
 export function KdsBoard({
   tenantId,
   branchId,
+  branchName,
   canMarkReady,
 }: {
   tenantId: string;
   branchId: string;
+  branchName: string;
   canMarkReady: boolean;
 }) {
   const [orders, setOrders] = useState<KdsOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<KdsOrder["type"] | "ALL">("ALL");
+  const [printingOrder, setPrintingOrder] = useState<KdsOrder | null>(null);
 
   const load = useCallback(() => {
     fetch("/api/kds/orders")
@@ -264,11 +281,13 @@ export function KdsBoard({
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
             {filtered.map((o) => (
-              <OrderCard key={o.id} order={o} canMarkReady={canMarkReady} onChanged={load} />
+              <OrderCard key={o.id} order={o} canMarkReady={canMarkReady} onChanged={load} onPrint={setPrintingOrder} />
             ))}
           </div>
         )}
       </div>
+
+      <KotDialog order={printingOrder} branchName={branchName} onClose={() => setPrintingOrder(null)} />
     </div>
   );
 }

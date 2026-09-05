@@ -8,6 +8,15 @@ import "server-only";
  * https://graph.facebook.com/v20.0/{phone_number_id}/messages using the businessPhoneNumberId /
  * businessAccountId already modeled on WhatsAppSettings, and keep the same return shape so
  * src/server/whatsapp/send.ts doesn't need to change at all.
+ *
+ * IMPORTANT when making that swap: src/server/whatsapp/send.ts calls this with a bare `await` and
+ * no try/catch, on the strength of this function's signature promising it never throws — that's
+ * only true today because this stub is just a synchronous console.log. A real `fetch()` call here
+ * MUST catch network errors/timeouts itself and resolve to `{ok:false, error}` (mirroring
+ * src/server/email/adapter.ts's sendEmail, which does exactly this for Resend) — this function is
+ * called synchronously from the order-payment hot path (see notifyOrderThankYou's callers in
+ * src/server/orders.ts), and an uncaught exception or a hung request here would fail or stall a
+ * successful payment over a WhatsApp message that was never supposed to be able to do that.
  */
 export async function sendWhatsAppCloudMessage(
   toPhone: string,

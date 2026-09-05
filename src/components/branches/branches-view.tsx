@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Building2, Percent } from "lucide-react";
+import { Building2, ChefHat, Percent, Plus, Receipt, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,11 @@ const ORDER_TYPE_LABEL: Record<string, string> = {
   SERVICE: "Service",
 };
 const ALL_ORDER_TYPES = ["DINE_IN", "TAKEAWAY", "DELIVERY", "SERVICE"];
+const ROUNDING_LABELS: Record<string, string> = {
+  NONE: "Exact (no rounding)",
+  NEAREST_1: "Nearest Rs 1",
+  NEAREST_5: "Nearest Rs 5",
+};
 
 interface Branch {
   id: string;
@@ -56,6 +61,21 @@ export function BranchesView({ planName, maxBranches }: { planName: string; maxB
 
   const activeCount = branches.filter((b) => b.isActive).length;
   const atLimit = maxBranches !== null && activeCount >= maxBranches;
+
+  async function toggleBranch(branch: Branch) {
+    const res = await fetch(`/api/branches/${branch.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: !branch.isActive }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      toast.error(data.error ?? "Could not update branch.");
+      return;
+    }
+    toast.success(branch.isActive ? "Branch deactivated." : "Branch reactivated.");
+    load();
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -149,14 +169,26 @@ export function BranchesView({ planName, maxBranches }: { planName: string; maxB
                 <CardTitle className="font-heading text-base">{b.name}</CardTitle>
                 <Badge variant={b.isActive ? "success" : "outline"}>{b.isActive ? "Active" : "Inactive"}</Badge>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
                 <p className="text-sm text-muted-foreground">{b.address ?? "No address set"}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={b.isActive ? "text-destructive" : ""}
+                  disabled={b.isActive && activeCount <= 1}
+                  title={b.isActive && activeCount <= 1 ? "You can't deactivate your only active branch." : undefined}
+                  onClick={() => toggleBranch(b)}
+                >
+                  {b.isActive ? "Deactivate" : "Reactivate"}
+                </Button>
               </CardContent>
             </Card>
           ))}
       </div>
 
       <OrderSettingsCard />
+      <KitchenDisplayCard />
+      <TaxRulesCard />
     </div>
   );
 }
@@ -178,6 +210,11 @@ interface BranchSettingsDto {
 function OrderSettingsCard() {
   const [settings, setSettings] = useState<BranchSettingsDto | null>(null);
   const [saving, setSaving] = useState(false);
+  // Uncontrolled input's live DOM value doubles as "the last rate the owner set" — read on demand
+  // (switch turned back on after being off) rather than mirrored into React state, so there's no
+  // effect needed to keep the two in sync. Disabling the input (service charge off) doesn't clear
+  // it, so the number is still sitting there in the DOM if they turn it back on.
+  const pctInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     fetch("/api/branch-settings")
@@ -212,8 +249,6 @@ function OrderSettingsCard() {
 
   if (!settings) return null;
 
-  const servicePct = settings.serviceChargeBasisPoints / 100;
-
   return (
     <Card className="mt-6 shadow-sm transition-shadow hover:shadow-md">
       <CardHeader className="flex flex-row items-center gap-2.5">
@@ -222,21 +257,40 @@ function OrderSettingsCard() {
         </span>
         <div>
           <CardTitle className="font-heading text-base">Order settings — this branch</CardTitle>
-          <p className="text-xs text-muted-foreground">Service charge and cash rounding. Off (0%) until you set a rate here.</p>
+          <p className="text-xs text-muted-foreground">Service charge and cash rounding.</p>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="flex items-center justify-between rounded-xl border bg-muted/20 px-3.5 py-3">
+          <div>
+            <div className="text-sm font-medium">Charge a service fee</div>
+            <p className="text-xs text-muted-foreground">Off means no service charge on any order, regardless of the rate below.</p>
+          </div>
+          <Switch
+            checked={settings.serviceChargeBasisPoints > 0}
+            disabled={saving}
+            onCheckedChange={(checked) => {
+              if (!checked) {
+                save({ serviceChargeBasisPoints: 0 });
+                return;
+              }
+              const pct = Number(pctInputRef.current?.value);
+              save({ serviceChargeBasisPoints: Math.round((pct > 0 ? pct : 5) * 100) });
+            }}
+          />
+        </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="svc-pct">Service charge (%)</Label>
             <Input
               id="svc-pct"
+              ref={pctInputRef}
               type="number"
               min={0}
               max={100}
               step={0.5}
-              disabled={saving}
-              defaultValue={servicePct}
+              disabled={saving || settings.serviceChargeBasisPoints === 0}
+              defaultValue={settings.serviceChargeBasisPoints > 0 ? settings.serviceChargeBasisPoints / 100 : 5}
               onBlur={(e) => {
                 const pct = Number(e.target.value);
                 if (Number.isNaN(pct) || pct < 0 || pct > 100) return;
@@ -251,7 +305,9 @@ function OrderSettingsCard() {
               onValueChange={(v) => v && save({ roundingMode: v as BranchSettingsDto["roundingMode"] })}
             >
               <SelectTrigger className="w-full" disabled={saving}>
-                <SelectValue />
+                {/* Select.Value shows the raw value ("NEAREST_1") without a render function — it
+                 * never reads a SelectItem's children automatically. */}
+                <SelectValue>{(v: string) => ROUNDING_LABELS[v] ?? v}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="NONE">Exact (no rounding)</SelectItem>
@@ -304,5 +360,341 @@ function OrderSettingsCard() {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** Some cafes run the kitchen right at the counter and have no use for a dedicated Kitchen
+ * Display screen — this doesn't touch the order lifecycle at all (send-to-kitchen, KOT printing,
+ * everything a cashier does at the counter keeps working exactly the same); it only hides the KDS
+ * nav link/dashboard tile and blocks the /kds route itself for this branch. See
+ * getBranchKdsEnabled in src/server/branch-settings.ts. */
+function KitchenDisplayCard() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/branch-settings")
+      .then((r) => r.json())
+      .then((d) => setEnabled(d.settings?.kdsEnabled ?? true))
+      .catch(() => toast.error("Could not load Kitchen Display settings."));
+  }, []);
+
+  async function toggle(checked: boolean) {
+    setEnabled(checked);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/branch-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kdsEnabled: checked }),
+      });
+      if (!res.ok) {
+        toast.error("Could not save Kitchen Display setting.");
+        setEnabled(!checked);
+        return;
+      }
+      toast.success(checked ? "Kitchen Display System turned on." : "Kitchen Display System turned off.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (enabled === null) return null;
+
+  return (
+    <Card className="mt-6 shadow-sm transition-shadow hover:shadow-md">
+      <CardHeader className="flex flex-row items-center gap-2.5">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <ChefHat className="size-4" />
+        </span>
+        <div>
+          <CardTitle className="font-heading text-base">Kitchen Display System — this branch</CardTitle>
+          <p className="text-xs text-muted-foreground">Turn off if the kitchen works off a printed ticket at the counter instead.</p>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between rounded-xl border bg-muted/20 px-3.5 py-3">
+          <div>
+            <div className="text-sm font-medium">Use the Kitchen Display System</div>
+            <p className="text-xs text-muted-foreground">
+              Off hides KDS from the sidebar and dashboard, and blocks the /kds screen for this branch. Sending orders to the
+              kitchen and printing KOTs keep working the same either way.
+            </p>
+          </div>
+          <Switch checked={enabled} disabled={saving} onCheckedChange={toggle} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface TaxRuleDto {
+  id: string;
+  name: string;
+  paymentMethods: string[];
+  rateBasisPoints: number;
+  isActive: boolean;
+}
+
+const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  CASH: "Cash",
+  CARD: "Card",
+  JAZZCASH: "JazzCash",
+  EASYPAISA: "Easypaisa",
+  BANK_TRANSFER: "Bank transfer",
+  OTHER: "Other",
+};
+const ALL_PAYMENT_METHODS = ["CASH", "CARD", "JAZZCASH", "EASYPAISA", "BANK_TRANSFER", "OTHER"];
+
+function formatRatePct(basisPoints: number): string {
+  const pct = basisPoints / 100;
+  return basisPoints % 100 === 0 ? pct.toFixed(0) : pct.toFixed(1);
+}
+
+/** Tax was previously all-or-nothing and fixed at whatever the tenant was seeded with at signup
+ * (see tenant-signup.ts's Punjab PRA default) — the schema and pricing engine (resolveTaxRate in
+ * src/lib/pricing.ts) already fully supported per-branch, per-payment-method, any-rate tax rules
+ * and "zero active rules = 0% tax," but nothing ever exposed that to an owner to actually change.
+ * This is that missing settings surface — same permission (settings.tax.manage) the registry
+ * already reserved for it. */
+function TaxRulesCard() {
+  const [rules, setRules] = useState<TaxRuleDto[] | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<TaxRuleDto | null>(null);
+
+  const load = useCallback(() => {
+    fetch("/api/tax-rules")
+      .then((r) => r.json())
+      .then((d) => setRules(d.rules ?? []))
+      .catch(() => toast.error("Could not load tax rules."));
+  }, []);
+
+  useEffect(load, [load]);
+
+  async function toggleActive(rule: TaxRuleDto) {
+    const res = await fetch(`/api/tax-rules/${rule.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: !rule.isActive }),
+    });
+    if (!res.ok) {
+      toast.error("Could not update tax rule.");
+      return;
+    }
+    toast.success(rule.isActive ? "Tax rule turned off." : "Tax rule turned on.");
+    load();
+  }
+
+  async function deleteRule(rule: TaxRuleDto) {
+    if (!window.confirm(`Delete the tax rule "${rule.name}"? This can't be undone.`)) return;
+    const res = await fetch(`/api/tax-rules/${rule.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      toast.error("Could not delete tax rule.");
+      return;
+    }
+    toast.success("Tax rule deleted.");
+    load();
+  }
+
+  if (!rules) return null;
+
+  const anyActive = rules.some((r) => r.isActive);
+
+  return (
+    <Card className="mt-6 shadow-sm transition-shadow hover:shadow-md">
+      <CardHeader className="flex flex-row items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Receipt className="size-4" />
+          </span>
+          <div>
+            <CardTitle className="font-heading text-base">Tax — this branch</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {anyActive ? "Applied automatically at checkout, per the rules below." : "No tax is currently applied to any order."}
+            </p>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => {
+            setEditing(null);
+            setDialogOpen(true);
+          }}
+        >
+          <Plus className="size-4" />
+          Add rule
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {rules.length === 0 && (
+          <p className="rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground">
+            No tax rules set up — orders won&apos;t be taxed until you add one.
+          </p>
+        )}
+        {rules.map((rule) => (
+          <div
+            key={rule.id}
+            className={`flex items-center justify-between rounded-xl border px-3.5 py-3 transition-colors ${
+              rule.isActive ? "bg-background" : "bg-muted/20 opacity-70"
+            }`}
+          >
+            <button
+              type="button"
+              className="text-left"
+              onClick={() => {
+                setEditing(rule);
+                setDialogOpen(true);
+              }}
+            >
+              <div className="flex items-center gap-2 text-sm font-medium hover:underline">
+                {rule.name}
+                <Badge variant="secondary">{formatRatePct(rule.rateBasisPoints)}%</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {rule.paymentMethods.length === 0
+                  ? "All payment methods"
+                  : rule.paymentMethods.map((m) => PAYMENT_METHOD_LABEL[m] ?? m).join(", ")}
+              </p>
+            </button>
+            <div className="flex items-center gap-2">
+              <Switch checked={rule.isActive} onCheckedChange={() => toggleActive(rule)} />
+              <Button variant="ghost" size="icon-sm" className="text-destructive" onClick={() => deleteRule(rule)}>
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+          </div>
+        ))}
+      </CardContent>
+
+      <TaxRuleDialog
+        key={editing?.id ?? "new"}
+        open={dialogOpen}
+        editing={editing}
+        onClose={() => {
+          setDialogOpen(false);
+          setEditing(null);
+        }}
+        onSaved={load}
+      />
+    </Card>
+  );
+}
+
+function TaxRuleDialog({
+  open,
+  editing,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  editing: TaxRuleDto | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  // Initialized straight from `editing` rather than synced via an effect — the caller keys this
+  // component by editing?.id (see TaxRulesCard), so a fresh mount (and fresh initializer run)
+  // happens every time a different rule is opened, or "Add rule" is chosen after an edit.
+  const [name, setName] = useState(editing?.name ?? "");
+  const [rate, setRate] = useState(editing ? String(editing.rateBasisPoints / 100) : "16");
+  const [methods, setMethods] = useState<string[]>(editing?.paymentMethods ?? []);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const pct = Number(rate);
+    if (Number.isNaN(pct) || pct < 0 || pct > 100) {
+      toast.error("Enter a rate between 0 and 100.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const body = { name, rateBasisPoints: Math.round(pct * 100), paymentMethods: methods };
+      const res = await fetch(editing ? `/api/tax-rules/${editing.id}` : "/api/tax-rules", {
+        method: editing ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? "Could not save tax rule.");
+        return;
+      }
+      toast.success(editing ? "Tax rule updated." : "Tax rule added.");
+      onClose();
+      onSaved();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-heading">{editing ? "Edit tax rule" : "Add tax rule"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="tax-name">Name</Label>
+            <Input id="tax-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sales tax" required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="tax-rate">Rate (%)</Label>
+            <Input
+              id="tax-rate"
+              type="number"
+              min={0}
+              max={100}
+              step={0.5}
+              value={rate}
+              onChange={(e) => setRate(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Applies to</Label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setMethods([])}
+                className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  methods.length === 0
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border text-muted-foreground hover:bg-muted/60"
+                }`}
+              >
+                All payment methods
+              </button>
+              {ALL_PAYMENT_METHODS.map((m) => {
+                const active = methods.includes(m);
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMethods(active ? methods.filter((x) => x !== m) : [...methods, m])}
+                    className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground hover:bg-muted/60"
+                    }`}
+                  >
+                    {PAYMENT_METHOD_LABEL[m]}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Leave on &quot;All payment methods&quot; for one flat rate. Pick specific methods only if you need a
+              different rate for cash vs. card (e.g. Punjab PRA&apos;s split rate).
+            </p>
+          </div>
+          <DialogFooter>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Saving…" : editing ? "Save changes" : "Add rule"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

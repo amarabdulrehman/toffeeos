@@ -2,11 +2,14 @@ import { redirect } from "next/navigation";
 import { LayoutGrid } from "lucide-react";
 import { auth } from "@/server/auth";
 import { getTenantLayoutDataForTenant } from "@/server/tier";
+import { getBranchKdsEnabled } from "@/server/branch-settings";
+import { tenantAcceptsLogin } from "@/server/auth/session-user";
 import { getBillingStatus } from "@/lib/billing";
 import { BRAND_NAME } from "@/config/brand";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ClockOutButton } from "@/components/clock-out-button";
 import { AppSidebarNav } from "@/components/app-sidebar-nav";
+import { AccountSuspended } from "@/components/tier/account-suspended";
 
 // Dark navy "chrome" sidebar, same --sidebar tokens as the POS/KDS headers — this is the one nav
 // every back-office screen shares, so unifying it here means every screen behind it (Dashboard,
@@ -22,6 +25,30 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // (see getTenantLayoutDataForTenant's doc comment).
   const layoutData = await getTenantLayoutDataForTenant(user.tenantId);
   const enabledModules = layoutData.enabledModules;
+
+  // The API layer already rejects every request from a suspended/cancelled tenant (defineHandler's
+  // getTenantGate check) — this is the matching page-shell gap: without it, staff kept seeing the
+  // full nav and every screen, just with every action inside silently failing.
+  if (!tenantAcceptsLogin(layoutData.tenantStatus ?? "")) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <header className="flex items-center justify-between bg-sidebar px-5 py-3 text-sidebar-foreground shadow-md">
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+              <LayoutGrid className="size-4.5" />
+            </span>
+            <div className="font-heading text-base font-semibold tracking-tight">{BRAND_NAME}</div>
+          </div>
+          <div className="w-24">
+            <SignOutButton onDark />
+          </div>
+        </header>
+        <AccountSuspended />
+      </div>
+    );
+  }
+  const kdsEnabled = await getBranchKdsEnabled(user.tenantId, user.branchId);
+
   // Purely a notice — never gates anything. A tenant whose paid period has lapsed keeps working
   // normally until a platform admin manually suspends them; this just tells them to renew.
   const billing = getBillingStatus({
@@ -33,7 +60,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen">
-      <aside className="flex w-60 shrink-0 flex-col bg-sidebar p-4 text-sidebar-foreground shadow-lg">
+      {/* h-screen + sticky, not just min-h-screen: AppSidebarNav's list already carries
+          `flex-1 overflow-y-auto`, but that can only engage if this container has a bounded height.
+          Without the cap the aside simply grew past the viewport and pushed Clock out / Sign out
+          below the fold on shorter laptop screens (~700px), where the nav list is now long enough
+          to overflow. */}
+      <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col bg-sidebar p-4 text-sidebar-foreground shadow-lg">
         <div className="mb-6 flex items-center gap-3 px-1">
           <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
             <LayoutGrid className="size-4.5" />
@@ -43,7 +75,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <div className="truncate text-xs text-sidebar-foreground/55">{user.tenantName}</div>
           </div>
         </div>
-        <AppSidebarNav permissions={user.permissions} enabledModules={enabledModules} />
+        <AppSidebarNav permissions={user.permissions} enabledModules={enabledModules} kdsEnabled={kdsEnabled} />
         <div className="mt-auto space-y-2 border-t border-sidebar-border pt-4">
           <div className="px-1 text-xs">
             <div className="font-medium">{user.name}</div>

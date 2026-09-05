@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -20,6 +21,8 @@ interface Settings {
   dailySummaryEnabled: boolean;
   winBackEnabled: boolean;
   deliveryUpdatesEnabled: boolean;
+  thankYouEnabled: boolean;
+  thankYouTrigger: "ON_ORDER" | "ON_PAYMENT";
 }
 
 interface Recipient {
@@ -51,6 +54,7 @@ const TEMPLATE_LABELS: Record<string, string> = {
   win_back_30d: "Customer win-back, 30+ days inactive",
   delivery_picked_up: "Delivery picked up (to customer)",
   delivery_delivered: "Delivery delivered (to customer)",
+  thank_you: "Thank-you after payment (to customer)",
 };
 
 const STATUS_VARIANT: Record<Template["status"], "secondary" | "outline" | "destructive"> = {
@@ -79,7 +83,7 @@ export function WhatsAppView() {
 
   useEffect(load, [load]);
 
-  async function toggleSetting(key: keyof Settings, value: boolean) {
+  async function toggleSetting(key: keyof Settings, value: boolean | string) {
     setSettings((s) => (s ? { ...s, [key]: value } : s));
     const res = await fetch("/api/whatsapp/settings", {
       method: "PATCH",
@@ -215,7 +219,28 @@ export function WhatsAppView() {
             <ToggleRow label="Daily business summary" checked={settings.dailySummaryEnabled} onChange={(v) => toggleSetting("dailySummaryEnabled", v)} />
             <ToggleRow label="Customer win-back" checked={settings.winBackEnabled} onChange={(v) => toggleSetting("winBackEnabled", v)} />
             <ToggleRow label="Delivery status updates" checked={settings.deliveryUpdatesEnabled} onChange={(v) => toggleSetting("deliveryUpdatesEnabled", v)} />
+            <ToggleRow label="Thank-you message" checked={settings.thankYouEnabled} onChange={(v) => toggleSetting("thankYouEnabled", v)} />
           </div>
+          {settings.thankYouEnabled && (
+            <div className="flex items-center justify-between border-t pt-4">
+              <div>
+                <Label>Send the thank-you message</Label>
+                <p className="text-xs text-muted-foreground">Never for delivery orders — those get their own pickup/delivered messages instead.</p>
+              </div>
+              <Select
+                value={settings.thankYouTrigger}
+                onValueChange={(v) => v && toggleSetting("thankYouTrigger", v)}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue>{(v: string) => (v === "ON_ORDER" ? "When order is placed" : "When order is paid")}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ON_ORDER">When order is placed</SelectItem>
+                  <SelectItem value="ON_PAYMENT">When order is paid</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </CardContent>
       </Card>
 

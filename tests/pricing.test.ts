@@ -7,6 +7,7 @@ import {
   finalizeOrder,
   priceLines,
   resolveTaxRate,
+  taxRulesOverlap,
   type PricingLineInput,
   type PricingSettings,
   type TaxRuleInput,
@@ -117,6 +118,26 @@ describe("resolveTaxRate", () => {
   it("ignores inactive rules", () => {
     const rules: TaxRuleInput[] = [{ paymentMethods: ["CASH"], rateBasisPoints: 1600, isActive: false }];
     expect(resolveTaxRate(rules, "CASH")).toBe(0);
+  });
+});
+
+// Reproduced live tonight: a branch with two ACTIVE rules both covering CARD picked whichever one
+// happened to come first out of resolveTaxRate's Array.find — a real card payment was taxed at the
+// wrong rate with no error or warning anywhere. taxRulesOverlap() is what the tax-rules API routes
+// now check before allowing a create/activate that would recreate this exact situation.
+describe("taxRulesOverlap", () => {
+  it("is true when two specific rule sets share a payment method", () => {
+    expect(taxRulesOverlap(["CARD"], ["CARD", "JAZZCASH"])).toBe(true);
+  });
+
+  it("is false when specific rule sets share no payment method", () => {
+    expect(taxRulesOverlap(["CASH"], ["CARD"])).toBe(false);
+  });
+
+  it("treats an empty (catch-all) array as overlapping everything, including another catch-all", () => {
+    expect(taxRulesOverlap([], ["CASH"])).toBe(true);
+    expect(taxRulesOverlap(["CASH"], [])).toBe(true);
+    expect(taxRulesOverlap([], [])).toBe(true);
   });
 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { Printer, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatPkr } from "@/lib/money";
@@ -19,12 +19,25 @@ export function OrderQueuePanel({
   onPay,
   onVoid,
   canVoid,
+  onCancel,
+  canCancel,
+  onReprintReceipt,
   onClose,
 }: {
   orders: OrderDto[];
   onPay: (order: OrderDto) => void;
   onVoid?: (order: OrderDto) => void;
   canVoid?: boolean;
+  /** Cancelling an order already sent to the kitchen — a separate action from Void (mandatory
+   * reason, creates a reviewable record a manager/owner sees) gated by orders.cancel, not
+   * pos.order.void. Shown instead of Void once the order has left OPEN, so there's only ever one
+   * "back out of this order" button per state. */
+  onCancel?: (order: OrderDto) => void;
+  canCancel?: boolean;
+  /** Omit to hide the action entirely — gated by pos.receipt.reprint, separate from the
+   * take-payment permission, since re-printing an already-paid order's receipt is its own
+   * auditable action, not just a side effect of paying. */
+  onReprintReceipt?: (order: OrderDto) => void;
   onClose: () => void;
 }) {
   return (
@@ -64,11 +77,29 @@ export function OrderQueuePanel({
                 <Button variant="success" className="flex-1" onClick={() => onPay(o)}>
                   Payment
                 </Button>
-                {canVoid && onVoid && (
-                  <Button variant="outline" className="text-destructive" onClick={() => onVoid(o)}>
-                    Void
-                  </Button>
+                {o.status === "SENT_TO_KITCHEN" || o.status === "READY" ? (
+                  canCancel &&
+                  onCancel && (
+                    <Button variant="outline" className="text-destructive" onClick={() => onCancel(o)}>
+                      Cancel
+                    </Button>
+                  )
+                ) : (
+                  canVoid &&
+                  onVoid && (
+                    <Button variant="outline" className="text-destructive" onClick={() => onVoid(o)}>
+                      Void
+                    </Button>
+                  )
                 )}
+              </div>
+            )}
+            {o.status === "PAID" && onReprintReceipt && (
+              <div className="mt-3">
+                <Button variant="outline" className="w-full" onClick={() => onReprintReceipt(o)}>
+                  <Printer className="size-4" />
+                  Reprint receipt
+                </Button>
               </div>
             )}
           </div>

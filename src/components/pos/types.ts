@@ -102,4 +102,17 @@ export interface OrderDto {
    * locally-queued-but-not-yet-synced orders defaults to "POS" in the UI. */
   source?: "POS" | "ONLINE" | "QR";
   lines: { id: string; nameSnapshot: string; quantity: number; lineTotalPaisa: number; kitchenReady: boolean }[];
+  /** The rest of these are already returned by GET /api/orders (no `select`, so every scalar
+   * column comes back) — just never modeled on the client before there was a reason to read them.
+   * Optional because the offline queue's buildLocalOrder (src/lib/offline/queue.ts) builds a
+   * minimal local order before any of this exists server-side yet. Needed for a real itemized
+   * receipt (see src/components/pos/receipt.tsx) — totalPaisa/paidPaisa alone aren't enough to
+   * show a subtotal/service-charge/tax breakdown or how it was actually paid. */
+  subtotalPaisa?: number;
+  discountedSubtotalPaisa?: number;
+  serviceChargePaisa?: number;
+  taxPaisa?: number;
+  roundingAdjustmentPaisa?: number;
+  table?: { label: string } | null;
+  payments?: { method: PaymentMethod; amountPaisa: number }[];
 }

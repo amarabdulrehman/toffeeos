@@ -8,6 +8,7 @@ export const TEMPLATE_KEYS = [
   "win_back_30d",
   "delivery_picked_up",
   "delivery_delivered",
+  "thank_you",
 ] as const;
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 

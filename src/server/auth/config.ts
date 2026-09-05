@@ -8,6 +8,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { edgeAuthConfig } from "./edge-config";
 import { buildTenantSessionUser, findTenantBySlug, tenantAcceptsLogin } from "./session-user";
 import { verifyOtp } from "./otp-store";
+import { verifyTotpOrBackupCode } from "@/server/platform-mfa";
 import { consumeImpersonationToken } from "./impersonation-store";
 import { clockIn } from "@/server/hr";
 import type { PlatformSessionUser, SessionUser } from "./types";
@@ -39,6 +40,12 @@ const otpSchema = z.object({
 const platformCredentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  // Only required when the account has 2FA enabled — see /api/platform/mfa/check, which the login
+  // page calls after password verification to decide whether to show this field at all. Always
+  // present in the actual signIn() payload (as "" when 2FA doesn't apply), so no .min(1) here —
+  // that would reject the whole parse on an empty string instead of just falling through to the
+  // falsy check below.
+  totpCode: z.string().optional(),
 });
 
 const impersonateSchema = z.object({ token: z.string().min(1) });
@@ -61,6 +68,12 @@ export const authConfig = {
 
         const tenant = await findTenantBySlug(tenantSlug);
         if (!tenant || !tenantAcceptsLogin(tenant.status)) return null;
+
+        // The primary login path for every tenant staff member — was the one credentials provider
+        // with no attempt limiting at all. Keyed per-account (tenant + email), same reasoning as
+        // staff-pin's per-branch key: the natural boundary a real user never exceeds, that a
+        // credential-stuffing attempt against one account would.
+        if (!(await checkRateLimit(`login:${tenant.id}:${email}`, 8, 15 * 60 * 1000))) return null;
 
         const user = await tenantDb(tenant.id).user.findFirst({ where: { email } });
         if (!user || !user.isActive || !user.passwordHash) return null;
@@ -150,11 +163,19 @@ export const authConfig = {
       async authorize(raw): Promise<LooseUser | null> {
         const parsed = platformCredentialsSchema.safeParse(raw);
         if (!parsed.success) return null;
-        const { email, password } = parsed.data;
+        const { email, password, totpCode } = parsed.data;
+
+        // The single most sensitive account in the system (BYPASSRLS, every tenant) had zero
+        // attempt limiting — fixed the same way as the tenant login above.
+        if (!(await checkRateLimit(`platform-login:${email}`, 8, 15 * 60 * 1000))) return null;
 
         const platformUser = await platformDb.platformUser.findUnique({ where: { email } });
         if (!platformUser) return null;
         if (!(await verifyPassword(password, platformUser.passwordHash))) return null;
+
+        if (platformUser.totpEnabled) {
+          if (!totpCode || !(await verifyTotpOrBackupCode(platformUser, totpCode))) return null;
+        }
 
         const sessionUser: PlatformSessionUser = {
           kind: "platform",

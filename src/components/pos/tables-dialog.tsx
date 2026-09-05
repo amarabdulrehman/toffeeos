@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { formatPkr } from "@/lib/money";
 import { useChannel } from "@/lib/realtime-client";
 import { topic } from "@/lib/realtime-topics";
+import { cacheTables, getCachedTables } from "@/lib/offline/db";
 import type { CartLine, FloorDto, OrderDto, RestaurantTableDto } from "./types";
 
 type StatusFilter = "ALL" | "AVAILABLE" | "RESERVED" | "BOOKED";
@@ -46,16 +47,44 @@ export function TablesDialog({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [search, setSearch] = useState("");
   const [loadingTableId, setLoadingTableId] = useState<string | null>(null);
+  // `floors` deliberately isn't reset on close/reopen (avoids a flash of "no tables" while the
+  // next fetch is in flight) — but that means a table button from the *previous* open can already
+  // be rendered, visible, and tappable before this reopen's own fetch has actually resolved. A tap
+  // in that window acts on stale status (e.g. "AVAILABLE" from before an order existed for it),
+  // taking the wrong branch in handleTap below and silently starting a new order instead of
+  // resuming one. `refreshing` disables every table button for exactly that window.
+  const [refreshing, setRefreshing] = useState(false);
 
+  // getCachedTables/cacheTables already existed in src/lib/offline/db.ts (mirroring the menu and
+  // open-orders caches) but were never actually wired up here — this dialog's own live fetch had
+  // no fallback at all, so a cashier who genuinely lost connectivity (not just the app's own
+  // "you're offline" detection, but an actual dropped fetch) couldn't open this dialog for a new
+  // table: `.catch(() => {})` swallowed the error and left `floors` at its initial `[]`, same
+  // result as "there are no tables." Found by an E2E test using real network emulation instead of
+  // faking navigator.onLine — the fake never actually blocked the fetch, so this gap never showed.
   const load = () => {
+    setRefreshing(true);
     fetch("/api/tables")
       .then((r) => r.json())
-      .then((d) => setFloors(d.floors ?? []))
-      .catch(() => {});
+      .then((d) => {
+        const loaded = d.floors ?? [];
+        setFloors(loaded);
+        cacheTables(loaded);
+      })
+      .catch(async () => {
+        const cached = await getCachedTables();
+        if (cached) setFloors(cached);
+      })
+      .finally(() => setRefreshing(false));
   };
 
   useEffect(() => {
-    if (open) load();
+    // The IIFE indirection isn't decorative — `load` calls setRefreshing synchronously as its
+    // first statement, and react-hooks/set-state-in-effect flags that when it's a direct call in
+    // the effect body. Same escape hatch src/lib/offline/use-sync.ts's own effect already uses.
+    if (open) {
+      (() => load())();
+    }
   }, [open]);
 
   useChannel(topic(tenantId, branchId, "tables"), () => {
@@ -135,7 +164,7 @@ export function TablesDialog({
                 {floor.tables.map((table) => (
                   <button
                     key={table.id}
-                    disabled={loadingTableId === table.id}
+                    disabled={refreshing || loadingTableId === table.id}
                     onClick={() => handleTap(table)}
                     className={`flex size-20 flex-col items-center justify-center rounded-full border-2 bg-card text-center shadow-xs transition-all hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 ${STATUS_RING[table.status]}`}
                   >

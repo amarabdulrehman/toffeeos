@@ -65,8 +65,12 @@ const TIER_VARIANT: Record<TierKey, "secondary" | "info" | "default"> = {
   complete: "default",
 };
 
+const PAGE_SIZE = 20;
+
 export default function PlatformTenantsPage() {
   const [tenants, setTenants] = useState<TenantRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -76,7 +80,7 @@ export default function PlatformTenantsPage() {
 
   const load = useCallback(async () => {
     const [tenantsRes, metricsRes] = await Promise.all([
-      fetch("/api/platform/tenants"),
+      fetch(`/api/platform/tenants?page=${page}&pageSize=${PAGE_SIZE}`),
       fetch("/api/platform/metrics"),
     ]);
     if (!tenantsRes.ok) {
@@ -86,9 +90,10 @@ export default function PlatformTenantsPage() {
     }
     const data = await tenantsRes.json();
     setTenants(data.tenants);
+    setTotal(data.total);
     if (metricsRes.ok) setMetrics(await metricsRes.json());
     setLoading(false);
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     // Wrapped in an inline async IIFE (rather than calling load() directly) so the effect body
@@ -98,6 +103,8 @@ export default function PlatformTenantsPage() {
       await load();
     })();
   }, [load]);
+
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   async function toggleSuspend(tenant: TenantRow) {
     const nextStatus = tenant.status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED";
@@ -123,7 +130,7 @@ export default function PlatformTenantsPage() {
           </span>
           <div>
             <h1 className="font-heading text-2xl font-bold tracking-tight">Tenants</h1>
-            <p className="text-sm text-muted-foreground">{tenants.length} restaurants, platform-wide</p>
+            <p className="text-sm text-muted-foreground">{total} restaurants, platform-wide</p>
           </div>
         </div>
         <Button onClick={() => setCreateOpen(true)}>+ Create tenant</Button>
@@ -226,12 +233,29 @@ export default function PlatformTenantsPage() {
         </CardContent>
       </Card>
 
+      {total > PAGE_SIZE && (
+        <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            Page {page} of {pageCount} · {total} total
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+              Previous
+            </Button>
+            <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
+
       <CreateTenantDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={(result) => {
           setCreateOpen(false);
           setProvisioned(result);
+          setPage(1); // newest tenant sorts first — jump back to page 1 so it's visible
           load();
         }}
       />

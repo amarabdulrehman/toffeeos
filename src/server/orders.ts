@@ -6,7 +6,7 @@ import { publish } from "@/server/realtime";
 import { HttpError } from "@/server/handler";
 import { deductForOrder } from "@/server/recipes";
 import { recordConflict } from "@/server/sync-conflicts";
-import { notifyLowStock } from "@/server/whatsapp/triggers";
+import { notifyLowStock, notifyOrderThankYou } from "@/server/whatsapp/triggers";
 import {
   computeProvisionalTotal,
   finalizeOrder,
@@ -352,6 +352,7 @@ export async function createOrder(
           status: "OCCUPIED",
         });
       }
+      await notifyOrderThankYou(tenantId, branchId, result.order.id, "ON_ORDER");
       return result.order;
     } catch (err) {
       const isOrderNumberClash = err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
@@ -505,7 +506,17 @@ export async function markLineReady(tenantId: string, branchId: string, orderLin
 
 export async function markOrderReady(tenantId: string, branchId: string, orderId: string, actorId: string) {
   const db = tenantDb(tenantId);
-  const order = await db.order.update({ where: { id: orderId }, data: { status: "READY", readyAt: new Date() } });
+  // Payment can land before the kitchen finishes (counter-service orders paid upfront), which
+  // parks `status` at the terminal PAID value — see the KDS route's doc comment. Overwriting it
+  // back to READY here would un-terminal an already-paid order (dropping it out of PAID-status
+  // reporting/reconciliation), so a terminal order only gets its readyAt timestamp recorded, not
+  // a status change; readyAt alone is enough for the KDS board's own "is this ready" checks.
+  const current = await db.order.findUniqueOrThrow({ where: { id: orderId }, select: { status: true } });
+  const alreadyTerminal = (TERMINAL_ORDER_STATUSES as readonly string[]).includes(current.status);
+  const order = await db.order.update({
+    where: { id: orderId },
+    data: alreadyTerminal ? { readyAt: new Date() } : { status: "READY", readyAt: new Date() },
+  });
   await db.orderEvent.create({ data: { tenantId, orderId, type: "READY", actorId } });
   await publish(tenantId, branchId, "kds", "order_ready", { orderId });
   await publish(tenantId, branchId, "orders", "order_ready", { orderId });
@@ -514,7 +525,14 @@ export async function markOrderReady(tenantId: string, branchId: string, orderId
 
 export async function markOrderServed(tenantId: string, branchId: string, orderId: string, actorId: string) {
   const db = tenantDb(tenantId);
-  const order = await db.order.update({ where: { id: orderId }, data: { status: "SERVED", servedAt: new Date() } });
+  // Same reasoning as markOrderReady above — don't regress an already-paid (or otherwise
+  // terminal) order's status back to SERVED, just record that it left the kitchen.
+  const current = await db.order.findUniqueOrThrow({ where: { id: orderId }, select: { status: true } });
+  const alreadyTerminal = (TERMINAL_ORDER_STATUSES as readonly string[]).includes(current.status);
+  const order = await db.order.update({
+    where: { id: orderId },
+    data: alreadyTerminal ? { servedAt: new Date() } : { status: "SERVED", servedAt: new Date() },
+  });
   await db.orderEvent.create({ data: { tenantId, orderId, type: "SERVED", actorId } });
   await publish(tenantId, branchId, "orders", "order_served", { orderId });
   return order;
@@ -664,6 +682,7 @@ export async function takePayment(
     await publish(tenantId, branchId, "tables", "table_status_changed", { tableId: order.tableId, status: "AVAILABLE" });
   }
   await Promise.all(result.newAlerts.map((alert) => notifyLowStock(tenantId, alert)));
+  await notifyOrderThankYou(tenantId, branchId, orderId, "ON_PAYMENT");
   return result.order;
 }
 
@@ -735,4 +754,97 @@ export async function voidOrder(
   }
   await publish(tenantId, branchId, "orders", "order_voided", { orderId });
   return result.order;
+}
+
+/**
+ * Cancelling an order that's *already been sent to the kitchen* — a cashier's call, but a bigger
+ * deal than a plain pre-kitchen void (food/labor may already be underway), so this is
+ * deliberately kept separate from voidOrder: its own status (CANCELLED, not VOIDED — both are
+ * already treated as terminal everywhere `TERMINAL_ORDER_STATUSES` is checked), a mandatory
+ * (never optional) reason, and — the actual point of it — an OrderCancellation row a manager/owner
+ * has to see and acknowledge (Reports > Cancellations, plus the dashboard banner). Deliberately
+ * online-only for now, same call as addLinesToOrder earlier — no offline-queue replay path exists
+ * for this action type.
+ */
+export async function cancelSentOrder(
+  tenantId: string,
+  branchId: string,
+  orderId: string,
+  actorId: string,
+  reason: string
+) {
+  const result = await runInTenantTransaction(tenantId, async (tx) => {
+    const fresh = await tx.order.findUniqueOrThrow({ where: { id: orderId, tenantId } });
+    if (fresh.status !== "SENT_TO_KITCHEN" && fresh.status !== "READY") {
+      throw new HttpError(
+        409,
+        fresh.status === "OPEN"
+          ? "This order hasn't been sent to the kitchen yet — use Void instead."
+          : `This order is already ${fresh.status.toLowerCase()} and can't be cancelled.`
+      );
+    }
+    const updated = await tx.order.update({
+      where: { id: orderId, tenantId },
+      data: { status: "CANCELLED", cancelledAt: new Date(), version: { increment: 1 } },
+    });
+    await tx.orderEvent.create({ data: { tenantId, orderId, type: "CANCELLED", actorId, payload: { reason } } });
+    await tx.orderCancellation.create({ data: { tenantId, branchId, orderId, reason, cancelledById: actorId } });
+    if (updated.tableId) {
+      await tx.restaurantTable.update({ where: { id: updated.tableId, tenantId }, data: { status: "AVAILABLE" } });
+    }
+    return updated;
+  });
+
+  if (result.tableId) {
+    await publish(tenantId, branchId, "tables", "table_status_changed", { tableId: result.tableId, status: "AVAILABLE" });
+  }
+  await publish(tenantId, branchId, "orders", "order_cancelled", { orderId });
+  await publish(tenantId, branchId, "kds", "order_cancelled", { orderId });
+  return result;
+}
+
+/** Reports > Cancellations tab + the dashboard banner's data source — every kitchen-stage
+ * cancellation, newest first, with enough about the order and who cancelled/reviewed it to act on
+ * without a second screen. `unreviewedOnly` is what the dashboard banner uses; the report tab
+ * itself shows everything so a manager can see the full history, not just the backlog. */
+export async function listOrderCancellations(tenantId: string, branchIds: string[], unreviewedOnly = false) {
+  const db = tenantDb(tenantId);
+  const cancellations = await db.orderCancellation.findMany({
+    where: { branchId: { in: branchIds }, ...(unreviewedOnly ? { reviewedAt: null } : {}) },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+  if (cancellations.length === 0) return [];
+
+  const orderIds = [...new Set(cancellations.map((c) => c.orderId))];
+  const userIds = [...new Set(cancellations.flatMap((c) => [c.cancelledById, c.reviewedById].filter((id): id is string => !!id)))];
+  const [orders, users] = await Promise.all([
+    db.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, orderNumber: true, type: true, totalPaisa: true } }),
+    db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } }),
+  ]);
+  const orderById = new Map(orders.map((o) => [o.id, o]));
+  const userNameById = new Map(users.map((u) => [u.id, u.name]));
+
+  return cancellations.map((c) => ({
+    id: c.id,
+    orderId: c.orderId,
+    orderNumber: orderById.get(c.orderId)?.orderNumber ?? null,
+    orderType: orderById.get(c.orderId)?.type ?? null,
+    totalPaisa: orderById.get(c.orderId)?.totalPaisa ?? null,
+    reason: c.reason,
+    cancelledByName: userNameById.get(c.cancelledById) ?? "Unknown",
+    createdAt: c.createdAt,
+    reviewedByName: c.reviewedById ? (userNameById.get(c.reviewedById) ?? "Unknown") : null,
+    reviewedAt: c.reviewedAt,
+  }));
+}
+
+export async function reviewOrderCancellation(tenantId: string, branchIds: string[], cancellationId: string, reviewerId: string) {
+  const db = tenantDb(tenantId);
+  const existing = await db.orderCancellation.findFirst({ where: { id: cancellationId, branchId: { in: branchIds } } });
+  if (!existing) throw new HttpError(404, "Cancellation not found.");
+  return db.orderCancellation.update({
+    where: { id: cancellationId },
+    data: { reviewedById: reviewerId, reviewedAt: new Date() },
+  });
 }

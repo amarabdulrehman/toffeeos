@@ -1,0 +1,66 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Typecheck, lint, and the pure-function unit test suite (tests/*.test.ts) — no database, no
+  # secrets, no external services. This job should always be green with zero setup.
+  static-and-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx eslint src prisma tests
+      - run: npx vitest run
+
+  # Full browser E2E suite (e2e/*.spec.ts) against the real demo tenant in the shared Supabase
+  # database — the same one the seed script and every manual test session tonight used. This is
+  # deliberately a SEPARATE job from the one above: it needs repository secrets configured before
+  # it can run at all (see below), so it's expected to fail/be skipped until that's done, and that
+  # must never block the fast, zero-setup job above from reporting.
+  #
+  # Required repo secrets (Settings > Secrets and variables > Actions), matching your local .env:
+  #   DATABASE_URL, DIRECT_URL, PLATFORM_DATABASE_URL, AUTH_SECRET,
+  #   NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+  #
+  # Worth knowing: this runs against your real Supabase instance, not a disposable/ephemeral one —
+  # every push creates and voids real rows in the demo tenant (the suite cleans up after itself via
+  # e2e/global-teardown.ts, verified to leave every table back at AVAILABLE, but it is still live
+  # traffic against the same database your own manual testing and demo data live in). If that's not
+  # what you want on every single push, restrict the `on:` triggers above, or move this job to a
+  # scheduled/nightly workflow instead.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: static-and-unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+        env:
+          CI: true
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          PLATFORM_DATABASE_URL: ${{ secrets.PLATFORM_DATABASE_URL }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

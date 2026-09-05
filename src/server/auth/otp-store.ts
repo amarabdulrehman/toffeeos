@@ -1,5 +1,6 @@
 import "server-only";
 import { platformDb } from "@/server/db";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 /**
  * Persistent (Postgres-backed) OTP store — was an in-memory Map, which is exactly wrong for a
@@ -21,6 +22,11 @@ export async function issueOtp(key: string): Promise<string> {
 }
 
 export async function verifyOtp(key: string, code: string): Promise<boolean> {
+  // A 6-digit code (1M combinations) had no attempt limit at all — guessable within the 5-minute
+  // TTL by a high-volume attacker. Keyed by the same key issueOtp used, so it's a per-phone-number
+  // boundary, not global.
+  if (!(await checkRateLimit(`otp-verify:${key}`, 8, OTP_TTL_MS))) return false;
+
   const entry = await platformDb.otpCode.findFirst({ where: { key, code }, orderBy: { createdAt: "desc" } });
   if (!entry) return false;
   if (Date.now() > entry.expiresAt.getTime()) {
