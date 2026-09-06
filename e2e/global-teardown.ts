@@ -38,7 +38,8 @@ async function purgeTestStaff() {
  * production database is a far worse outcome than leaving inert rows behind. CANCELLED drops them
  * out of every active count and blocks login, which is the whole practical problem.
  *
- * Matched on the machine-generated slug prefix the spec itself uses, so a real tenant cannot be hit.
+ * Matched on the machine-generated slug prefixes the specs themselves use, so a real tenant cannot be
+ * hit. enumeration.spec.ts provisions one too — its free-email probe is a genuine signup by design.
  */
 async function retireTestTenants() {
   if (!process.env.DIRECT_URL) return;
@@ -47,7 +48,8 @@ async function retireTestTenants() {
     await c.connect();
     await c.query(
       `UPDATE "Tenant" SET status = 'CANCELLED'
-        WHERE slug LIKE 'isolation-test-%' AND status <> 'CANCELLED'`
+        WHERE (slug LIKE 'isolation-test-%' OR slug LIKE 'enum-probe-%' OR slug LIKE 'enum-notcreated-%')
+          AND status <> 'CANCELLED'`
     );
   } catch {
     // Best-effort, like the other purges here.
