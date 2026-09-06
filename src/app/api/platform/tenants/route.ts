@@ -20,7 +20,7 @@ export const GET = definePlatformHandler({ input: listSchema }, async ({ input }
       take: input.pageSize,
       include: {
         subscription: { include: { plan: true } },
-        branches: { select: { id: true } },
+        branches: { select: { id: true, isActive: true } },
         _count: { select: { users: true } },
       },
     }),
@@ -42,6 +42,12 @@ export const GET = definePlatformHandler({ input: listSchema }, async ({ input }
       trialEndsAt: t.subscription?.trialEndsAt ?? null,
       currentPeriodEnd: t.subscription?.currentPeriodEnd ?? null,
       customMonthlyPricePaisa: t.subscription?.customMonthlyPricePaisa ?? null,
+      // Both halves of the monthly-fee sum, so the list can show each tenant's actual rate without
+      // a second request. Active branches only, matching how platformMetrics computes MRR — an
+      // inactive branch is not billed, so counting it here would disagree with the MRR headline
+      // sitting directly above the table.
+      activeBranchCount: t.branches.filter((b) => b.isActive).length,
+      pricePaisaPerBranchMonth: t.subscription?.plan.pricePaisaPerBranchMonth ?? null,
     })),
     total,
     page: input.page,

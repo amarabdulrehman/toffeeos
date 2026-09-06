@@ -1,7 +1,7 @@
 import "dotenv/config";
-import { test, expect, request as playwrightRequest, type APIRequestContext } from "@playwright/test";
-import { Client } from "pg";
+import { test, expect, type APIRequestContext } from "@playwright/test";
 import { TENANT_SLUG, uniqueSuffix } from "./fixtures/test-data";
+import { platformAdmin, withDb } from "./fixtures/platform-admin";
 import { TENANT_OWNED_TABLES } from "../src/lib/tenant-tables";
 
 /**
@@ -12,54 +12,6 @@ import { TENANT_OWNED_TABLES } from "../src/lib/tenant-tables";
  * sweep actually empties all of them, and that the hand-maintained table list has not drifted from
  * the database.
  */
-
-async function withDb<T>(fn: (c: Client) => Promise<T>): Promise<T> {
-  const c = new Client({ connectionString: process.env.DIRECT_URL });
-  await c.connect();
-  try {
-    return await fn(c);
-  } finally {
-    await c.end();
-  }
-}
-
-/**
- * Signs in as a throwaway platform admin created for this run.
- *
- * Deliberately not the real super-admin: proving deletion requires a working platform session, and
- * borrowing that account would mean rewriting the password hash of the single most powerful
- * credential in the system — which a crash mid-test would leave rewritten. A disposable account
- * with no 2FA costs one row and leaves the real one untouched.
- */
-async function platformAdmin(baseURL: string) {
-  const bcrypt = await import("bcryptjs");
-  const email = `deladmin-${uniqueSuffix()}@example.com`;
-  const password = `Test!${uniqueSuffix()}`;
-  const passwordHash = await bcrypt.hash(password, 10);
-
-  await withDb((c) =>
-    c.query('INSERT INTO "PlatformUser" (id, email, "passwordHash", name) VALUES (gen_random_uuid(), $1, $2, $3)', [
-      email,
-      passwordHash,
-      "Delete Test Admin",
-    ])
-  );
-
-  const ctx = await playwrightRequest.newContext({ baseURL, storageState: undefined });
-  const { csrfToken } = await (await ctx.get("/api/auth/csrf")).json();
-  const login = await ctx.post("/api/auth/callback/platform-credentials", {
-    form: { email, password, csrfToken, json: "true" },
-  });
-  if (!login.ok() && login.status() !== 302) {
-    throw new Error(`Platform login failed: ${login.status()} ${await login.text()}`);
-  }
-
-  const restore = async () => {
-    await ctx.dispose();
-    await withDb((c) => c.query('DELETE FROM "PlatformUser" WHERE email = $1', [email]));
-  };
-  return { ctx, restore };
-}
 
 /**
  * Creates a throwaway tenant to erase, through the platform admin's own create route.

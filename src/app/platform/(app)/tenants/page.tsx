@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatPkr } from "@/lib/money";
 import { TIER_ORDER, TIER_LABEL, type TierKey } from "@/lib/tiers";
-import { getBillingStatus } from "@/lib/billing";
+import { getBillingStatus, effectiveMonthlyRatePaisa } from "@/lib/billing";
 
 function slugify(value: string): string {
   return value
@@ -50,6 +50,8 @@ interface TenantRow {
   trialEndsAt: string | null;
   currentPeriodEnd: string | null;
   customMonthlyPricePaisa: number | null;
+  activeBranchCount: number;
+  pricePaisaPerBranchMonth: number | null;
 }
 
 const STATUS_VARIANT: Record<TenantRow["status"], "success" | "info" | "destructive" | "outline"> = {
@@ -166,6 +168,7 @@ export default function PlatformTenantsPage() {
                 <TableHead>Plan</TableHead>
                 <TableHead>Branches</TableHead>
                 <TableHead>Staff</TableHead>
+                <TableHead>Monthly fee</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Paid through</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -174,7 +177,7 @@ export default function PlatformTenantsPage() {
             <TableBody>
               {!loading && tenants.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                     No tenants yet.
                   </TableCell>
                 </TableRow>
@@ -197,6 +200,26 @@ export default function PlatformTenantsPage() {
                   </TableCell>
                   <TableCell className="tabular-nums">{t.branchCount}</TableCell>
                   <TableCell className="tabular-nums">{t.userCount}</TableCell>
+                  <TableCell className="tabular-nums">
+                    {t.pricePaisaPerBranchMonth == null ? (
+                      "—"
+                    ) : (
+                      <span className="flex items-center gap-1.5">
+                        {formatPkr(
+                          effectiveMonthlyRatePaisa({
+                            customMonthlyPricePaisa: t.customMonthlyPricePaisa,
+                            activeBranchCount: t.activeBranchCount,
+                            pricePaisaPerBranchMonth: t.pricePaisaPerBranchMonth,
+                          })
+                        )}
+                        {t.customMonthlyPricePaisa != null && (
+                          <Badge variant="secondary" className="font-normal">
+                            Custom
+                          </Badge>
+                        )}
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Badge variant={STATUS_VARIANT[t.status]}>{t.status}</Badge>
                   </TableCell>

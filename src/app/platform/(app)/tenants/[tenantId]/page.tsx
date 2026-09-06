@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowLeft, ClipboardList, CreditCard, Lock, ShieldCheck, UserRound, UsersRound } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ClipboardList, CreditCard, Lock, Pencil, ShieldCheck, UserRound, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { formatPkr } from "@/lib/money";
+import { formatPkr, paisaToRupees, rupeesToPaisa } from "@/lib/money";
 import { TIER_ORDER, TIER_LABEL, GATEABLE_MODULES, defaultModulesForTier, type TierKey } from "@/lib/tiers";
 import { getBillingStatus, effectiveMonthlyRatePaisa, PAYMENT_METHODS } from "@/lib/billing";
 import { RecordPaymentDialog } from "@/components/platform/record-payment-dialog";
@@ -138,6 +138,40 @@ export default function TenantDetailPage() {
     }
   }
 
+  const [rateOpen, setRateOpen] = useState(false);
+  const [rateRupees, setRateRupees] = useState("");
+  const [savingRate, setSavingRate] = useState(false);
+
+  /**
+   * Sets or clears this tenant's contracted monthly fee. Passing null clears the override, which
+   * hands the tenant back to their plan's per-branch formula — that is the only way back, so it
+   * gets its own button rather than being expressed as an empty field.
+   */
+  async function saveRate(customMonthlyPricePaisa: number | null) {
+    setSavingRate(true);
+    try {
+      const res = await fetch(`/api/platform/tenants/${params.tenantId}/rate`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customMonthlyPricePaisa }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not update the monthly fee.");
+        return;
+      }
+      toast.success(
+        customMonthlyPricePaisa == null
+          ? "Now billed at their plan's standard rate."
+          : `Monthly fee set to ${formatPkr(customMonthlyPricePaisa, { showPaisa: true })}.`
+      );
+      setRateOpen(false);
+      await load();
+    } finally {
+      setSavingRate(false);
+    }
+  }
+
   async function impersonate() {
     setImpersonating(true);
     try {
@@ -222,6 +256,9 @@ export default function TenantDetailPage() {
         pricePaisaPerBranchMonth: sub.plan.pricePaisaPerBranchMonth,
       })
     : 0;
+  // What the plan alone would charge, shown beside the override so it's clear what is being
+  // replaced — and so clearing the override is a known number, not a guess.
+  const planRatePaisa = sub ? activeBranchCount * sub.plan.pricePaisaPerBranchMonth : 0;
   const lifetimeCollectedPaisa = payments.filter((p) => !p.voidedAt).reduce((a, p) => a + p.amountPaisa, 0);
 
   return (
@@ -425,6 +462,23 @@ export default function TenantDetailPage() {
                   <div className="mt-1 flex items-center gap-1.5">
                     <span className="font-medium tabular-nums">{formatPkr(monthlyRatePaisa, { showPaisa: true })}</span>
                     {sub.customMonthlyPricePaisa != null && <Badge variant="secondary">Custom</Badge>}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="size-7 p-0 text-muted-foreground hover:text-foreground"
+                      aria-label="Edit monthly fee"
+                      onClick={() => {
+                        setRateRupees(String(paisaToRupees(monthlyRatePaisa)));
+                        setRateOpen(true);
+                      }}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {sub.customMonthlyPricePaisa != null
+                      ? `Plan rate: ${formatPkr(planRatePaisa, { showPaisa: true })}`
+                      : `${TIER_LABEL[sub.plan.key]} rate × ${activeBranchCount} branch${activeBranchCount === 1 ? "" : "es"}`}
                   </div>
                 </div>
                 <div>
@@ -584,6 +638,64 @@ export default function TenantDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={rateOpen} onOpenChange={(o) => !o && setRateOpen(false)}>
+        <DialogContent className="dark sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Monthly fee for {tenant.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              What this restaurant is billed every month, whatever their plan says. Used for MRR and
+              to prefill their next payment — it does not charge anything on its own.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="monthly-fee">Monthly fee (Rs)</Label>
+              <Input
+                id="monthly-fee"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.01"
+                value={rateRupees}
+                onChange={(e) => setRateRupees(e.target.value)}
+              />
+            </div>
+            {sub && (
+              <div className="rounded-xl border bg-muted/20 px-3.5 py-3 text-xs text-muted-foreground">
+                Their {TIER_LABEL[sub.plan.key]} plan alone would be{" "}
+                <span className="font-medium text-foreground">{formatPkr(planRatePaisa, { showPaisa: true })}</span> —{" "}
+                {formatPkr(sub.plan.pricePaisaPerBranchMonth, { showPaisa: true })} × {activeBranchCount} active branch
+                {activeBranchCount === 1 ? "" : "es"}.
+                {sub.customMonthlyPricePaisa != null && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      className="font-medium text-foreground underline underline-offset-2 disabled:opacity-50"
+                      disabled={savingRate}
+                      onClick={() => saveRate(null)}
+                    >
+                      Go back to the plan rate
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRateOpen(false)} disabled={savingRate}>
+              Cancel
+            </Button>
+            <Button
+              disabled={savingRate || !(parseFloat(rateRupees) >= 0)}
+              onClick={() => saveRate(Math.max(0, rupeesToPaisa(parseFloat(rateRupees) || 0)))}
+            >
+              {savingRate ? "Saving…" : "Save fee"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteOpen} onOpenChange={(o) => !o && setDeleteOpen(false)}>
         <DialogContent className="dark sm:max-w-md">
