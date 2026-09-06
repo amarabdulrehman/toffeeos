@@ -3,8 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 import { env } from "@/lib/env";
 import { topic } from "@/lib/realtime-topics";
 
-export { topic };
-
 /**
  * Thin wrapper around Supabase Realtime so KDS/order-status/table-status updates feel instant.
  * Kept behind this one function so swapping to Pusher/Ably or a self-hosted socket.io later (see

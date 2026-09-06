@@ -48,18 +48,6 @@ const GROWTH_REPORT_KEYS = new Set<string>([
 ]);
 const COMPLETE_REPORT_KEYS = new Set<string>(["reports.riderPerformance.view"]);
 
-/** Given a permission key (e.g. "inventory.item.manage"), returns the minimum tier that grants it
- * — used only to compute a tier's *default* feature toggles now (defaultModulesForTier below) and
- * for the "available on the X plan and above" hint on the UpgradeRequired screen. `costing.viewMargins`
- * is the "recipe margin" report named in the brief. Actual enforcement no longer calls this
- * directly — see moduleForPermission. */
-export function minTierForPermission(permissionKey: string): TierKey {
-  if (GROWTH_REPORT_KEYS.has(permissionKey)) return "growth";
-  if (COMPLETE_REPORT_KEYS.has(permissionKey)) return "complete";
-  const moduleKey = permissionKey.split(".")[0];
-  return MODULE_MIN_TIER[moduleKey] ?? "starter";
-}
-
 export function tierMeets(have: TierKey, need: TierKey): boolean {
   return TIER_ORDER.indexOf(have) >= TIER_ORDER.indexOf(need);
 }
@@ -111,11 +99,11 @@ export function defaultModulesForTier(tier: TierKey): string[] {
 }
 
 /** Given a permission key, returns the raw storage module key that gates it (matching an entry in
- * some GateableModule.storageKeys), or null if this permission isn't gateable at all — the
- * counterpart to minTierForPermission, but returning what enforcement actually checks
- * (Subscription.enabledModules) instead of a tier. `reports.riderPerformance.view` is tied to the
- * Delivery module rather than a "reports" toggle, same inference as the Phase D grid: it's
- * meaningless without rider data, which only exists once Delivery is on. */
+ * some GateableModule.storageKeys), or null if this permission isn't gateable at all — what
+ * enforcement actually checks (Subscription.enabledModules), rather than a tier.
+ * `reports.riderPerformance.view` is tied to the Delivery module rather than a "reports" toggle,
+ * same inference as the Phase D grid: it's meaningless without rider data, which only exists once
+ * Delivery is on. */
 export function moduleForPermission(permissionKey: string): string | null {
   if (GROWTH_REPORT_KEYS.has(permissionKey)) return "reports";
   if (COMPLETE_REPORT_KEYS.has(permissionKey)) return "delivery";

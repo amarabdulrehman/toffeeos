@@ -85,7 +85,6 @@ async function fetchTenantRow(
 export {
   TIER_ORDER,
   TIER_LABEL,
-  minTierForPermission,
   moduleForPermission,
   tierMeets,
   nextTierUp,
@@ -97,17 +96,6 @@ export {
 
 function isTierKey(value: string | undefined): value is TierKey {
   return !!value && (TIER_ORDER as readonly string[]).includes(value);
-}
-
-/**
- * The tier is never cached on the session/JWT — a platform admin's tier change must take effect on
- * the tenant's very next request, not require a re-login, so every gated request re-reads it live.
- * `db` must already be tenant-scoped (defineHandler's `db`, or `tenantDb(tenantId)` from a Server
- * Component) — Subscription is RLS-protected like any other tenant table.
- */
-export async function getTenantTier(db: PrismaClient): Promise<TierKey> {
-  const subscription = await db.subscription.findFirst({ include: { plan: true } });
-  return isTierKey(subscription?.plan.key) ? subscription!.plan.key : "starter";
 }
 
 /** Full detail alongside the tier, for callers that also need the plan's branch limit (e.g. branch
@@ -160,9 +148,9 @@ export async function getTenantGate(
   };
 }
 
-/** Server Component counterpart to getTenantTier, for the feature-page gates
- * (app/app/{inventory,customers,delivery,whatsapp,online-ordering,hr,menu,tables}/page.tsx) — reads
- * the tenant's actual per-feature toggle set instead of deriving availability from tier alone. */
+/** Server Component counterpart to getTenantGate's tier/module resolution, for the feature-page
+ * gates (app/app/{inventory,customers,delivery,whatsapp,online-ordering,hr,menu,tables}/page.tsx) —
+ * reads the tenant's actual per-feature toggle set instead of deriving availability from tier alone. */
 export async function getTenantModules(db: PrismaClient): Promise<string[]> {
   const subscription = await db.subscription.findFirst({ include: { plan: true } });
   const tier = isTierKey(subscription?.plan.key) ? subscription!.plan.key : "starter";

@@ -25,17 +25,6 @@ export async function findOrCreateCustomer(tenantId: string, phone: string, name
   return db.customer.create({ data: { tenantId, phone: normalized, name: name?.trim() || null } });
 }
 
-export async function searchCustomers(tenantId: string, query: string) {
-  const db = tenantDb(tenantId);
-  const q = query.trim();
-  if (!q) return [];
-  return db.customer.findMany({
-    where: { OR: [{ phone: { contains: q } }, { name: { contains: q, mode: "insensitive" } }] },
-    take: 20,
-    orderBy: { createdAt: "desc" },
-  });
-}
-
 interface CustomerAggregate {
   totalOrders: number;
   totalSpendPaisa: number;

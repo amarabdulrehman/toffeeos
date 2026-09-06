@@ -5,7 +5,7 @@
  *
  * Adding a permission is one line here. The staff/roles admin UI (src/app/(app)/staff/*) renders
  * itself from PERMISSIONS_BY_MODULE, so it never needs a matching UI change. Server-side checks go
- * through requirePermission()/hasPermission() in ./check.ts; client-side through <Can perm="...">
+ * through defineHandler's `permission` option (src/server/handler.ts); client-side through <Can perm="...">
  * in src/components/can.tsx.
  */
 

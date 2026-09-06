@@ -256,5 +256,4 @@ async function replayVoid(action: VoidOrderAction) {
   }
 }
 
-export { listQueue } from "./db";
 export type { QueuedAction } from "./db";

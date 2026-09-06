@@ -10,25 +10,9 @@ export interface PermissionContext {
   denies: readonly string[];
 }
 
-export function hasPermission(ctx: PermissionContext, key: string): boolean {
-  if (ctx.denies.includes(key)) return false;
-  return ctx.rolePermissions.includes(key) || ctx.grants.includes(key);
-}
-
 export function resolveEffectivePermissions(ctx: PermissionContext): Set<string> {
   const effective = new Set(ctx.rolePermissions);
   for (const g of ctx.grants) effective.add(g);
   for (const d of ctx.denies) effective.delete(d);
   return effective;
-}
-
-export class ForbiddenError extends Error {
-  constructor(public readonly permission: string) {
-    super(`Missing permission: ${permission}`);
-    this.name = "ForbiddenError";
-  }
-}
-
-export function assertPermission(ctx: PermissionContext, key: string): void {
-  if (!hasPermission(ctx, key)) throw new ForbiddenError(key);
 }
