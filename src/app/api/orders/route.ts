@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineHandler } from "@/server/handler";
-import { createOrder } from "@/server/orders";
+import { assertDiscountPermission, createOrder } from "@/server/orders";
 
 const discountSchema = z.object({ type: z.enum(["PERCENT", "FIXED"]), value: z.number().int().nonnegative() });
 
@@ -42,6 +42,7 @@ export const GET = defineHandler({ permission: "orders.view" }, async ({ session
 export const POST = defineHandler(
   { permission: "pos.order.create", input: createOrderSchema },
   async ({ session, input }) => {
+    assertDiscountPermission(session, input.orderDiscount, input.lines);
     const order = await createOrder(session.tenantId, session.branchId, session.id, input);
     return { order };
   }

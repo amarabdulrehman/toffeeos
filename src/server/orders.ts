@@ -7,6 +7,7 @@ import { HttpError } from "@/server/handler";
 import { deductForOrder } from "@/server/recipes";
 import { recordConflict } from "@/server/sync-conflicts";
 import { notifyLowStock, notifyOrderThankYou } from "@/server/whatsapp/triggers";
+import type { TenantSessionUser } from "@/server/auth/types";
 import {
   computeProvisionalTotal,
   finalizeOrder,
@@ -22,6 +23,33 @@ import {
  * Shared by createOrder's table-conflict check, takePayment's double-pay guard, and voidOrder's
  * double-void guard, so the definition of "closed" can't drift between the three. */
 export const TERMINAL_ORDER_STATUSES = ["PAID", "DELIVERED", "VOIDED", "CANCELLED"] as const;
+
+/**
+ * pos.order.create/pos.order.editItems only cover punching an order or adding items to one — they
+ * say nothing about discounting it. Without this, any Waiter or Cashier (both hold editItems) could
+ * apply an arbitrary order- or line-level discount purely by including one in the request body,
+ * since createOrder/addLinesToOrder are pure business logic with no permission awareness of their
+ * own. Called from the two route handlers that accept a `discount`/`orderDiscount` field
+ * (POST /api/orders, POST /api/orders/[orderId]/lines) rather than from here, so it stays a
+ * defineHandler-style 403 instead of a generic thrown error deep in the pricing pipeline.
+ *
+ * pos.discount.exceedMax has no enforcement point here or anywhere else in the codebase — there is
+ * no stored "maximum discount" value to check a request against (no BranchSettings/TaxRule field
+ * for it), so a role holding applyLine/applyOrder but not exceedMax is not currently limited in how
+ * large a discount it can apply. That's a real gap, not something to silently invent a cap for.
+ */
+export function assertDiscountPermission(
+  session: TenantSessionUser,
+  orderDiscount: DiscountInput | undefined,
+  lines: { discount?: DiscountInput }[]
+): void {
+  if (orderDiscount && !session.permissions.includes("pos.discount.applyOrder")) {
+    throw new HttpError(403, "Missing permission: pos.discount.applyOrder");
+  }
+  if (lines.some((l) => l.discount) && !session.permissions.includes("pos.discount.applyLine")) {
+    throw new HttpError(403, "Missing permission: pos.discount.applyLine");
+  }
+}
 
 /**
  * Makes a mutating order action (send-to-kitchen, pay, void) safe to replay: the offline sync

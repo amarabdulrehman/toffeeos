@@ -5,17 +5,30 @@ import { uploadDeliveryProof, getDeliveryProofSignedUrl } from "@/server/storage
 import { HttpError } from "@/server/handler";
 import { notifyDeliveryPickedUp, notifyDeliveryDelivered } from "@/server/whatsapp/triggers";
 
-/** Riders can only ever be assigned to DELIVERY-type orders — enforced here, not just in the UI. */
+/**
+ * Riders can only ever be assigned to DELIVERY-type orders — enforced here, not just in the UI.
+ *
+ * delivery.assignRider only covers the first assignment. Reassigning an order that already has a
+ * rider is the distinct, separately-labeled `delivery.reassignRider` permission in the registry —
+ * without this check, anyone holding assignRider could silently reassign an already-dispatched
+ * order to someone else too. No seeded role currently holds one without the other (Owner/Branch
+ * Manager get both), so this wasn't reachable by any built-in role, but the registry models it as
+ * a distinct capability and a tenant's custom role should be able to actually rely on that.
+ */
 export async function assignRider(
   tenantId: string,
   branchId: string,
   orderId: string,
   riderId: string,
-  actorId: string
+  actorId: string,
+  permissions: readonly string[]
 ) {
   const db = tenantDb(tenantId);
   const order = await db.order.findUniqueOrThrow({ where: { id: orderId } });
   if (order.type !== "DELIVERY") throw new HttpError(400, "Only delivery orders can be assigned to a rider.");
+  if (order.assignedRiderId && !permissions.includes("delivery.reassignRider")) {
+    throw new HttpError(403, "Missing permission: delivery.reassignRider");
+  }
 
   const deliveryOtpCode = String(Math.floor(1000 + Math.random() * 9000));
   const updated = await db.order.update({

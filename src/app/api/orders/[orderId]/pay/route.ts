@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineHandler } from "@/server/handler";
+import { defineHandler, HttpError } from "@/server/handler";
 import { takePayment } from "@/server/orders";
 
 const tenderSchema = z.object({
@@ -18,9 +18,17 @@ const paySchema = z.object({
 // This is the authoritative pricing pass (finalizeOrder in src/lib/pricing.ts) — a split
 // cash+card payment gets its actual blended Punjab PRA tax rate here, not the provisional
 // cash-rate estimate the cart showed while building.
+// pos.payment.take covers taking a payment at all; splitting it across more than one tender is the
+// separate pos.payment.split permission in the registry — without this check, anyone who could take
+// a payment could always split it too. No seeded role currently holds take without split (Cashier
+// has both, Owner/Branch Manager have everything), so this wasn't reachable today, but a custom role
+// granted take-only should actually be limited to a single tender.
 export const POST = defineHandler(
   { permission: "pos.payment.take", input: paySchema },
   async ({ session, params, input }) => {
+    if (input.tenders.length > 1 && !session.permissions.includes("pos.payment.split")) {
+      throw new HttpError(403, "Missing permission: pos.payment.split");
+    }
     const order = await takePayment(
       session.tenantId,
       session.branchId,

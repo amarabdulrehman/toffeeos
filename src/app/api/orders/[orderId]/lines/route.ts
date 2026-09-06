@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineHandler } from "@/server/handler";
-import { addLinesToOrder } from "@/server/orders";
+import { addLinesToOrder, assertDiscountPermission } from "@/server/orders";
 
 // Same line shape POST /api/orders already uses (src/app/api/orders/route.ts) — kept in sync by
 // hand since Zod schemas aren't shared across route files in this codebase.
@@ -25,6 +25,7 @@ const addLinesSchema = z.object({ lines: z.array(lineSchema).min(1) });
 export const POST = defineHandler(
   { permission: "pos.order.editItems", input: addLinesSchema },
   async ({ session, params, input }) => {
+    assertDiscountPermission(session, undefined, input.lines);
     const order = await addLinesToOrder(session.tenantId, session.branchId, params.orderId, input.lines, session.id);
     return { order };
   }
