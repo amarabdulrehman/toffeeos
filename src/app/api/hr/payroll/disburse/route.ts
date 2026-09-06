@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { defineHandler } from "@/server/handler";
 import { recordDisbursement } from "@/server/hr";
+import { assertWritableMembership } from "@/server/reports";
 
 const schema = z.object({
   membershipId: z.string().min(1),
@@ -29,9 +30,13 @@ export const POST = defineHandler(
     }),
   },
   async ({ session, input }) => {
+    // The membership decides the branch, and the caller must be allowed to write there. The
+    // branchId in the body is ignored rather than trusted — paying someone at a branch they do not
+    // work at was never meaningful, it was just unchecked.
+    const target = await assertWritableMembership(session, input.membershipId);
     const disbursement = await recordDisbursement(session.tenantId, session.id, {
-      membershipId: input.membershipId,
-      branchId: input.branchId,
+      membershipId: target.membershipId,
+      branchId: target.branchId,
       periodStart: new Date(input.periodStart),
       periodEnd: new Date(input.periodEnd),
       regularHours: input.regularHours,

@@ -1,6 +1,7 @@
 import "server-only";
 import { differenceInMinutes } from "date-fns";
 import { tenantDb } from "@/server/db";
+import { HttpError } from "@/server/handler";
 import { currentUnitCostPaisa } from "@/server/recipes";
 import type { TenantSessionUser } from "@/server/auth/types";
 
@@ -22,6 +23,53 @@ export async function resolveReportBranchIds(
   const db = tenantDb(session.tenantId);
   const branches = await db.branch.findMany({ where: { isActive: true }, select: { id: true } });
   return branches.map((b) => b.id);
+}
+
+/**
+ * The write-side counterpart to resolveReportBranchIds, and it lives next to it deliberately: the
+ * two encode the same branch-isolation rule, and keeping them apart is how they drift.
+ *
+ * resolveReportBranchIds answers "which branches may this caller *see*" and returns a list to
+ * filter by. This answers "which single branch may this caller *write to*", and throws rather than
+ * quietly narrowing — silently redirecting a payroll disbursement to a different branch than the
+ * one requested would be worse than refusing it.
+ *
+ * Without this, several HR routes took a branchId straight from the request body and trusted it:
+ * a Branch Manager could record attendance, disburse payroll, or change a salary at a branch that
+ * wasn't theirs. tenantDb() already made cross-*tenant* forgery impossible; this closes the
+ * cross-*branch* case inside a tenant.
+ */
+export async function assertWritableBranchId(
+  session: TenantSessionUser,
+  requestedBranchId?: string
+): Promise<string> {
+  if (!requestedBranchId || requestedBranchId === session.branchId) return session.branchId;
+
+  if (!session.permissions.includes("orders.viewAllBranches")) {
+    throw new HttpError(403, "You can only make changes at your own branch.");
+  }
+  // Cross-branch is allowed for this caller, but the branch still has to be a real, active one in
+  // their own tenant — tenantDb scopes the lookup, so another tenant's id simply isn't found.
+  const branch = await tenantDb(session.tenantId).branch.findFirst({
+    where: { id: requestedBranchId, isActive: true },
+    select: { id: true },
+  });
+  if (!branch) throw new HttpError(404, "That branch doesn't exist.");
+  return branch.id;
+}
+
+/** Same rule, for the routes that identify the target by membership rather than by branch. */
+export async function assertWritableMembership(
+  session: TenantSessionUser,
+  membershipId: string
+): Promise<{ membershipId: string; branchId: string }> {
+  const membership = await tenantDb(session.tenantId).membership.findUnique({
+    where: { id: membershipId },
+    select: { id: true, branchId: true },
+  });
+  if (!membership) throw new HttpError(404, "That staff member doesn't exist.");
+  const branchId = await assertWritableBranchId(session, membership.branchId);
+  return { membershipId: membership.id, branchId };
 }
 
 export interface DateRange {

@@ -6,6 +6,9 @@ import { hashPassword, generateTempPassword } from "@/lib/password";
 import { SEED_ROLES } from "@/server/permissions/registry";
 import { defaultModulesForTier, type TierKey } from "@/server/tier";
 import { defaultExpenseCategoryRows } from "@/lib/expense-categories";
+import { sendEmail } from "@/server/email/adapter";
+import { env } from "@/lib/env";
+import { BRAND_NAME } from "@/config/brand";
 
 export interface ProvisionTenantInput {
   restaurantName: string;
@@ -151,11 +154,31 @@ async function provisionTenant(
  * return zero rows for any query issued before app.tenant_id is set, which would make this check
  * pass every time regardless of whether the email is already in use. */
 export async function signupTenant(input: SignupInput): Promise<{ tenantId: string; slug: string }> {
+  // Hashed before the duplicate check, not after, so both outcomes pay the same ~100ms of bcrypt.
+  // Short-circuiting first made "email already registered" measurably faster to answer than a real
+  // signup, which is an enumeration oracle in its own right — a quieter one than the error message
+  // below, and one that survives fixing the message.
+  const passwordHash = await hashPassword(input.ownerPassword);
+
   const existingUser = await platformDb.user.findFirst({ where: { email: input.ownerEmail }, select: { id: true } });
   if (existingUser) {
-    throw new Error("An account with this email already exists. Sign in instead, or contact us if you need another restaurant account.");
+    // Tell the account holder, not the person at the keyboard. If this really is them, the email
+    // says what to do; if it isn't, it's the only signal that someone is probing their address.
+    // Fire-and-forget: awaiting it would put the mail round trip on the duplicate path only,
+    // re-introducing the timing difference the hash above exists to remove.
+    void sendEmail(
+      input.ownerEmail,
+      `Someone tried to sign up with your ${BRAND_NAME} email`,
+      `Someone just tried to create a new ${BRAND_NAME} restaurant account using this email address.\n\nYou already have an account, so nothing was created. If this was you, sign in at ${env.NEXT_PUBLIC_APP_URL}/login instead.\n\nIf it wasn't you, you can ignore this — but consider changing your password if you reuse it elsewhere.`
+    ).catch(() => {});
+
+    // Deliberately says nothing about *why*. The previous message ("An account with this email
+    // already exists") let anyone confirm whether a given email had an account here, one request
+    // at a time. See the note on residual inference in the audit: fully closing this needs
+    // email-verified signup, which is blocked on outbound mail to arbitrary addresses.
+    throw new Error("We couldn't create an account with those details. If you already have one, sign in instead.");
   }
-  const passwordHash = await hashPassword(input.ownerPassword);
+
   return provisionTenant(input, { passwordHash, mustChangePassword: false, planKey: "starter", trial: true });
 }
 

@@ -23,7 +23,15 @@ async function existingSessionIsValid(baseURL: string, user: UserKey): Promise<b
     const res = await ctx.get("/api/auth/session");
     if (!res.ok()) return false;
     const session = await res.json();
-    return session?.user?.email === USERS[user].email;
+    if (session?.user?.email !== USERS[user].email) return false;
+
+    // /api/auth/session only decodes the cookie — it does not consult the server, so it happily
+    // reports a session that every real endpoint now rejects (a token issued before revocation
+    // tracking existed, or one revoked by a sign-out). Probe a route that actually goes through
+    // defineHandler: 401 means the session is dead and must be re-issued; 403 is fine, it means
+    // the session is alive and this role simply lacks that permission.
+    const probe = await ctx.get("/api/expense-categories");
+    return probe.status() !== 401;
   } catch {
     return false;
   } finally {

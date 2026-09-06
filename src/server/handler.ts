@@ -72,10 +72,6 @@ export function defineHandler<TSchema extends ZodType = ZodType<undefined>>(
       }
       const user = session.user;
 
-      if (options.permission && !user.permissions.includes(options.permission)) {
-        throw new HttpError(403, `Missing permission: ${options.permission}`);
-      }
-
       const db = tenantDb(user.tenantId);
 
       // One query for two checks that both need to be fresh on every request (neither is cached on
@@ -85,10 +81,34 @@ export function defineHandler<TSchema extends ZodType = ZodType<undefined>>(
       // require a re-login. Originally two separate round trips; consolidated after measuring real,
       // consistent per-request latency against this app's remote Postgres (~1.3s sequential, not a
       // dev-compile artifact) — this is a genuine fix, not premature optimization.
-      const gate = await getTenantGate(user.tenantId);
+      const gate = await getTenantGate(user.tenantId, user.id);
       if (!gate.tenantStatus || !tenantAcceptsLogin(gate.tenantStatus)) {
         throw new HttpError(403, "This restaurant's account is no longer active.");
       }
+
+      // Sessions are stateless JWTs, so neither of these can be enforced at issue time alone — a
+      // token stays cryptographically valid until it expires (30 days by default) no matter what
+      // happens to the account behind it. Re-checking here is what makes deactivating a staff
+      // member, or signing out, take effect immediately rather than a month later. Costs nothing
+      // extra: both fields ride along in the tenant-gate query above.
+      if (!gate.userActive) {
+        throw new HttpError(401, "This account is no longer active. Please sign in again.");
+      }
+      // A token minted before revocation tracking existed has no stamp at all. It fails closed:
+      // we cannot show such a token wasn't lifted from somewhere, and the cost is one re-login.
+      if (user.sessionsValidFrom === undefined || (gate.sessionsValidFrom ?? 0) > user.sessionsValidFrom) {
+        throw new HttpError(401, "This session has been signed out. Please sign in again.");
+      }
+
+      // Authentication before authorization, deliberately: every "is this session still real" check
+      // above runs before the permission check below. Doing it the other way round makes a revoked
+      // session answer 403 ("you may not do this") instead of 401 ("you are not signed in") for any
+      // route the account lacked permission for anyway — which hides the revocation from the client,
+      // and from anything trying to tell a live session from a dead one.
+      if (options.permission && !user.permissions.includes(options.permission)) {
+        throw new HttpError(403, `Missing permission: ${options.permission}`);
+      }
+
       if (options.permission) {
         const moduleKey = moduleForPermission(options.tierModule ?? options.permission);
         if (moduleKey && !gate.enabledModules.includes(moduleKey)) {

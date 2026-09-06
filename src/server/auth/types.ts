@@ -18,6 +18,12 @@ export interface TenantSessionUser {
   mustChangePassword: boolean;
   /** Set only when this session came from the platform admin's Impersonate action — drives the
    * "Viewing as..." banner in the tenant app shell. Absent for a normal staff login. */
+  /** Epoch ms of the account's sessionsValidFrom at the moment this token was issued. Every
+   * request re-reads the stored value and rejects the session if it has moved on, which is what
+   * makes sign-out, deactivation and "sign out everywhere" actually revoke a stateless JWT.
+   * Tokens minted before this field existed have it undefined and are treated as invalid — we
+   * cannot prove such a token was not stolen, so it fails closed and forces one re-login. */
+  sessionsValidFrom?: number;
   impersonatedByPlatformUserId?: string;
   impersonatedByPlatformUserEmail?: string;
 }
@@ -27,6 +33,8 @@ export interface PlatformSessionUser {
   id: string;
   name: string;
   email: string;
+  /** See TenantSessionUser.sessionsValidFrom. */
+  sessionsValidFrom?: number;
 }
 
 export type SessionUser = TenantSessionUser | PlatformSessionUser;

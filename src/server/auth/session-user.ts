@@ -63,5 +63,7 @@ export async function buildTenantSessionUser(
     roleKey: membership.role.key,
     permissions,
     mustChangePassword: user.mustChangePassword,
+    // Stamped at issue time; defineHandler compares it against the stored value on every request.
+    sessionsValidFrom: user.sessionsValidFrom.getTime(),
   };
 }

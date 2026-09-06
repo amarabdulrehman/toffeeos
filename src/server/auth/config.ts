@@ -182,6 +182,7 @@ export const authConfig = {
           id: platformUser.id,
           name: platformUser.name,
           email: platformUser.email,
+          sessionsValidFrom: platformUser.sessionsValidFrom.getTime(),
         };
         return sessionUser as unknown as LooseUser;
       },

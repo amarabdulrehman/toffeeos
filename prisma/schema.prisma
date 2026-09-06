@@ -155,11 +155,13 @@ model SubscriptionPayment {
 }
 
 model PlatformUser {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  createdAt    DateTime @default(now())
+  id                String   @id @default(uuid())
+  email             String   @unique
+  passwordHash      String
+  name              String
+  createdAt         DateTime @default(now())
+  /// See User.sessionsValidFrom — same stateless-JWT revocation marker, for the platform admin.
+  sessionsValidFrom DateTime @default(now())
 
   /// TOTP secret (base32), set once 2FA enrollment is confirmed — see src/server/platform-mfa.ts.
   /// Null/totpEnabled=false means this account has no second factor at all, which for the single
@@ -361,6 +363,11 @@ model User {
   /// false there. Checked at the app/pos/kds layout level, not in defineHandler, since it needs to
   /// gate page rendering before any API call happens.
   mustChangePassword Boolean  @default(false)
+  /// Every session issued before this instant is rejected. Sessions are stateless JWTs, so there is
+  /// no server-side record to delete on sign-out — bumping this is what actually revokes them.
+  /// Signing out sets it to now(), which invalidates that JWT and any other copy of it (a cookie
+  /// lifted from a shared POS terminal, a session left open on another device).
+  sessionsValidFrom  DateTime @default(now())
   createdAt          DateTime @default(now())
 
   memberships   Membership[]

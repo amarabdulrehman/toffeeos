@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { defineHandler } from "@/server/handler";
 import { listStaffPayProfiles, setPayProfile } from "@/server/hr";
-import { resolveReportBranchIds } from "@/server/reports";
+import { resolveReportBranchIds, assertWritableMembership } from "@/server/reports";
 
 export const GET = defineHandler({ permission: "hr.employee.manage" }, async ({ session }) => {
   const branchIds = await resolveReportBranchIds(session);
@@ -17,6 +17,8 @@ const bodySchema = z.object({
 });
 
 export const PATCH = defineHandler({ permission: "hr.employee.manage", input: bodySchema }, async ({ session, input }) => {
-  const membership = await setPayProfile(session.tenantId, input.membershipId, input);
+  // Changing someone's salary is a write at their branch, so it needs the same check.
+  const target = await assertWritableMembership(session, input.membershipId);
+  const membership = await setPayProfile(session.tenantId, target.membershipId, input);
   return { membership };
 });

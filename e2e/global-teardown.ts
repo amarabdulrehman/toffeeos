@@ -4,16 +4,16 @@ import { Client } from "pg";
 import { authFile } from "./fixtures/test-data";
 
 /**
- * Staff accounts the suite creates: the invite spec's accepted hires (e2e-invite-*@example.com) and
- * the PENDING-approval spec's recorder. Both are created fresh per run and neither has a delete
- * endpoint, so without this they accumulate one per run forever — 13 had piled up in the demo
- * tenant's staff list before this was added. Scoped to the suite's own address patterns, so a real
- * staff member is never matched.
+ * Staff accounts the suite creates: the invite spec's accepted hires, and the throwaway staff the
+ * PENDING-approval and session-revocation specs each need. All are created fresh per run and none
+ * has a delete endpoint, so without this they accumulate one per run forever — 13 had piled up in
+ * the demo tenant's staff list before this was added. Scoped to the suite's own address patterns,
+ * so a real staff member is never matched.
  */
 async function purgeTestStaff() {
   if (!process.env.DIRECT_URL) return;
   const c = new Client({ connectionString: process.env.DIRECT_URL });
-  const where = `(email LIKE 'e2e-invite-%@example.com' OR email LIKE 'e2e-recorder%')`;
+  const where = `(email LIKE 'e2e-invite-%@example.com' OR email LIKE 'e2e-recorder%' OR email LIKE 'e2e-revoke-%')`;
   try {
     await c.connect();
     // Children first — StaffPin and Membership both hold a real FK to User.

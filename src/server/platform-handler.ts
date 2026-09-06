@@ -42,6 +42,21 @@ export function definePlatformHandler<TSchema extends ZodType = ZodType<undefine
         throw new HttpError(401, "Unauthorized");
       }
 
+      // Same stateless-JWT revocation check the tenant handler does, and it matters more here:
+      // this is the account with BYPASSRLS across every tenant, so a leaked platform token that
+      // stays valid for 30 days is the worst-case credential in the system.
+      const admin = await platformDb.platformUser.findUnique({
+        where: { id: session.user.id },
+        select: { sessionsValidFrom: true },
+      });
+      if (
+        !admin ||
+        session.user.sessionsValidFrom === undefined ||
+        admin.sessionsValidFrom.getTime() > session.user.sessionsValidFrom
+      ) {
+        throw new HttpError(401, "This session has been signed out. Please sign in again.");
+      }
+
       let input: TSchema["_output"] = undefined as TSchema["_output"];
       if (options.input) {
         const raw =
