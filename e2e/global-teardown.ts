@@ -29,6 +29,34 @@ async function purgeTestStaff() {
 }
 
 /**
+ * tenant-isolation.spec.ts provisions a whole real tenant per run to prove isolation against, and
+ * never removed it — 17 had piled up, all still TRIALING, so they counted as live trials in the
+ * super-admin panel and in any tenant total.
+ *
+ * Cancelled rather than deleted, deliberately. The schema has no `onDelete: Cascade` anywhere, so
+ * removing a Tenant means hand-ordering deletes across ~20 tables; getting that wrong on a shared
+ * production database is a far worse outcome than leaving inert rows behind. CANCELLED drops them
+ * out of every active count and blocks login, which is the whole practical problem.
+ *
+ * Matched on the machine-generated slug prefix the spec itself uses, so a real tenant cannot be hit.
+ */
+async function retireTestTenants() {
+  if (!process.env.DIRECT_URL) return;
+  const c = new Client({ connectionString: process.env.DIRECT_URL });
+  try {
+    await c.connect();
+    await c.query(
+      `UPDATE "Tenant" SET status = 'CANCELLED'
+        WHERE slug LIKE 'isolation-test-%' AND status <> 'CANCELLED'`
+    );
+  } catch {
+    // Best-effort, like the other purges here.
+  } finally {
+    await c.end().catch(() => {});
+  }
+}
+
+/**
  * Recurring-expense templates can only be deactivated through the API, never deleted — a generated
  * Expense keeps a recurringExpenseId pointing at its template, so the row has to survive. That's
  * right for real data but means each suite run would leave one more "Stopped" template cluttering
@@ -124,6 +152,7 @@ export default async function globalTeardown(config: FullConfig) {
     // is unreachable, and this cleanup should still run in that case.
     await purgeTestRecurringTemplates();
     await purgeTestStaff();
+    await retireTestTenants();
     await ctx.dispose();
   }
 }
