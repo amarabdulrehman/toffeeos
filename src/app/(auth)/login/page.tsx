@@ -59,15 +59,12 @@ function LoginForm() {
             <div className="flex items-center gap-1">
               <Input
                 id="tenantSlug"
-                placeholder="karachi-karahi"
+                placeholder="your-restaurant"
                 value={tenantSlug}
                 onChange={(e) => setTenantSlug(e.target.value.trim())}
                 required
               />
             </div>
-            <p className="text-xs text-muted-foreground">
-              Demo tenant: <code className="font-mono">karachi-karahi</code>
-            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
