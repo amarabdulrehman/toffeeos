@@ -16,9 +16,17 @@ export { topic };
  * that the browser client is only ever given its own tenant's Supabase anon key + RLS-protected
  * subscription (menu items, orders, etc. still flow through RLS on the realtime replication path).
  */
-const serviceClient = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false },
-});
+// Constructed on first use, not at import. supabase-js throws outright when the URL or key is
+// undefined, and Next.js imports every server module during `next build` — where Vercel does not
+// expose Sensitive env vars at all. Building is not running, so this is not needed until a request
+// actually arrives. See the note in src/lib/env.ts.
+let serviceClient: ReturnType<typeof createClient> | undefined;
+function getServiceClient() {
+  serviceClient ??= createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  });
+  return serviceClient;
+}
 
 /**
  * Every message goes out on the same wire-level broadcast event ("update") with a `type` field
@@ -33,6 +41,6 @@ export async function publish(
   type: string,
   payload: Record<string, unknown> = {}
 ): Promise<void> {
-  const ch = serviceClient.channel(topic(tenantId, branchId, channel));
+  const ch = getServiceClient().channel(topic(tenantId, branchId, channel));
   await ch.send({ type: "broadcast", event: "update", payload: { type, ...payload } });
 }

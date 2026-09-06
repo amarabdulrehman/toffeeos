@@ -87,16 +87,23 @@ function lowerFirst(s: string): string {
   return s.charAt(0).toLowerCase() + s.slice(1);
 }
 
-const storageClient = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false },
-});
+// Lazy for the same reason as src/server/realtime.ts and src/server/storage.ts: supabase-js throws
+// on an undefined URL or key, and `next build` imports this module in an environment where
+// Vercel's Sensitive env vars do not exist. See src/lib/env.ts.
+let storageClient: ReturnType<typeof createClient> | undefined;
+function getStorageClient() {
+  storageClient ??= createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  });
+  return storageClient;
+}
 
 let bucketEnsured = false;
 async function ensureBucket(): Promise<void> {
   if (bucketEnsured) return;
-  const { data: buckets } = await storageClient.storage.listBuckets();
+  const { data: buckets } = await getStorageClient().storage.listBuckets();
   if (!buckets?.some((b) => b.name === BACKUPS_BUCKET)) {
-    const { error } = await storageClient.storage.createBucket(BACKUPS_BUCKET, { public: false });
+    const { error } = await getStorageClient().storage.createBucket(BACKUPS_BUCKET, { public: false });
     if (error && !/already exists/i.test(error.message)) throw error;
   }
   bucketEnsured = true;
@@ -114,14 +121,14 @@ async function dumpAllTables(): Promise<Record<string, unknown[]>> {
 }
 
 async function pruneOldBackups(): Promise<number> {
-  const { data: files } = await storageClient.storage.from(BACKUPS_BUCKET).list();
+  const { data: files } = await getStorageClient().storage.from(BACKUPS_BUCKET).list();
   if (!files) return 0;
   const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
   const stale = files.filter(
     (f) => f.name.startsWith("full-backup-") && new Date(f.created_at ?? 0).getTime() < cutoff
   );
   if (stale.length === 0) return 0;
-  await storageClient.storage.from(BACKUPS_BUCKET).remove(stale.map((f) => f.name));
+  await getStorageClient().storage.from(BACKUPS_BUCKET).remove(stale.map((f) => f.name));
   return stale.length;
 }
 
@@ -132,7 +139,7 @@ export async function runDatabaseBackup(): Promise<{ path: string; sizeBytes: nu
   const gzipped = gzipSync(Buffer.from(JSON.stringify(dump), "utf-8"));
 
   const path = `full-backup-${new Date().toISOString().slice(0, 10)}.json.gz`;
-  const { error } = await storageClient.storage.from(BACKUPS_BUCKET).upload(path, gzipped, {
+  const { error } = await getStorageClient().storage.from(BACKUPS_BUCKET).upload(path, gzipped, {
     contentType: "application/gzip",
     upsert: true,
   });

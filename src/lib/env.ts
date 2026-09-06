@@ -1,8 +1,21 @@
 import { z } from "zod";
 
 /**
- * Validates process.env once at import time so a missing/malformed env var fails fast and loud
- * at boot instead of surfacing as a confusing runtime error deep in a request handler.
+ * Validates process.env so a missing or malformed variable fails fast and loud rather than
+ * surfacing as a confusing error deep inside a request handler.
+ *
+ * Validation is deliberately NOT done at import time. Next.js imports every route module during
+ * `next build` to collect its config, and on Vercel the server secrets are marked Sensitive, which
+ * makes them runtime-only — they genuinely do not exist during a build. Validating at import
+ * therefore made compiling depend on credentials the build can never have, and the deploy failed
+ * with all thirteen variables reported as `undefined`.
+ *
+ * Building is not running. A compile needs no database password. So:
+ *   - during the production build phase, reads pass through unvalidated (nothing serves traffic,
+ *     so nothing legitimately needs a real value);
+ *   - everywhere else, the full schema is validated on first access and cached, which is still
+ *     before the first request completes — the fail-fast guarantee is unchanged, it just happens
+ *     at boot instead of at import.
  */
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
@@ -32,6 +45,12 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
+/** Next.js sets this for the duration of `next build`. It is the one context where these variables
+ * are legitimately absent, because nothing is serving requests yet. */
+function isBuildPhase(): boolean {
+  return process.env.NEXT_PHASE === "phase-production-build";
+}
+
 function loadEnv(): Env {
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
@@ -41,4 +60,33 @@ function loadEnv(): Env {
   return parsed.data;
 }
 
-export const env = loadEnv();
+let cached: Env | undefined;
+
+function resolve(): Env {
+  if (cached) return cached;
+  // Not cached during the build: a build-phase read must never poison the runtime value, since the
+  // same module instance can be reused when the built server starts.
+  if (isBuildPhase()) return process.env as unknown as Env;
+  cached = loadEnv();
+  return cached;
+}
+
+/**
+ * Reads exactly like a plain object — `env.DATABASE_URL` — so no call site changes. The proxy only
+ * defers *when* validation happens; it does not change what any consumer sees.
+ */
+export const env: Env = new Proxy({} as Env, {
+  get(_target, prop) {
+    return resolve()[prop as keyof Env];
+  },
+  has(_target, prop) {
+    return prop in resolve();
+  },
+  ownKeys() {
+    return Reflect.ownKeys(resolve());
+  },
+  getOwnPropertyDescriptor(_target, prop) {
+    const value = resolve()[prop as keyof Env];
+    return value === undefined ? undefined : { value, enumerable: true, configurable: true };
+  },
+});
