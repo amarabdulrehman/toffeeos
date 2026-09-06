@@ -153,11 +153,18 @@ async function provisionTenant(
  * (BYPASSRLS) because this is a cross-tenant lookup by design — rawDb's RLS policy would silently
  * return zero rows for any query issued before app.tenant_id is set, which would make this check
  * pass every time regardless of whether the email is already in use. */
-export async function signupTenant(input: SignupInput): Promise<{ tenantId: string; slug: string }> {
+export async function signupTenant(input: SignupInput): Promise<void> {
+  // Slug first, and it still reports failure honestly: restaurant URLs are public by definition
+  // (they are in every storefront link), so "that URL is taken" leaks nothing. Doing it here rather
+  // than inside provisionTenant keeps it ahead of the email branch below, so a taken slug is still
+  // a real error even when the email is also in use.
+  const existingTenant = await rawDb.tenant.findUnique({ where: { slug: input.slug }, select: { id: true } });
+  if (existingTenant) throw new Error("That restaurant URL is already taken.");
+
   // Hashed before the duplicate check, not after, so both outcomes pay the same ~100ms of bcrypt.
   // Short-circuiting first made "email already registered" measurably faster to answer than a real
-  // signup, which is an enumeration oracle in its own right — a quieter one than the error message
-  // below, and one that survives fixing the message.
+  // signup, which is an enumeration oracle in its own right — a quieter one than the response body,
+  // and one that would have survived fixing the message.
   const passwordHash = await hashPassword(input.ownerPassword);
 
   const existingUser = await platformDb.user.findFirst({ where: { email: input.ownerEmail }, select: { id: true } });
@@ -172,14 +179,17 @@ export async function signupTenant(input: SignupInput): Promise<{ tenantId: stri
       `Someone just tried to create a new ${BRAND_NAME} restaurant account using this email address.\n\nYou already have an account, so nothing was created. If this was you, sign in at ${env.NEXT_PUBLIC_APP_URL}/login instead.\n\nIf it wasn't you, you can ignore this — but consider changing your password if you reuse it elsewhere.`
     ).catch(() => {});
 
-    // Deliberately says nothing about *why*. The previous message ("An account with this email
-    // already exists") let anyone confirm whether a given email had an account here, one request
-    // at a time. See the note on residual inference in the audit: fully closing this needs
-    // email-verified signup, which is blocked on outbound mail to arbitrary addresses.
-    throw new Error("We couldn't create an account with those details. If you already have one, sign in instead.");
+    // Returns *successfully* without provisioning anything. This is the whole anti-enumeration
+    // design: the caller cannot distinguish "email was free, account created" from "email was
+    // taken, nothing happened", because both produce an identical response and an identical
+    // redirect to the sign-in page. An earlier version threw a generic error here, which still
+    // leaked — a request that failed with everything else valid could only mean the email existed.
+    //
+    // The one trial per email rule is still enforced: no Tenant, Subscription or User is created.
+    return;
   }
 
-  return provisionTenant(input, { passwordHash, mustChangePassword: false, planKey: "starter", trial: true });
+  await provisionTenant(input, { passwordHash, mustChangePassword: false, planKey: "starter", trial: true });
 }
 
 /** Platform-admin-only tenant provisioning: generates a random temp password instead of asking the

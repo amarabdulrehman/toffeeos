@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -45,20 +44,13 @@ export default function SignupPage() {
         toast.error(data.error ?? "Signup failed");
         return;
       }
-      const result = await signIn("credentials", {
-        tenantSlug: slug,
-        email: ownerEmail,
-        password: ownerPassword,
-        redirect: false,
-      });
-      if (result?.error) {
-        toast.error("Account created — please sign in.");
-        router.push("/login");
-        return;
-      }
-      toast.success(`Welcome to ${BRAND_NAME}! Your 14-day trial has started.`);
-      router.push("/app/dashboard");
-      router.refresh();
+      // Signup deliberately does NOT sign you in. It used to, and that was the last thing telling
+      // an attacker whether an email was already registered: a free email landed on the dashboard,
+      // a taken one bounced to /login, so the outcome was readable from the browser even once the
+      // API response had been made identical. Everyone now takes the same path, which costs a
+      // genuine new signup one extra step — they have just typed the password — and closes it.
+      toast.success(`Welcome to ${BRAND_NAME}! Sign in to start your 14-day trial.`);
+      router.push("/login");
     } finally {
       setLoading(false);
     }

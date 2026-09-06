@@ -66,36 +66,65 @@ test.describe("Account enumeration", () => {
     }
   });
 
-  test("signup does not reveal that an email is already registered", async ({ baseURL }) => {
+  test("signup answers identically for a taken and a free email", async ({ baseURL }) => {
     const ctx = await anon(baseURL!);
-    try {
-      // A taken email, with an otherwise-valid and unique signup payload — so the only thing that
-      // could make this fail is the email.
-      const res = await ctx.post("/api/signup", {
+    const signup = (email: string) =>
+      ctx.post("/api/signup", {
         data: {
           restaurantName: "Enumeration Probe",
           slug: `enum-probe-${uniqueSuffix()}`,
           ownerName: "Probe",
-          ownerEmail: USERS.owner.email,
+          ownerEmail: email,
           ownerPassword: "Passw0rd!Probe",
           branchName: "Main",
           city: "Karachi",
         },
       });
 
+    try {
+      // Both payloads are valid and unique apart from the email, so the email is the only variable.
+      // A taken email must not be distinguishable from a free one in status *or* body — the taken
+      // one silently provisions nothing, which is what enforces one trial per email.
+      const taken = await signup(USERS.owner.email);
+      const free = await signup(`brand-new-${uniqueSuffix()}@example.com`);
+      skipIfRateLimited(taken.status(), free.status());
+
+      const takenBody = await taken.text();
+      const freeBody = await free.text();
+      expect(taken.status(), "a taken email must look exactly like a successful signup").toBe(free.status());
+      expect(takenBody).toBe(freeBody);
+      expect(takenBody).not.toMatch(/already|exists|taken|couldn't/i);
+
+      // That the taken-email attempt also creates nothing is asserted in the next test.
+    } finally {
+      await ctx.dispose();
+    }
+  });
+
+  test("a taken email provisions nothing, so one trial per email still holds", async ({ baseURL }) => {
+    const ctx = await anon(baseURL!);
+    const slug = `enum-notcreated-${uniqueSuffix()}`;
+    try {
+      const res = await ctx.post("/api/signup", {
+        data: {
+          restaurantName: "Should Not Exist",
+          slug,
+          ownerName: "Probe",
+          ownerEmail: USERS.owner.email, // already registered
+          ownerPassword: "Passw0rd!Probe",
+          branchName: "Main",
+        },
+      });
       // Yields to tenant-isolation.spec.ts, which also needs one of the 3 signups per hour and
       // cannot skip — it has to provision a real second tenant to prove isolation against. Two
       // full-suite runs inside the same hour will exhaust the budget; that is the rate limit doing
       // its job, not a regression.
       test.skip(res.status() === 429, `signup rate limit reached (${SIGNUP_RATE_LIMIT}/hour/IP)`);
+      expect(res.status()).toBe(201);
 
-      const body = await res.text();
-      expect(res.status(), "a duplicate email must not be accepted").toBe(400);
-      // The whole point: the message must not confirm the address is registered.
-      expect(body).not.toMatch(/already exists/i);
-      expect(body).not.toMatch(/already registered/i);
-      expect(body).not.toMatch(/taken/i);
-      expect(body).toMatch(/couldn't create an account/i);
+      // The storefront for that slug is public, so a real tenant would answer 200 here.
+      const check = await ctx.get(`/api/online-order/${slug}`);
+      expect(check.status(), "no tenant should have been created for a taken email").not.toBe(200);
     } finally {
       await ctx.dispose();
     }

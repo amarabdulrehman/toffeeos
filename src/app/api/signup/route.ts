@@ -37,8 +37,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await signupTenant(parsed.data);
-    return NextResponse.json(result, { status: 201 });
+    await signupTenant(parsed.data);
+    // A fixed body, not the provisioned ids. The response has to be byte-identical whether an
+    // account was created or the email was already in use — returning tenantId/slug here would
+    // reinstate the enumeration oracle the server-side branch exists to remove. Nothing consumes
+    // them anyway now that signup no longer auto-signs-in.
+    return NextResponse.json({ ok: true }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Signup failed";
     return NextResponse.json({ error: message }, { status: 400 });
