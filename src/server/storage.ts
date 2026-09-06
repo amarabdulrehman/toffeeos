@@ -66,3 +66,64 @@ export async function getDeliveryProofSignedUrl(path: string, expiresInSeconds =
   if (error) return null;
   return data.signedUrl;
 }
+
+// ============================================================================
+// Tenant logo (receipts + the public storefront)
+// ============================================================================
+
+/**
+ * Public, unlike delivery proofs above. A logo is already public branding — it renders on the
+ * unauthenticated storefront — and a receipt is printed from the browser, where a short-lived
+ * signed URL would expire and leave a broken image on the paper. Nothing tenant-private lives here.
+ */
+const TENANT_LOGOS_BUCKET = "tenant-logos";
+
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+
+let logoBucketEnsured = false;
+async function ensureLogoBucket(): Promise<void> {
+  if (logoBucketEnsured) return;
+  const { data: buckets } = await getStorageClient().storage.listBuckets();
+  if (!buckets?.some((b) => b.name === TENANT_LOGOS_BUCKET)) {
+    const { error } = await getStorageClient().storage.createBucket(TENANT_LOGOS_BUCKET, {
+      public: true,
+      fileSizeLimit: `${MAX_LOGO_BYTES}`,
+      allowedMimeTypes: ALLOWED_LOGO_TYPES,
+    });
+    // A concurrent request may have created it first — only a real failure should throw.
+    if (error && !/already exists/i.test(error.message)) throw error;
+  }
+  logoBucketEnsured = true;
+}
+
+/**
+ * Stores the tenant's logo and returns a permanent public URL to put in Tenant.logoUrl.
+ *
+ * The object key is keyed on tenantId with a cache-busting timestamp: re-uploading replaces the
+ * logo everywhere it is shown without the browser (or a print preview) serving a stale cached copy.
+ */
+export async function uploadTenantLogo(
+  tenantId: string,
+  file: { name: string; type: string; size: number; arrayBuffer(): Promise<ArrayBuffer> }
+): Promise<string> {
+  if (!ALLOWED_LOGO_TYPES.includes(file.type)) {
+    throw new Error("Logo must be a PNG, JPEG, WebP, or SVG image.");
+  }
+  if (file.size > MAX_LOGO_BYTES) {
+    throw new Error("Logo must be 2MB or smaller.");
+  }
+
+  await ensureLogoBucket();
+  const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+  const path = `${tenantId}/logo-${Date.now()}.${ext}`;
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  const { error } = await getStorageClient()
+    .storage.from(TENANT_LOGOS_BUCKET)
+    .upload(path, buffer, { contentType: file.type, upsert: true });
+  if (error) throw new Error(`Failed to upload logo: ${error.message}`);
+
+  const { data } = getStorageClient().storage.from(TENANT_LOGOS_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}

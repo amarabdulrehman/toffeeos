@@ -309,6 +309,10 @@ model BranchSettings {
   /// blocks the /kds route itself (see getBranchKdsEnabled in src/server/branch-settings.ts).
   kdsEnabled                    Boolean      @default(true)
   receiptHeader                 String?
+  /// Print the tenant's logo at the top of the receipt. Per-branch, alongside receiptHeader, so a
+  /// client running one branch that wants letterheaded receipts and another that does not is
+  /// expressible — and defaults to false so no existing client's receipts change on deploy.
+  showLogoOnReceipt             Boolean      @default(false)
   locale                        String       @default("en")
   /// Which StockLocation recipe consumption deducts from on order payment. Not a DB relation
   /// (deliberately soft) — src/server/recipes.ts falls back to the branch's oldest active

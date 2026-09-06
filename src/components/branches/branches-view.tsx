@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Building2, ChefHat, Percent, Plus, Receipt, Trash2 } from "lucide-react";
+import { Building2, ChefHat, Image as ImageIcon, Percent, Plus, Receipt, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -187,6 +187,7 @@ export function BranchesView({ planName, maxBranches }: { planName: string; maxB
       </div>
 
       <OrderSettingsCard />
+      <ReceiptBrandingCard />
       <KitchenDisplayCard />
       <TaxRulesCard />
     </div>
@@ -696,5 +697,136 @@ function TaxRuleDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Logo on printed receipts. Two settings that live in different places deliberately, presented as
+ * one thing because to a restaurant owner it is one thing:
+ *
+ *   - the logo itself is tenant-wide (Tenant.logoUrl) — the same image the online storefront uses,
+ *     so a client uploads it once rather than once per branch;
+ *   - whether it prints is per-branch (BranchSettings.showLogoOnReceipt), matching receiptHeader.
+ *
+ * Upload rather than a URL field: a restaurant owner has a logo file on their phone or laptop, not
+ * a hosted image URL.
+ */
+function ReceiptBrandingCard() {
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [showLogo, setShowLogo] = useState<boolean | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    (async () => {
+      const [brandingRes, settingsRes] = await Promise.all([
+        fetch("/api/tenant-branding"),
+        fetch("/api/branch-settings"),
+      ]);
+      if (brandingRes.ok) setLogoUrl((await brandingRes.json())?.logoUrl ?? null);
+      if (settingsRes.ok) setShowLogo((await settingsRes.json()).settings?.showLogoOnReceipt ?? false);
+      else setShowLogo(false);
+    })().catch(() => toast.error("Could not load receipt branding."));
+  }, []);
+
+  async function onPickFile(file: File) {
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/tenant-branding/logo", { method: "POST", body: form });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // The route returns the real reason for the two a user can fix (wrong type, too large).
+        toast.error(body.error ?? "Could not upload that logo.");
+        return;
+      }
+      setLogoUrl(body.logoUrl);
+      toast.success("Logo uploaded.");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function toggle(checked: boolean) {
+    setShowLogo(checked);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/branch-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ showLogoOnReceipt: checked }),
+      });
+      if (!res.ok) {
+        toast.error("Could not save that setting.");
+        setShowLogo(!checked); // put the switch back rather than lie about what was saved
+        return;
+      }
+      toast.success(checked ? "Logo will print on receipts." : "Logo removed from receipts.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (showLogo === null) return null;
+
+  return (
+    <Card className="mt-6 shadow-sm transition-shadow hover:shadow-md">
+      <CardHeader className="flex flex-row items-center gap-2.5">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Receipt className="size-4" />
+        </span>
+        <div>
+          <CardTitle className="font-heading text-base">Receipt logo — this branch</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Print your logo at the top of every receipt. The logo is shared across your branches; the
+            switch below applies to this one.
+          </p>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-4 rounded-xl border bg-muted/20 px-3.5 py-3">
+          <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-white">
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="Your logo" className="max-h-full max-w-full object-contain" />
+            ) : (
+              <ImageIcon className="size-6 text-muted-foreground/50" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">{logoUrl ? "Your logo" : "No logo yet"}</div>
+            <p className="text-xs text-muted-foreground">PNG, JPEG, WebP or SVG, up to 2MB.</p>
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void onPickFile(file);
+            }}
+          />
+          <Button variant="outline" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
+            {uploading ? "Uploading…" : logoUrl ? "Replace" : "Upload logo"}
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border bg-muted/20 px-3.5 py-3">
+          <div>
+            <div className="text-sm font-medium">Print the logo on receipts</div>
+            <p className="text-xs text-muted-foreground">
+              {logoUrl
+                ? "Prints above your restaurant name. Most receipt printers are black and white, so it prints in greyscale."
+                : "Upload a logo first — there is nothing to print yet."}
+            </p>
+          </div>
+          <Switch checked={showLogo} disabled={saving || !logoUrl} onCheckedChange={toggle} />
+        </div>
+      </CardContent>
+    </Card>
   );
 }

@@ -19,10 +19,16 @@ export function Receipt({
   order,
   tenantName,
   branchName,
+  logoUrl,
+  showLogo = false,
 }: {
   order: OrderDto;
   tenantName: string;
   branchName: string;
+  /** Tenant.logoUrl — a permanent public URL (see uploadTenantLogo in src/server/storage.ts). */
+  logoUrl?: string | null;
+  /** BranchSettings.showLogoOnReceipt. Off by default so no existing client's receipts change. */
+  showLogo?: boolean;
 }) {
   const subtotal = order.subtotalPaisa ?? order.totalPaisa;
   const discountedSubtotal = order.discountedSubtotalPaisa ?? subtotal;
@@ -37,6 +43,24 @@ export function Receipt({
   return (
     <div id="printable-receipt" className="print-area mx-auto w-[300px] font-mono text-[13px] leading-snug text-black">
       <div className="text-center">
+        {showLogo && logoUrl && (
+          // Plain <img>, not next/image: this element is printed, and next/image's lazy loading and
+          // srcset add nothing on paper while risking an unloaded image at the moment print fires.
+          // Height-capped so a large upload can't push the order off a thermal receipt, and
+          // grayscale because most receipt printers are single-colour — a colour logo would
+          // otherwise dither into mud.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoUrl}
+            alt=""
+            className="mx-auto mb-1 max-h-16 w-auto object-contain grayscale"
+            // A broken or slow logo must never cost the customer their receipt: hide it and let the
+            // name below stand on its own.
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+          />
+        )}
         <div className="text-base font-bold">{tenantName}</div>
         <div>{branchName}</div>
       </div>

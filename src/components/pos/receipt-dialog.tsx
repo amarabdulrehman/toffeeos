@@ -10,6 +10,8 @@ export function ReceiptDialog({
   order,
   tenantName,
   branchName,
+  logoUrl,
+  showLogo,
   onClose,
 }: {
   /** Null closes the dialog — same open/close-by-value pattern as PaymentDialog/VariantDialog
@@ -17,6 +19,8 @@ export function ReceiptDialog({
   order: OrderDto | null;
   tenantName: string;
   branchName: string;
+  logoUrl?: string | null;
+  showLogo?: boolean;
   onClose: () => void;
 }) {
   return (
@@ -27,7 +31,7 @@ export function ReceiptDialog({
         </DialogHeader>
         {order && (
           <div className="max-h-[60vh] overflow-y-auto rounded-lg border bg-white p-4">
-            <Receipt order={order} tenantName={tenantName} branchName={branchName} />
+            <Receipt order={order} tenantName={tenantName} branchName={branchName} logoUrl={logoUrl} showLogo={showLogo} />
           </div>
         )}
         <DialogFooter>
