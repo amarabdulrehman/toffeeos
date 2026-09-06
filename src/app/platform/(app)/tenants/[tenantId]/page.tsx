@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, ClipboardList, CreditCard, Lock, ShieldCheck, UserRound, UsersRound } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ClipboardList, CreditCard, Lock, ShieldCheck, UserRound, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -109,6 +111,32 @@ export default function TenantDetailPage() {
       await load();
     })();
   }, [load]);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [confirmSlug, setConfirmSlug] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  async function deleteRestaurant() {
+    if (!tenant) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/platform/tenants/${tenant.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmSlug }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not delete this restaurant.");
+        return;
+      }
+      toast.success(`Deleted ${data.name} and ${data.rowsDeleted.toLocaleString()} rows.`);
+      // Nothing left to show on this page, so leave rather than render a 404 shell.
+      router.push("/platform/tenants");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function impersonate() {
     setImpersonating(true);
@@ -495,7 +523,7 @@ export default function TenantDetailPage() {
       </div>
 
       <Dialog open={!!pendingTier} onOpenChange={(o) => !o && setPendingTier(null)}>
-        <DialogContent>
+        <DialogContent className="dark sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="font-heading">
               Change plan to {pendingTier ? TIER_LABEL[pendingTier] : ""}?
@@ -516,6 +544,82 @@ export default function TenantDetailPage() {
             </Button>
             <Button variant="warning" disabled={changingTier} onClick={() => pendingTier && changePlan(pendingTier)}>
               {changingTier ? "Changing…" : "Change plan"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Last card on the page, visually separated, and the only destructive action in the panel.
+          Suspending is the reversible option and lives in the tenants list — this is for genuine
+          removal, so it says so plainly rather than hiding behind a neutral "Delete" button. */}
+      <Card className="mt-6 border-destructive/40 shadow-sm">
+        <CardHeader className="flex flex-row items-center gap-2.5">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+            <AlertTriangle className="size-4" />
+          </span>
+          <div>
+            <CardTitle className="font-heading text-base text-destructive">Delete this restaurant</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Permanently erases {tenant.name} and everything in it — orders, menu, staff, payments,
+              expenses. This cannot be undone.
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3.5 py-3">
+            <p className="text-xs text-muted-foreground">
+              Want to switch it off but keep the data? Set the status to <strong>Suspended</strong> on
+              the tenants list instead — that blocks every login and is reversible.
+            </p>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                setConfirmSlug("");
+                setDeleteOpen(true);
+              }}
+            >
+              Delete restaurant
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={deleteOpen} onOpenChange={(o) => !o && setDeleteOpen(false)}>
+        <DialogContent className="dark sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-destructive">Delete {tenant.name}?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              This permanently deletes every order, payment, menu item, staff account and expense
+              belonging to this restaurant. It cannot be undone, and there is no backup taken first.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="confirm-slug" className="text-sm">
+                Type <span className="font-mono font-semibold text-foreground">{tenant.slug}</span> to
+                confirm
+              </Label>
+              <Input
+                id="confirm-slug"
+                value={confirmSlug}
+                onChange={(e) => setConfirmSlug(e.target.value)}
+                placeholder={tenant.slug}
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              Never mind
+            </Button>
+            {/* The server re-checks this too — the dialog stops a slip, not a stale tab. */}
+            <Button
+              variant="destructive"
+              disabled={deleting || confirmSlug !== tenant.slug}
+              onClick={deleteRestaurant}
+            >
+              {deleting ? "Deleting…" : "Delete permanently"}
             </Button>
           </DialogFooter>
         </DialogContent>

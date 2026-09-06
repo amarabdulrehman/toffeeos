@@ -208,7 +208,7 @@ export function MfaSettingsCard() {
       </Card>
 
       <Dialog open={disableOpen} onOpenChange={setDisableOpen}>
-        <DialogContent>
+        <DialogContent className="dark">
           <DialogHeader>
             <DialogTitle>Disable two-factor authentication</DialogTitle>
           </DialogHeader>

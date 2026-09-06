@@ -123,7 +123,7 @@ export function RecordPaymentDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="dark max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-heading">Record payment</DialogTitle>
         </DialogHeader>

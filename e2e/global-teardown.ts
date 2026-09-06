@@ -33,10 +33,12 @@ async function purgeTestStaff() {
  * never removed it — 17 had piled up, all still TRIALING, so they counted as live trials in the
  * super-admin panel and in any tenant total.
  *
- * Cancelled rather than deleted, deliberately. The schema has no `onDelete: Cascade` anywhere, so
- * removing a Tenant means hand-ordering deletes across ~20 tables; getting that wrong on a shared
- * production database is a far worse outcome than leaving inert rows behind. CANCELLED drops them
- * out of every active count and blocks login, which is the whole practical problem.
+ * Cancelled rather than deleted, deliberately. Hard deletion now exists (deleteTenant in
+ * src/server/platform.ts, using the verified TENANT_OWNED_TABLES sweep), so this *could* erase
+ * them outright — but a teardown that runs unattended after every suite is the last place to point
+ * an irreversible bulk delete at a shared database. CANCELLED drops them out of every active count
+ * and blocks login, which is the whole practical problem; erasing them stays a deliberate,
+ * one-at-a-time action taken through the admin panel.
  *
  * Matched on the machine-generated slug prefixes the specs themselves use, so a real tenant cannot be
  * hit. enumeration.spec.ts provisions one too — its free-email probe is a genuine signup by design.
@@ -50,6 +52,28 @@ async function retireTestTenants() {
       `UPDATE "Tenant" SET status = 'CANCELLED'
         WHERE (slug LIKE 'isolation-test-%' OR slug LIKE 'enum-probe-%' OR slug LIKE 'enum-notcreated-%')
           AND status <> 'CANCELLED'`
+    );
+  } catch {
+    // Best-effort, like the other purges here.
+  } finally {
+    await c.end().catch(() => {});
+  }
+}
+
+/**
+ * tenant-delete.spec.ts creates a disposable tenant to erase and a disposable platform admin to
+ * erase it with. Both are removed by the test itself; this only catches the case where it failed
+ * partway and left them behind, so a rerun starts clean.
+ */
+async function purgeDeleteSpecLeftovers() {
+  if (!process.env.DIRECT_URL) return;
+  const c = new Client({ connectionString: process.env.DIRECT_URL });
+  try {
+    await c.connect();
+    await c.query(`DELETE FROM "PlatformUser" WHERE email LIKE 'deladmin-%@example.com'`);
+    // The tenant itself is left for retireTestTenants below to cancel, for the reason given there.
+    await c.query(
+      `UPDATE "Tenant" SET status = 'CANCELLED' WHERE slug LIKE 'deltest-%' AND status <> 'CANCELLED'`
     );
   } catch {
     // Best-effort, like the other purges here.
@@ -154,6 +178,7 @@ export default async function globalTeardown(config: FullConfig) {
     // is unreachable, and this cleanup should still run in that case.
     await purgeTestRecurringTemplates();
     await purgeTestStaff();
+    await purgeDeleteSpecLeftovers();
     await retireTestTenants();
     await ctx.dispose();
   }

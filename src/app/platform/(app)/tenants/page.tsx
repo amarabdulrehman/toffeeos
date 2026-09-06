@@ -318,7 +318,7 @@ function CreateTenantDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="dark">
         <DialogHeader>
           <DialogTitle className="font-heading">Create tenant</DialogTitle>
         </DialogHeader>
@@ -419,7 +419,7 @@ function TempPasswordDialog({
 
   return (
     <Dialog open={!!provisioned} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="dark">
         <DialogHeader>
           <DialogTitle className="font-heading">{provisioned?.name} is live</DialogTitle>
         </DialogHeader>

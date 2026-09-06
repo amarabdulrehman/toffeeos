@@ -6,6 +6,7 @@ import { issueImpersonationToken } from "@/server/auth/impersonation-store";
 import { TIER_ORDER, GATEABLE_MODULES, defaultModulesForTier, type TierKey } from "@/server/tier";
 import { getBillingStatus, effectiveMonthlyRatePaisa } from "@/lib/billing";
 import { listTenantPayments } from "@/server/billing";
+import { TENANT_OWNED_TABLES } from "@/lib/tenant-tables";
 
 export async function platformMetrics() {
   const now = new Date();
@@ -224,4 +225,70 @@ export async function setTenantFeatures(
   });
 
   return { enabledModules: updated.enabledModules };
+}
+
+export interface DeleteTenantResult {
+  slug: string;
+  name: string;
+  rowsDeleted: number;
+}
+
+/**
+ * Permanently deletes a restaurant and everything belonging to it.
+ *
+ * This is the most destructive thing the platform can do, and there is no undo — suspending or
+ * cancelling (the existing status change) is what "switch it off but keep the data" looks like.
+ * The caller must prove intent by passing the tenant's own slug; a mistyped or stale id cannot
+ * delete the wrong restaurant, because the slug has to match the row that id resolves to.
+ *
+ * Runs as a single transaction: a partial delete would leave a half-erased restaurant that is
+ * worse than either outcome. Uses platformDb because this crosses every tenant boundary by
+ * definition, and raw DELETEs because the table list is dynamic — table names come from the frozen
+ * constant above, never from input, and the tenant id is always a bound parameter.
+ */
+export async function deleteTenant(
+  tenantId: string,
+  confirmSlug: string,
+  actor: { id: string; email: string }
+): Promise<DeleteTenantResult> {
+  const tenant = await platformDb.tenant.findUnique({
+    where: { id: tenantId },
+    select: { slug: true, name: true },
+  });
+  if (!tenant) throw new HttpError(404, "That restaurant doesn't exist.");
+  if (tenant.slug !== confirmSlug) {
+    throw new HttpError(400, `To confirm, type the restaurant's URL exactly: ${tenant.slug}`);
+  }
+
+  const rowsDeleted = await platformDb.$transaction(
+    async (tx) => {
+      let total = 0;
+      for (const table of TENANT_OWNED_TABLES) {
+        total += await tx.$executeRawUnsafe(`DELETE FROM "${table}" WHERE "tenantId" = $1`, tenantId);
+      }
+      total += await tx.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE id = $1`, tenantId);
+      return total;
+    },
+    // Fifty sequential round trips to a database in another region: an empty test tenant already
+    // took ~5.3s, so Prisma's 5s default aborted the whole thing with P2028 and rolled it back. A
+    // busy restaurant with years of orders is slower still. Two minutes is generous on purpose —
+    // this runs once, by hand, and failing halfway is the one outcome worth spending time to avoid.
+    { timeout: 120_000, maxWait: 15_000 }
+  );
+
+  // Written after the fact and with tenantId null on purpose. AuditLog is itself tenant-scoped, so
+  // an entry filed against this tenant would have been destroyed by the deletion it records; the
+  // column is nullable precisely so a platform-level action can outlive its subject.
+  await platformDb.auditLog.create({
+    data: {
+      tenantId: null,
+      actorId: actor.id,
+      action: "platform.tenant.delete",
+      entityType: "Tenant",
+      entityId: tenantId,
+      metadata: { platformUserEmail: actor.email, slug: tenant.slug, name: tenant.name, rowsDeleted },
+    },
+  });
+
+  return { slug: tenant.slug, name: tenant.name, rowsDeleted };
 }
