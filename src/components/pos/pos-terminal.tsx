@@ -43,6 +43,7 @@ export function PosTerminal({
   branchName,
   logoUrl,
   showLogoOnReceipt,
+  receiptHeader,
   canTakePayment,
   canApplyDiscount,
   canVoid,
@@ -55,6 +56,7 @@ export function PosTerminal({
   branchName: string;
   logoUrl: string | null;
   showLogoOnReceipt: boolean;
+  receiptHeader: string | null;
   canTakePayment: boolean;
   canApplyDiscount: boolean;
   canVoid: boolean;
@@ -597,6 +599,7 @@ export function PosTerminal({
           branchName={branchName}
           logoUrl={logoUrl}
           showLogo={showLogoOnReceipt}
+          receiptHeader={receiptHeader}
           onClose={() => setReceiptOrder(null)}
         />
 

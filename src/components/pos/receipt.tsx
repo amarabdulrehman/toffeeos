@@ -21,6 +21,7 @@ export function Receipt({
   branchName,
   logoUrl,
   showLogo = false,
+  receiptHeader,
 }: {
   order: OrderDto;
   tenantName: string;
@@ -29,6 +30,8 @@ export function Receipt({
   logoUrl?: string | null;
   /** BranchSettings.showLogoOnReceipt. Off by default so no existing client's receipts change. */
   showLogo?: boolean;
+  /** BranchSettings.receiptHeader — address, phone, NTN, printed under the branch name. */
+  receiptHeader?: string | null;
 }) {
   const subtotal = order.subtotalPaisa ?? order.totalPaisa;
   const discountedSubtotal = order.discountedSubtotalPaisa ?? subtotal;
@@ -63,6 +66,11 @@ export function Receipt({
         )}
         <div className="text-base font-bold">{tenantName}</div>
         <div>{branchName}</div>
+        {receiptHeader && (
+          // whitespace-pre-line: an address is typed as several lines and has to print that way.
+          // break-words stops a long URL or unspaced string from running off the paper.
+          <div className="mt-1 whitespace-pre-line break-words">{receiptHeader}</div>
+        )}
       </div>
       <div className="my-2 border-t border-dashed border-black" />
       <div className="flex justify-between">

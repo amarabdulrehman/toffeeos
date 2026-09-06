@@ -308,6 +308,9 @@ model BranchSettings {
   /// all keep working exactly the same — this only hides the KDS nav link/dashboard tile and
   /// blocks the /kds route itself (see getBranchKdsEnabled in src/server/branch-settings.ts).
   kdsEnabled                    Boolean      @default(true)
+  /// Free text printed under the branch name at the top of every receipt — address, phone, NTN
+  /// number, "thank you" line. Line breaks are preserved as typed. Existed unused from Phase 1
+  /// until the receipt branding work; null means nothing extra is printed.
   receiptHeader                 String?
   /// Print the tenant's logo at the top of the receipt. Per-branch, alongside receiptHeader, so a
   /// client running one branch that wants letterheaded receipts and another that does not is

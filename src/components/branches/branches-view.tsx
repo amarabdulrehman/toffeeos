@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
@@ -714,6 +715,9 @@ function TaxRuleDialog({
 function ReceiptBrandingCard() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [showLogo, setShowLogo] = useState<boolean | null>(null);
+  const [header, setHeader] = useState("");
+  const [savedHeader, setSavedHeader] = useState("");
+  const [savingHeader, setSavingHeader] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -725,8 +729,12 @@ function ReceiptBrandingCard() {
         fetch("/api/branch-settings"),
       ]);
       if (brandingRes.ok) setLogoUrl((await brandingRes.json())?.logoUrl ?? null);
-      if (settingsRes.ok) setShowLogo((await settingsRes.json()).settings?.showLogoOnReceipt ?? false);
-      else setShowLogo(false);
+      if (settingsRes.ok) {
+        const st = (await settingsRes.json()).settings;
+        setShowLogo(st?.showLogoOnReceipt ?? false);
+        setHeader(st?.receiptHeader ?? "");
+        setSavedHeader(st?.receiptHeader ?? "");
+      } else setShowLogo(false);
     })().catch(() => toast.error("Could not load receipt branding."));
   }, []);
 
@@ -770,6 +778,29 @@ function ReceiptBrandingCard() {
     }
   }
 
+  async function saveHeader() {
+    setSavingHeader(true);
+    try {
+      const res = await fetch("/api/branch-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ receiptHeader: header }),
+      });
+      if (!res.ok) {
+        toast.error("Could not save the receipt header.");
+        return;
+      }
+      // Read back what the server stored: it trims and turns an empty string into null, so the
+      // dirty check below compares against reality rather than what was typed.
+      const saved = (await res.json()).settings?.receiptHeader ?? "";
+      setHeader(saved);
+      setSavedHeader(saved);
+      toast.success("Receipt header saved.");
+    } finally {
+      setSavingHeader(false);
+    }
+  }
+
   if (showLogo === null) return null;
 
   return (
@@ -779,10 +810,10 @@ function ReceiptBrandingCard() {
           <Receipt className="size-4" />
         </span>
         <div>
-          <CardTitle className="font-heading text-base">Receipt logo — this branch</CardTitle>
+          <CardTitle className="font-heading text-base">Receipt — this branch</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Print your logo at the top of every receipt. The logo is shared across your branches; the
-            switch below applies to this one.
+            What prints at the top of every receipt from this branch. The logo is shared across your
+            branches; everything else here applies to this one.
           </p>
         </div>
       </CardHeader>
@@ -825,6 +856,34 @@ function ReceiptBrandingCard() {
             </p>
           </div>
           <Switch checked={showLogo} disabled={saving || !logoUrl} onCheckedChange={toggle} />
+        </div>
+
+        <div className="space-y-2 rounded-xl border bg-muted/20 px-3.5 py-3">
+          <div>
+            <Label htmlFor="receipt-header" className="text-sm font-medium">
+              Header text
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Printed under the branch name — address, phone, NTN number. Line breaks print as you
+              type them.
+            </p>
+          </div>
+          <Textarea
+            id="receipt-header"
+            rows={3}
+            maxLength={280}
+            value={header}
+            onChange={(e) => setHeader(e.target.value)}
+            placeholder={"Shop 4, Main Boulevard, Gulberg\n0300-1234567\nNTN 1234567-8"}
+          />
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">{header.length}/280</span>
+            {/* Only offered when there is something to save — a Save button that does nothing is
+                worse than no button. */}
+            <Button size="sm" variant="outline" disabled={savingHeader || header === savedHeader} onClick={saveHeader}>
+              {savingHeader ? "Saving…" : "Save header"}
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

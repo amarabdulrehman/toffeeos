@@ -18,6 +18,9 @@ const schema = z.object({
   roundingMode: z.enum(["NONE", "NEAREST_1", "NEAREST_5"]).optional(),
   kdsEnabled: z.boolean().optional(),
   showLogoOnReceipt: z.boolean().optional(),
+  // Empty string from a cleared textarea is normalised to null by the handler below, so "no header"
+  // is one value rather than two that render identically.
+  receiptHeader: z.string().max(280).nullable().optional(),
   // Null = overtime off. See the schema comment on BranchSettings and computeHourlyBreakdown in
   // src/server/hr.ts for how these two are actually applied.
   overtimeThresholdHoursPerWeek: z.number().int().min(1).max(168).nullable().optional(),
@@ -37,7 +40,12 @@ export const PATCH = defineHandler(
   async ({ session, db, input }) => {
     const settings = await db.branchSettings.update({
       where: { branchId: session.branchId },
-      data: input,
+      data: {
+        ...input,
+        ...(input.receiptHeader !== undefined
+          ? { receiptHeader: input.receiptHeader?.trim() || null }
+          : {}),
+      },
     });
     return { settings };
   }

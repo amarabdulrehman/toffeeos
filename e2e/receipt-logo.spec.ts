@@ -123,4 +123,33 @@ test.describe("Receipt logo", () => {
       await ctx.close();
     }
   });
+
+  test("the receipt header saves, trims, and clears back to null", async ({ request }) => {
+    // receiptHeader existed unused in the schema from Phase 1 until the receipt branding work.
+    const header = ["Shop 4, Main Boulevard", "Gulberg, Lahore", "0300-1234567"].join("\n");
+
+    const save = await request.patch("/api/branch-settings", { data: { receiptHeader: header } });
+    expect(save.ok(), await save.text()).toBeTruthy();
+    expect((await save.json()).settings.receiptHeader).toBe(header);
+
+    // Line breaks must survive the round trip — an address is typed as several lines and prints
+    // that way (whitespace-pre-line in the Receipt component).
+    const stored = await withDb(async (c) => {
+      const r = await c.query(
+        'SELECT bs."receiptHeader" FROM "BranchSettings" bs JOIN "Branch" b ON bs."branchId" = b.id ' +
+          'JOIN "Tenant" t ON b."tenantId" = t.id WHERE t.slug = $1 ORDER BY b."createdAt" LIMIT 1',
+        [TENANT_SLUG]
+      );
+      return r.rows[0].receiptHeader as string | null;
+    });
+    expect(stored).toContain("\n");
+
+    // Whitespace-only is the same as none: it must land as null, not a blank line on the paper.
+    const cleared = await request.patch("/api/branch-settings", { data: { receiptHeader: "   " } });
+    expect((await cleared.json()).settings.receiptHeader).toBeNull();
+
+    // Over the cap is rejected rather than silently truncated.
+    const tooLong = await request.patch("/api/branch-settings", { data: { receiptHeader: "x".repeat(281) } });
+    expect(tooLong.status()).toBe(400);
+  });
 });

@@ -17,7 +17,7 @@ export default async function PosPage() {
     db.tenant.findUnique({ where: { id: user.tenantId }, select: { logoUrl: true } }),
     db.branchSettings.findUnique({
       where: { branchId: user.branchId },
-      select: { showLogoOnReceipt: true },
+      select: { showLogoOnReceipt: true, receiptHeader: true },
     }),
   ]);
 
@@ -29,6 +29,7 @@ export default async function PosPage() {
       branchName={user.branchName}
       logoUrl={tenant?.logoUrl ?? null}
       showLogoOnReceipt={settings?.showLogoOnReceipt ?? false}
+      receiptHeader={settings?.receiptHeader ?? null}
       canTakePayment={user.permissions.includes("pos.payment.take")}
       canApplyDiscount={user.permissions.includes("pos.discount.applyOrder")}
       canVoid={user.permissions.includes("pos.order.void")}
