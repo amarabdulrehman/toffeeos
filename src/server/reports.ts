@@ -169,6 +169,108 @@ export async function salesReport(tenantId: string, branchIds: string[], range: 
   };
 }
 
+// ============================================================================
+// Transactions — every individual sale in the range, not an aggregate.
+// ============================================================================
+
+export interface TransactionRow {
+  orderId: string;
+  orderNumber: number;
+  paidAt: string;
+  branchName: string;
+  type: string;
+  source: string;
+  tableName: string | null;
+  customerName: string | null;
+  servedBy: string | null;
+  itemCount: number;
+  items: string;
+  subtotalPaisa: number;
+  discountPaisa: number;
+  serviceChargePaisa: number;
+  taxPaisa: number;
+  deliveryFeePaisa: number;
+  roundingPaisa: number;
+  totalPaisa: number;
+  paymentMethods: string;
+  invoiceNumber: string | null;
+}
+
+/**
+ * Every paid sale in the range, one row each — the line-by-line record behind the Sales tab's
+ * totals, and what gets exported when someone needs the day's takings in a spreadsheet.
+ *
+ * Uses the same paidOrdersWhere as salesReport and pnlReport, so the rows here always add up to
+ * the total those two report; a detail view that disagreed with the summary above it would be
+ * worse than not having one.
+ *
+ * Capped rather than unbounded: a year-long range across a busy chain is tens of thousands of
+ * orders, and silently serialising all of them would take the page down. The cap is returned so
+ * the caller can say so plainly instead of quietly truncating.
+ */
+export const TRANSACTIONS_LIMIT = 5000;
+
+export async function transactionsReport(tenantId: string, branchIds: string[], range: DateRange) {
+  const db = tenantDb(tenantId);
+
+  const orders = await db.order.findMany({
+    where: paidOrdersWhere(branchIds, range),
+    orderBy: { paidAt: "desc" },
+    take: TRANSACTIONS_LIMIT + 1,
+    include: {
+      lines: { select: { nameSnapshot: true, quantity: true, isVoided: true } },
+      payments: { select: { method: true, amountPaisa: true } },
+      branch: { select: { name: true } },
+      table: { select: { label: true } },
+      customer: { select: { name: true } },
+      createdBy: { select: { name: true } },
+    },
+  });
+
+  const truncated = orders.length > TRANSACTIONS_LIMIT;
+  const page = truncated ? orders.slice(0, TRANSACTIONS_LIMIT) : orders;
+
+  const rows: TransactionRow[] = page.map((o) => {
+    const live = o.lines.filter((l) => !l.isVoided);
+    return {
+      orderId: o.id,
+      orderNumber: o.orderNumber,
+      // The client renders this in the viewer's locale; keeping it ISO here means the exported
+      // spreadsheet sorts correctly as text, which a localised string does not.
+      paidAt: (o.paidAt ?? o.createdAt).toISOString(),
+      branchName: o.branch.name,
+      type: o.type,
+      source: o.source,
+      tableName: o.table?.label ?? null,
+      customerName: o.customer?.name ?? null,
+      servedBy: o.createdBy?.name ?? null,
+      itemCount: live.reduce((a, l) => a + l.quantity, 0),
+      // Voided lines are excluded here but their money never reached the totals either, so the
+      // summary column and the money columns describe the same sale.
+      items: live.map((l) => `${l.quantity}x ${l.nameSnapshot}`).join(", "),
+      subtotalPaisa: o.subtotalPaisa,
+      // OrderDiscount stores the rule (percentage or flat), not the money it took off, so the
+      // only trustworthy figure is what the order itself recorded before and after discounting.
+      discountPaisa: o.subtotalPaisa - o.discountedSubtotalPaisa,
+      serviceChargePaisa: o.serviceChargePaisa,
+      taxPaisa: o.taxPaisa,
+      deliveryFeePaisa: o.deliveryFeePaisa,
+      roundingPaisa: o.roundingAdjustmentPaisa,
+      totalPaisa: o.totalPaisa,
+      // Split payments are real (pos.payment.split is a permission), so this is a list, not a value.
+      paymentMethods: o.payments.map((p) => p.method).join(", "),
+      invoiceNumber: o.fiscalInvoiceNumber,
+    };
+  });
+
+  return {
+    rows,
+    truncated,
+    limit: TRANSACTIONS_LIMIT,
+    totalPaisa: rows.reduce((a, r) => a + r.totalPaisa, 0),
+  };
+}
+
 /** Quantity sold and revenue per menu item across paid orders in the range, highest revenue
  * first — shared by the Item-wise report route and the WhatsApp daily summary's "top items" line
  * (src/server/whatsapp/triggers.ts), so the two never compute it differently. */

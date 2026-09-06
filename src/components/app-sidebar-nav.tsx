@@ -43,6 +43,7 @@ const NAV: NavItem[] = [
   { href: "/app/inventory", label: "Inventory", icon: Package, anyPermission: ["inventory.view"], module: "inventory" },
   { href: "/app/delivery", label: "Delivery", icon: Truck, anyPermission: ["delivery.view"], module: "delivery" },
   { href: "/app/customers", label: "Customers", icon: Users, anyPermission: ["crm.view"], module: "crm" },
+  { href: "/app/cash-drawer", label: "Cash Drawer", icon: Wallet, anyPermission: ["pos.shift.open"] },
   { href: "/app/expenses", label: "Expenses", icon: Receipt, anyPermission: ["finance.expense.create"], module: "finance" },
   { href: "/app/branches", label: "Branches", icon: Building2, anyPermission: ["branch.manage"] },
   { href: "/app/staff", label: "Staff", icon: UserPlus, anyPermission: ["staff.manage", "staff.invite"] },

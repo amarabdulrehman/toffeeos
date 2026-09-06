@@ -7,6 +7,7 @@ import {
   BarChart3,
   ChefHat,
   CircleDollarSign,
+  ListOrdered,
   Lock,
   Package,
   Scale,
@@ -27,7 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/ui/stat-card";
 import { AreaTrendChart } from "@/components/charts/area-trend-chart";
 import { RankedBarChart } from "@/components/charts/ranked-bar-chart";
-import { formatPkr } from "@/lib/money";
+import { formatPkr, paisaToRupees } from "@/lib/money";
 import { downloadCsv } from "@/lib/csv";
 
 // Sales/staff/items stay always-on; the rest of the "full report suite" each need their own module
@@ -35,6 +36,7 @@ import { downloadCsv } from "@/lib/csv";
 // half of the same decision) — see moduleForPermission in lib/tiers.ts. null = always visible.
 const TAB_MODULE: Record<string, string | null> = {
   sales: null,
+  transactions: null,
   items: null,
   staff: null,
   recipe: "costing", // "Recipe Cost" tab -> costing.viewMargins
@@ -172,6 +174,7 @@ export function ReportsView({ enabledModules }: { enabledModules: string[] }) {
         <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-muted/60 p-1 [&>*]:flex-none">
           <TabsTrigger value="sales" className="gap-1.5"><CircleDollarSign className="size-3.5" />Sales</TabsTrigger>
           {has("pnl") && <TabsTrigger value="pnl" className="gap-1.5"><Scale className="size-3.5" />P&amp;L</TabsTrigger>}
+          <TabsTrigger value="transactions" className="gap-1.5"><ListOrdered className="size-3.5" />Transactions</TabsTrigger>
           <TabsTrigger value="items" className="gap-1.5"><Package className="size-3.5" />Item-wise</TabsTrigger>
           {has("recipe") && <TabsTrigger value="recipe" className="gap-1.5"><ChefHat className="size-3.5" />Recipe Cost</TabsTrigger>}
           <TabsTrigger value="staff" className="gap-1.5"><Users className="size-3.5" />Staff</TabsTrigger>
@@ -200,6 +203,9 @@ export function ReportsView({ enabledModules }: { enabledModules: string[] }) {
             <PnlTab qs={range.qs} />
           </TabsContent>
         )}
+        <TabsContent value="transactions" className="mt-4">
+          <TransactionsTab qs={range.qs} />
+        </TabsContent>
         <TabsContent value="items" className="mt-4">
           <ItemWiseTab qs={range.qs} />
         </TabsContent>
@@ -869,6 +875,167 @@ function PnlRow({
         {deduction ? `(${formatPkr(amountPaisa)})` : formatPkr(amountPaisa)}
       </span>
     </div>
+  );
+}
+
+interface TransactionsReport {
+  rows: {
+    orderId: string;
+    orderNumber: number;
+    paidAt: string;
+    branchName: string;
+    type: string;
+    source: string;
+    tableName: string | null;
+    customerName: string | null;
+    servedBy: string | null;
+    itemCount: number;
+    items: string;
+    subtotalPaisa: number;
+    discountPaisa: number;
+    serviceChargePaisa: number;
+    taxPaisa: number;
+    deliveryFeePaisa: number;
+    roundingPaisa: number;
+    totalPaisa: number;
+    paymentMethods: string;
+    invoiceNumber: string | null;
+  }[];
+  truncated: boolean;
+  limit: number;
+  totalPaisa: number;
+}
+
+/**
+ * Every sale in the range, one row each — the itemised record behind the Sales tab's totals.
+ *
+ * The export carries more columns than the table does. On screen, ten columns is already the most
+ * that stays readable; in a spreadsheet the whole point is having every field to filter and pivot
+ * on, so nothing is dropped there. Money is exported in rupees rather than paisa because the
+ * destination is a spreadsheet, where a person sums the column and expects rupees.
+ */
+function TransactionsTab({ qs }: { qs: string }) {
+  const { data, error, loading } = useReportFetch<TransactionsReport>(`/api/reports/transactions?${qs}`);
+
+  if (error) {
+    return (
+      <Card className="shadow-sm">
+        <CardContent className="pt-6">
+          <ReportError message={error} />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (loading) {
+    return (
+      <Card className="shadow-md">
+        <CardHeader>
+          <Skeleton className="h-5 w-40" />
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        </CardContent>
+      </Card>
+    );
+  }
+  if (!data) return null;
+
+  const exportRows = data.rows.map((r) => ({
+    "Order #": r.orderNumber,
+    "Paid at": new Date(r.paidAt).toLocaleString(),
+    Branch: r.branchName,
+    Type: r.type,
+    Source: r.source,
+    Table: r.tableName ?? "",
+    Customer: r.customerName ?? "",
+    "Served by": r.servedBy ?? "",
+    Items: r.items,
+    "Item count": r.itemCount,
+    Subtotal: paisaToRupees(r.subtotalPaisa),
+    Discount: paisaToRupees(r.discountPaisa),
+    "Service charge": paisaToRupees(r.serviceChargePaisa),
+    Tax: paisaToRupees(r.taxPaisa),
+    "Delivery fee": paisaToRupees(r.deliveryFeePaisa),
+    Rounding: paisaToRupees(r.roundingPaisa),
+    Total: paisaToRupees(r.totalPaisa),
+    Payment: r.paymentMethods,
+    Invoice: r.invoiceNumber ?? "",
+  }));
+
+  return (
+    <Card className="shadow-md">
+      <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <div>
+          <CardTitle className="font-heading">Every sale in this period</CardTitle>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {data.rows.length.toLocaleString()} {data.rows.length === 1 ? "sale" : "sales"} ·{" "}
+            {formatPkr(data.totalPaisa)}
+          </p>
+        </div>
+        <ExportButton rows={exportRows} filename="transactions" />
+      </CardHeader>
+      <CardContent>
+        {data.truncated && (
+          <p className="mb-3 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning-foreground">
+            Showing the most recent {data.limit.toLocaleString()} sales. Narrow the date range to see
+            the rest — the export covers only what is shown.
+          </p>
+        )}
+        {data.rows.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">No sales in this period.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Order</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Branch</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Items</TableHead>
+                  <TableHead>Served by</TableHead>
+                  <TableHead>Payment</TableHead>
+                  <TableHead className="text-right">Discount</TableHead>
+                  <TableHead className="text-right">Tax</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.rows.map((r) => (
+                  <TableRow key={r.orderId}>
+                    <TableCell className="font-medium tabular-nums">#{r.orderNumber}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {new Date(r.paidAt).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">{r.branchName}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{r.type}</Badge>
+                    </TableCell>
+                    {/* The full list is in the export; on screen it is truncated so one large order
+                        cannot push every money column off the right edge. */}
+                    <TableCell className="max-w-[22rem] truncate" title={r.items}>
+                      {r.items || <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{r.servedBy ?? "—"}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{r.paymentMethods || "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {r.discountPaisa > 0 ? `-${formatPkr(r.discountPaisa)}` : "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {formatPkr(r.taxPaisa)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">{formatPkr(r.totalPaisa)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

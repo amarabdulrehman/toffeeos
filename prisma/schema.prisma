@@ -1325,3 +1325,39 @@ model RecurringExpense {
 
   @@index([tenantId, branchId, isActive])
 }
+
+/// One cash drawer per branch per business day: the float it started with, and what was actually
+/// counted at close. The two POS permissions this uses (pos.shift.open / pos.shift.close) were
+/// declared in the original design and left unbuilt until now, same as the finance.* ones were.
+///
+/// `businessDate` is a plain "YYYY-MM-DD" string, not a date/timestamp column, and that is
+/// deliberate. A restaurant's day is a wall-clock day in the branch's own timezone (Branch.timezone
+/// — a branch closing at 2am belongs to the previous business day), which a UTC instant cannot
+/// express without ambiguity. It also sidesteps the `timestamp without time zone` trap that has
+/// already produced two silent bugs here (Expense.spentAt, User.sessionsValidFrom): a string means
+/// the same day no matter which driver reads it.
+///
+/// The expected closing balance is never stored — it is derived on read from opening + cash taken
+/// - cash spent. Storing it would let it drift the moment a late payment or expense lands on a day
+/// already closed, and a stale expectation is worse than none: the variance is the whole point.
+model CashDrawerDay {
+  id                  String    @id @default(uuid())
+  tenantId            String
+  branchId            String
+  businessDate        String // "YYYY-MM-DD" in the branch's timezone — see the note above
+  openingBalancePaisa Int
+  openedById          String
+  openedAt            DateTime  @default(now())
+  /// What a human counted in the drawer at close. Null while the day is still open.
+  closingCountedPaisa Int?
+  closedById          String?
+  closedAt            DateTime?
+  note                String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  /// One drawer per branch per day — this is what makes "open the day" idempotent and stops two
+  /// cashiers opening the same morning twice with different floats.
+  @@unique([branchId, businessDate])
+  @@index([tenantId, branchId, businessDate])
+}

@@ -138,6 +138,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "ExpenseCategory",
   "Expense",
   "RecurringExpense",
+  "CashDrawerDay",
 ]);
 
 const WHERE_OPERATIONS = new Set([
