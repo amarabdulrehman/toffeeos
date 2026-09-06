@@ -13,7 +13,7 @@ import { authFile } from "./fixtures/test-data";
 function range(days: number) {
   const to = new Date();
   const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
-  return `from=${from.toISOString()}&to=${to.toISOString()}`;
+  return `from=${from.toISOString().slice(0, 10)}&to=${to.toISOString().slice(0, 10)}`;
 }
 
 test.describe("Transactions report", () => {

@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { defineHandler } from "@/server/handler";
-import { resolveReportBranchIds, pnlReport } from "@/server/reports";
+import { resolveReportBranchIds, resolveReportRange, pnlReport } from "@/server/reports";
+import { isBusinessDay } from "@/lib/business-day";
 
 const querySchema = z.object({
-  from: z.string().datetime(),
-  to: z.string().datetime(),
+  from: z.string().refine(isBusinessDay, "Invalid date"),
+  to: z.string().refine(isBusinessDay, "Invalid date"),
   branchId: z.string().min(1).optional(),
 });
 
@@ -17,5 +18,6 @@ const querySchema = z.object({
 // revenue and no costs, i.e. actively misleading rather than merely incomplete.
 export const GET = defineHandler({ permission: "finance.pnl.view", input: querySchema }, async ({ session, input }) => {
   const branchIds = await resolveReportBranchIds(session, input.branchId);
-  return pnlReport(session.tenantId, branchIds, { from: new Date(input.from), to: new Date(input.to) });
+  const range = await resolveReportRange(session.tenantId, branchIds, input.from, input.to);
+  return pnlReport(session.tenantId, branchIds, range);
 });

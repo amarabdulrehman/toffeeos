@@ -53,18 +53,18 @@ function useDateRange() {
   const [from, setFrom] = useState(() => subDays(new Date(), 7).toISOString().slice(0, 10));
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
   const qs = useMemo(() => {
+    // The API resolves these "YYYY-MM-DD" strings against the branch's own timezone (see
+    // resolveReportRange in src/server/reports.ts) — sending them as-is is what keeps this in sync
+    // with the Cash Drawer's business day instead of silently reinterpreting them as UTC midnight.
     // Native <input type="date"> can hold an incomplete/invalid value while someone is mid-way
-    // through typing a new date (or clears it), which makes `new Date(...).toISOString()` throw
-    // rather than return a garbage-but-safe value — fall back to the last 7 days instead of
-    // crashing the whole report on every such keystroke.
-    try {
-      const fromIso = new Date(`${from}T00:00:00.000Z`).toISOString();
-      const toIso = new Date(`${to}T23:59:59.999Z`).toISOString();
-      return `from=${fromIso}&to=${toIso}`;
-    } catch {
-      const now = new Date();
-      return `from=${subDays(now, 7).toISOString()}&to=${now.toISOString()}`;
+    // through typing a new date (or clears it); the day-string regex below rejects that shape and
+    // falls back to the last 7 days instead of sending a half-typed date to the server.
+    const DAY = /^\d{4}-\d{2}-\d{2}$/;
+    if (DAY.test(from) && DAY.test(to)) {
+      return `from=${from}&to=${to}`;
     }
+    const now = new Date();
+    return `from=${subDays(now, 7).toISOString().slice(0, 10)}&to=${now.toISOString().slice(0, 10)}`;
   }, [from, to]);
   return { from, setFrom, to, setTo, qs };
 }

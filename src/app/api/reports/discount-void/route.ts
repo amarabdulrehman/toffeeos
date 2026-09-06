@@ -1,15 +1,17 @@
 import { z } from "zod";
 import { defineHandler } from "@/server/handler";
-import { discountVoidReport, resolveReportBranchIds } from "@/server/reports";
+import { discountVoidReport, resolveReportBranchIds, resolveReportRange } from "@/server/reports";
+import { isBusinessDay } from "@/lib/business-day";
 
 const querySchema = z.object({
-  from: z.string().datetime(),
-  to: z.string().datetime(),
+  from: z.string().refine(isBusinessDay, "Invalid date"),
+  to: z.string().refine(isBusinessDay, "Invalid date"),
   branchId: z.string().min(1).optional(),
 });
 
 export const GET = defineHandler({ permission: "reports.discountVoid.view", input: querySchema }, async ({ session, input }) => {
   const branchIds = await resolveReportBranchIds(session, input.branchId);
-  const rows = await discountVoidReport(session.tenantId, branchIds, { from: new Date(input.from), to: new Date(input.to) });
+  const range = await resolveReportRange(session.tenantId, branchIds, input.from, input.to);
+  const rows = await discountVoidReport(session.tenantId, branchIds, range);
   return { rows };
 });

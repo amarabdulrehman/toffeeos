@@ -1,10 +1,11 @@
 import "server-only";
-import { fromZonedTime, formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
 import { tenantDb, rawDb } from "@/server/db";
 import { formatPkr } from "@/lib/money";
 import { salesReport, itemWiseReport } from "@/server/reports";
 import { inactiveCustomers } from "@/server/crm";
+import { businessDayOf, businessDayRange } from "@/lib/business-day";
 import { notifyWhatsApp } from "./send";
 import type { NewLowStockAlert } from "@/server/inventory";
 
@@ -46,19 +47,18 @@ export async function notifyLowStock(tenantId: string, alert: NewLowStockAlert) 
 /** "End of day, per branch, timezone-aware": computed in the branch's own IANA timezone (Branch.timezone), not
  * server-local or UTC — a branch in Asia/Karachi and one in a future different timezone both get a
  * summary for their own local yesterday, not whatever day it happens to be on the server. Reuses
- * salesReport/itemWiseReport (Phase 3) rather than recomputing sales figures. `forDate` overrides
- * "yesterday" for manual/testing invocation. */
+ * salesReport/itemWiseReport (Phase 3) rather than recomputing sales figures, and businessDayOf/
+ * businessDayRange (src/lib/business-day.ts) rather than recomputing the boundary math — the Cash
+ * Drawer and the report suite (src/server/reports.ts) resolve the same "what day is this instant"
+ * question the same way, so this can't quietly drift from either. `forDate` overrides "yesterday"
+ * for manual/testing invocation. */
 export async function sendDailySummaryForBranch(tenantId: string, branchId: string, forDate?: Date) {
   const db = tenantDb(tenantId);
   const branch = await db.branch.findUniqueOrThrow({ where: { id: branchId } });
 
-  // "Yesterday" (or forDate) as a wall-clock calendar day in the branch's own timezone, not the
-  // server's — converted with fromZonedTime so the actual DB query boundaries are real UTC
-  // instants, not the toZonedTime "fake local" Date that's only safe to use with formatInTimeZone.
   const targetInstant = forDate ?? subDays(new Date(), 1);
-  const dayString = formatInTimeZone(targetInstant, branch.timezone, "yyyy-MM-dd");
-  const from = fromZonedTime(`${dayString} 00:00:00.000`, branch.timezone);
-  const to = fromZonedTime(`${dayString} 23:59:59.999`, branch.timezone);
+  const dayString = businessDayOf(targetInstant, branch.timezone);
+  const { from, to } = businessDayRange(dayString, branch.timezone);
 
   const [sales, items] = await Promise.all([
     salesReport(tenantId, [branchId], { from, to }),

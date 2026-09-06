@@ -24,9 +24,9 @@ interface Pnl {
 
 /** A range wide enough to cover the seeded demo history plus anything a test just created. */
 function wideRange() {
-  const from = new Date(Date.UTC(2024, 0, 1)).toISOString();
-  const to = new Date(Date.UTC(new Date().getUTCFullYear() + 1, 0, 1)).toISOString();
-  return `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  const from = "2024-01-01";
+  const to = new Date(Date.UTC(new Date().getUTCFullYear() + 1, 0, 1)).toISOString().slice(0, 10);
+  return `from=${from}&to=${to}`;
 }
 
 test.describe("P&L report", () => {
@@ -126,11 +126,7 @@ test.describe("P&L report", () => {
       },
     });
 
-    const from = new Date(Date.UTC(2026, 0, 1)).toISOString();
-    const to = new Date(Date.UTC(2026, 11, 31, 23, 59, 59)).toISOString();
-    const res = await request.get(
-      `/api/reports/pnl?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
-    );
+    const res = await request.get(`/api/reports/pnl?from=2026-01-01&to=2026-12-31`);
     const pnl: Pnl = await res.json();
 
     expect(pnl.expensesByCategory.some((c) => c.category === category.name)).toBe(false);

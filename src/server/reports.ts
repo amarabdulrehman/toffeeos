@@ -3,6 +3,7 @@ import { differenceInMinutes } from "date-fns";
 import { tenantDb } from "@/server/db";
 import { HttpError } from "@/server/handler";
 import { currentUnitCostPaisa } from "@/server/recipes";
+import { businessDayRange } from "@/lib/business-day";
 import type { TenantSessionUser } from "@/server/auth/types";
 
 /**
@@ -75,6 +76,29 @@ export async function assertWritableMembership(
 export interface DateRange {
   from: Date;
   to: Date;
+}
+
+/**
+ * Turns the "YYYY-MM-DD" from/to a report's date picker sends into real UTC instants, in the
+ * timezone of the branch actually being reported on — not the server's or the browser's. Every
+ * report route used to hand `new Date(fromDay + "T00:00:00.000Z")` straight to Prisma, which is
+ * UTC midnight, not the branch's local midnight: for Asia/Karachi (UTC+5) that silently shifted
+ * every report's day boundary 5 hours from what the Cash Drawer (which already used
+ * businessDayRange) and an owner physically closing the till would call "today". See
+ * src/lib/business-day.ts.
+ *
+ * Uses the first branch in scope for the timezone. Branch.timezone is per-branch, but nothing in
+ * the product lets a tenant set it away from the "Asia/Karachi" default yet, so branches
+ * disagreeing on timezone within one tenant isn't a real case today — if that ever changes, an
+ * aggregate "all branches" report spanning mixed timezones needs its own designed behavior, not a
+ * silent pick-the-first-branch default like this one.
+ */
+export async function resolveReportRange(tenantId: string, branchIds: string[], fromDay: string, toDay: string): Promise<DateRange> {
+  const branch = branchIds.length
+    ? await tenantDb(tenantId).branch.findUnique({ where: { id: branchIds[0] }, select: { timezone: true } })
+    : null;
+  const timezone = branch?.timezone ?? "Asia/Karachi";
+  return { from: businessDayRange(fromDay, timezone).from, to: businessDayRange(toDay, timezone).to };
 }
 
 function previousEquivalentRange({ from, to }: DateRange): DateRange {

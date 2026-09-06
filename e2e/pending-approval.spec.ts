@@ -100,7 +100,17 @@ async function loginAsRecorder(baseURL: string, email: string) {
   return ctx;
 }
 
+// For day-bucketed report routes (src/server/reports.ts), which take "YYYY-MM-DD" and resolve the
+// range in the branch's own timezone — see resolveReportRange.
 function wideRangeQs(): string {
+  const from = "2024-01-01";
+  const to = new Date(Date.UTC(new Date().getUTCFullYear() + 1, 0, 1)).toISOString().slice(0, 10);
+  return `from=${from}&to=${to}`;
+}
+
+// /api/expenses still takes full ISO datetimes, not a business day — it's a raw createdAt/spentAt
+// filter, not one of the timezone-aware report routes.
+function wideIsoRangeQs(): string {
   const from = new Date(Date.UTC(2024, 0, 1)).toISOString();
   const to = new Date(Date.UTC(new Date().getUTCFullYear() + 1, 0, 1)).toISOString();
   return `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
@@ -133,7 +143,7 @@ test.describe("PENDING approval path", () => {
       expect(expense.approvedAt).toBeNull();
 
       // Visible in the log — a pending expense must not be hidden, only uncounted.
-      const listed = (await (await owner.get(`/api/expenses?${wide}`)).json()).expenses.find(
+      const listed = (await (await owner.get(`/api/expenses?${wideIsoRangeQs()}`)).json()).expenses.find(
         (e: { id: string }) => e.id === expense.id
       );
       expect(listed, "a PENDING expense must still be listed").toBeTruthy();
