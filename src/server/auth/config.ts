@@ -219,9 +219,15 @@ export const authConfig = {
       // Branch switch: the client calls `update({ branchId })`; re-resolve permissions for that
       // membership rather than trusting the client to supply them.
       if (trigger === "update" && token.user?.kind === "tenant") {
-        const requestedBranchId = (session as { branchId?: string } | undefined)?.branchId;
-        if (requestedBranchId) {
-          const rebuilt = await buildTenantSessionUser(token.user.tenantId, token.user.id, requestedBranchId);
+        const requested = session as { branchId?: string; refresh?: boolean } | undefined;
+        // `refresh: true` re-issues the token against the *current* branch. Used right after a
+        // password change: that write bumps sessionsValidFrom to sign out every other device, which
+        // would otherwise sign out the caller too. Rebuilding here re-stamps this one token past
+        // the new watermark, so "changing my password logs out my other devices" behaves the way
+        // people expect instead of ejecting them mid-flow.
+        const targetBranchId = requested?.branchId ?? (requested?.refresh ? token.user.branchId : undefined);
+        if (targetBranchId) {
+          const rebuilt = await buildTenantSessionUser(token.user.tenantId, token.user.id, targetBranchId);
           if (rebuilt) {
             rebuilt.impersonatedByPlatformUserId = token.user.impersonatedByPlatformUserId;
             rebuilt.impersonatedByPlatformUserEmail = token.user.impersonatedByPlatformUserEmail;

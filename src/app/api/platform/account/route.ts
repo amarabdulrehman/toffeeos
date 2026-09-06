@@ -33,7 +33,13 @@ export const POST = definePlatformHandler({ input: schema }, async ({ session, i
       where: { id: session.id },
       data: {
         ...(input.newEmail ? { email: input.newEmail } : {}),
-        ...(input.newPassword ? { passwordHash: await hashPassword(input.newPassword) } : {}),
+        // Changing the password revokes every session for this account, including any still open
+        // elsewhere. The UI already signs the caller out afterwards, so there is nothing to refresh
+        // here — and this is the single most powerful account in the system (BYPASSRLS across every
+        // tenant), so erring toward "sign everything out" is the right trade.
+        ...(input.newPassword
+          ? { passwordHash: await hashPassword(input.newPassword), sessionsValidFrom: new Date() }
+          : {}),
       },
     });
   } catch (err) {

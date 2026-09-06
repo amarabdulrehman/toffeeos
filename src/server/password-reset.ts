@@ -64,11 +64,16 @@ export async function resetPassword(token: string, newPassword: string): Promise
 
   const passwordHash = await hashPassword(newPassword);
 
+  // Revoked in the same write as the new hash. A password reset is very often used *because*
+  // someone else may have the account, and leaving their stateless JWT alive until it expires
+  // would defeat the whole exercise — the attacker keeps access despite the password change.
+  const revoked = { passwordHash, sessionsValidFrom: new Date() };
+
   if (record.userType === "platform") {
-    await platformDb.platformUser.update({ where: { id: record.userId }, data: { passwordHash } });
+    await platformDb.platformUser.update({ where: { id: record.userId }, data: revoked });
   } else {
     if (!record.tenantId) throw new HttpError(400, "This reset link is invalid or has expired. Request a new one.");
-    await tenantDb(record.tenantId).user.update({ where: { id: record.userId }, data: { passwordHash } });
+    await tenantDb(record.tenantId).user.update({ where: { id: record.userId }, data: revoked });
   }
 
   await platformDb.passwordResetToken.update({ where: { token }, data: { usedAt: new Date() } });

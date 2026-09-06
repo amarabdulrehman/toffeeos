@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { signOut } from "next-auth/react";
+import { revokeMySessions } from "@/server/session-revocation";
 import { toast } from "sonner";
 import { UserCog } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -41,6 +42,10 @@ export function AccountSettingsCard({ currentEmail }: { currentEmail: string }) 
         return;
       }
       toast.success("Updated — sign in again with your new details.");
+      // A password change already revokes every session for this account server-side; an email-only
+      // change does not, so revoke here too. Otherwise "sign out" on this screen would clear only
+      // this browser's cookie and leave any other copy of the token working until it expired.
+      await revokeMySessions().catch(() => {});
       await signOut({ callbackUrl: "/platform/login" });
     } finally {
       setBusy(false);

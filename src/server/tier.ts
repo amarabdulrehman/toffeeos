@@ -174,6 +174,11 @@ export interface TenantLayoutData {
   tenantStatus: string | null;
   trialEndsAt: Date | null;
   currentPeriodEnd: Date | null;
+  /** Whether the *session* is still good, not just the tenant. Undefined when no userId was given.
+   * The API layer rejects a deactivated or revoked session on every call; without this the page
+   * shell still rendered for them — full nav, every screen — with each action silently failing
+   * underneath. Same page-shell gap the tenant-suspension check below already closes. */
+  sessionValid?: boolean;
 }
 
 /**
@@ -186,16 +191,23 @@ export interface TenantLayoutData {
  * identity would never actually hit. cache() only dedupes within one render pass, so a platform
  * admin's tier/feature/billing change still reaches this tenant's very next page load — this is a
  * pure dedup, not a staleness trade-off. */
-export const getTenantLayoutDataForTenant = cache(async (tenantId: string): Promise<TenantLayoutData> => {
-  const { tenant: row } = await fetchTenantRow(tenantId);
-  const tier = isTierKey(row?.plan_key) ? row!.plan_key : "starter";
-  return {
-    enabledModules: row?.enabledModules ?? defaultModulesForTier(tier),
-    tenantStatus: row?.tenant_status ?? null,
-    trialEndsAt: row?.trial_ends_at ?? null,
-    currentPeriodEnd: row?.current_period_end ?? null,
-  };
-});
+export const getTenantLayoutDataForTenant = cache(
+  async (tenantId: string, userId?: string, tokenValidFrom?: number): Promise<TenantLayoutData> => {
+    const { tenant: row, user } = await fetchTenantRow(tenantId, userId);
+    const tier = isTierKey(row?.plan_key) ? row!.plan_key : "starter";
+    return {
+      enabledModules: row?.enabledModules ?? defaultModulesForTier(tier),
+      tenantStatus: row?.tenant_status ?? null,
+      trialEndsAt: row?.trial_ends_at ?? null,
+      currentPeriodEnd: row?.current_period_end ?? null,
+      sessionValid: userId
+        ? !!user?.isActive &&
+          tokenValidFrom !== undefined &&
+          Number(user.sessionsValidFromMs) <= tokenValidFrom
+        : undefined,
+    };
+  }
+);
 
 /** Thin wrapper over getTenantLayoutDataForTenant so the 8 gated pages that only need the feature
  * toggles (app/app/{inventory,customers,delivery,whatsapp,online-ordering,hr,menu,tables}/page.tsx,

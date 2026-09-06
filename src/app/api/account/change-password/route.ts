@@ -17,10 +17,12 @@ export const POST = defineHandler({ input: schema }, async ({ session, db, input
   }
 
   const passwordHash = await hashPassword(input.newPassword);
+  // Signs out every other device. The caller keeps working: the client refreshes its own token
+  // straight after (see the change-password form), which re-stamps it past this watermark.
   await db.user.update({
     where: { id: session.id },
-    data: { passwordHash, mustChangePassword: false },
+    data: { passwordHash, mustChangePassword: false, sessionsValidFrom: new Date() },
   });
 
-  return { ok: true };
+  return { ok: true, sessionsRevoked: true };
 });

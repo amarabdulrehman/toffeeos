@@ -23,8 +23,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // or a direct per-feature toggle — is reflected on this tenant's very next page load, no re-login
   // required. Also carries the billing dates for the renewal banner below — one query, not two
   // (see getTenantLayoutDataForTenant's doc comment).
-  const layoutData = await getTenantLayoutDataForTenant(user.tenantId);
+  const layoutData = await getTenantLayoutDataForTenant(user.tenantId, user.id, user.sessionsValidFrom);
   const enabledModules = layoutData.enabledModules;
+
+  // The account was deactivated, or these sessions were signed out, after this token was issued.
+  // defineHandler already refuses every API call from it; without this the shell still rendered and
+  // the person saw a fully-populated app whose every action failed — the same page-shell gap the
+  // tenant-suspension branch below exists to close, one level down at the user.
+  if (!layoutData.sessionValid) redirect("/login");
 
   // The API layer already rejects every request from a suspended/cancelled tenant (defineHandler's
   // getTenantGate check) — this is the matching page-shell gap: without it, staff kept seeing the

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ShieldCheck } from "lucide-react";
@@ -21,6 +21,7 @@ export function ChangePasswordView({
   forced: boolean;
 }) {
   const router = useRouter();
+  const { update } = useSession();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -47,7 +48,11 @@ export function ChangePasswordView({
       // Re-authenticate with the new password so the session's mustChangePassword flag (baked
       // into the JWT at sign-in) refreshes to false, same pattern the signup page uses.
       await signIn("credentials", { tenantSlug, email: email ?? "", password: newPassword, redirect: false });
-      toast.success("Password updated.");
+      // The server just bumped sessionsValidFrom to sign out every other device, which would
+      // include this one. Re-issue this token against the new watermark so the person who just
+      // changed their password stays signed in here.
+      await update({ refresh: true });
+      toast.success("Password updated. Any other devices have been signed out.");
       router.push("/app/dashboard");
       router.refresh();
     } finally {

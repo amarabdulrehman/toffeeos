@@ -147,4 +147,67 @@ test.describe("Session revocation", () => {
       await removeStaff(userId);
     }
   });
+
+  test("a password reset signs out every existing session", async ({ baseURL }) => {
+    // The reset flow is often used *because* someone else may have the account, so an attacker
+    // holding a live JWT must not survive the victim resetting their password.
+    const { userId, email } = await createStaff();
+    const ctx = await login(baseURL!, email);
+
+    try {
+      expect((await ctx.get(PROBE)).status()).toBe(200);
+
+      // Drive the real reset: issue a token, then consume it exactly as the reset page does.
+      const token = await withDb(async (c) => {
+        const tenantId = (await c.query('SELECT id FROM "Tenant" WHERE slug = $1', [TENANT_SLUG])).rows[0].id;
+        // `token` is the primary key and Prisma generates it in application code, so raw SQL has to
+        // supply one — there is no database-level default to fall back on.
+        const r = await c.query(
+          'INSERT INTO "PasswordResetToken" (token, "userType", "userId", "tenantId", "expiresAt") ' +
+            "VALUES (gen_random_uuid()::text, 'tenant', $1, $2, now() + interval '30 minutes') RETURNING token",
+          [userId, tenantId]
+        );
+        return r.rows[0].token as string;
+      });
+
+      const anon = await playwrightRequest.newContext({ baseURL, storageState: undefined });
+      const res = await anon.post("/api/auth/reset-password", {
+        data: { token, newPassword: "Brand!NewPassw0rd" },
+      });
+      // Read the body before disposing the context — disposal invalidates the response object.
+      const ok = res.ok();
+      const body = await res.text();
+      await anon.dispose();
+      expect(ok, body).toBeTruthy();
+
+      const after = await ctx.get(PROBE);
+      expect(after.status(), "the pre-reset session must be dead").toBe(401);
+    } finally {
+      await ctx.dispose();
+      await removeStaff(userId);
+    }
+  });
+
+  test("a deactivated user cannot even load the app shell", async ({ baseURL, browser }) => {
+    // The API refusing every call is not enough on its own: the page shell used to render in full
+    // for a revoked session, so the person saw a working app whose every action failed.
+    const { userId, email } = await createStaff();
+    const ctx = await login(baseURL!, email);
+    const state = await ctx.storageState();
+    await ctx.dispose();
+
+    const page = await (await browser.newContext({ baseURL, storageState: state })).newPage();
+    try {
+      await page.goto("/app/dashboard");
+      await expect(page).toHaveURL(/\/app\/dashboard/);
+
+      await withDb((c) => c.query('UPDATE "User" SET "isActive" = false WHERE id = $1', [userId]));
+
+      await page.goto("/app/dashboard");
+      await expect(page, "a revoked session must be bounced to login, not shown the app").toHaveURL(/\/login/);
+    } finally {
+      await page.close();
+      await removeStaff(userId);
+    }
+  });
 });
