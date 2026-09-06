@@ -13,6 +13,9 @@ import { authFile, uniqueSuffix } from "./fixtures/test-data";
  * anti-abuse limit, verified working during the overnight hardening session — not weakened here on
  * purpose). Re-running *this file* more than 3 times inside an hour from the same machine will
  * start failing at the `beforeAll` signup step with a 429, not because tenant isolation broke.
+ *
+ * enumeration.spec.ts spends all three on its own probes and runs first, which used to make that
+ * failure certain on every full-suite run; it now returns the budget in an afterAll.
  */
 test.use({ storageState: authFile("owner") });
 

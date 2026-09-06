@@ -1,4 +1,6 @@
+import "dotenv/config";
 import { test, expect, request as playwrightRequest } from "@playwright/test";
+import { Client } from "pg";
 import { TENANT_SLUG, USERS, uniqueSuffix } from "./fixtures/test-data";
 
 /**
@@ -28,6 +30,33 @@ function skipIfRateLimited(...statuses: number[]) {
 function anon(baseURL: string) {
   return playwrightRequest.newContext({ baseURL, storageState: undefined });
 }
+
+/**
+ * Hands back the signup budget this file just spent.
+ *
+ * These probes need all three signups per hour, and tenant-isolation.spec.ts needs a fourth to
+ * provision the second tenant it proves isolation against — so a full-suite run could never pass
+ * both, and it was tenant-isolation (which cannot skip) that failed every time.
+ *
+ * This is not weakening the limit: the limiter itself is untouched and nothing here tests it — a
+ * 429 is an obstacle these probes skip around, not the property under test. It clears the counters
+ * for the two endpoints this file hammers, so each run starts from a known state instead of
+ * inheriting whatever the last one left; the endpoints stay exactly as rate-limited for real
+ * traffic as before. These rows are ephemeral by design — the limiter prunes them itself on every
+ * call — and in this database they come from test traffic.
+ */
+test.afterAll(async () => {
+  if (!process.env.DIRECT_URL) return;
+  const c = new Client({ connectionString: process.env.DIRECT_URL });
+  try {
+    await c.connect();
+    await c.query(`DELETE FROM "RateLimitHit" WHERE key LIKE 'signup:%' OR key LIKE 'password-reset-request:%'`);
+  } catch {
+    // Best-effort: the worst case is the pre-existing behaviour, a 429 later in the run.
+  } finally {
+    await c.end().catch(() => {});
+  }
+});
 
 test.describe("Account enumeration", () => {
   test("password reset says the same thing for a real and a fake address", async ({ baseURL }) => {
@@ -115,9 +144,8 @@ test.describe("Account enumeration", () => {
           branchName: "Main",
         },
       });
-      // Yields to tenant-isolation.spec.ts, which also needs one of the 3 signups per hour and
-      // cannot skip — it has to provision a real second tenant to prove isolation against. Two
-      // full-suite runs inside the same hour will exhaust the budget; that is the rate limit doing
+      // Still skips rather than fails: the budget is returned in afterAll, but a manual re-run of
+      // this file inside the same window can still land on a 429, and that is the rate limit doing
       // its job, not a regression.
       test.skip(res.status() === 429, `signup rate limit reached (${SIGNUP_RATE_LIMIT}/hour/IP)`);
       expect(res.status()).toBe(201);
