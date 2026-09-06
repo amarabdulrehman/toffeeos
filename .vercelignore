@@ -1,0 +1,18 @@
+# Vercel installs dependencies and runs the build on its own infrastructure, so none of this needs
+# to be uploaded. The CLI otherwise walks the whole project directory to work out what to send —
+# and .next/dev (Turbopack's cache) had grown to 14GB, which is what made `vercel --prod` die with
+# a bare "fetch failed" rather than any useful message.
+.next
+node_modules
+.git
+
+# Test-only, never part of a deploy.
+e2e
+tests
+test-results
+playwright-report
+playwright.config.ts
+
+# Local env files are never uploaded (Vercel injects its own), but be explicit.
+.env
+.env.*
