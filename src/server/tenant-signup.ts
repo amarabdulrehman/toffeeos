@@ -1,6 +1,7 @@
 import "server-only";
 import { addDays } from "date-fns";
 import { rawDb, platformDb } from "@/server/db";
+import { HttpError } from "@/server/handler";
 import { newId } from "@/lib/ids";
 import { hashPassword, generateTempPassword } from "@/lib/password";
 import { SEED_ROLES } from "@/server/permissions/registry";
@@ -53,8 +54,11 @@ async function provisionTenant(
   account: ProvisionAccount
 ): Promise<{ tenantId: string; slug: string }> {
   const existing = await rawDb.tenant.findUnique({ where: { slug: input.slug } });
-  if (existing) throw new Error("That restaurant URL is already taken.");
+  if (existing) throw new HttpError(400, "That restaurant URL is already taken.");
 
+  // Deliberately a plain Error, not an HttpError: this is an operator-facing deployment problem
+  // (the plans were never seeded), and the public signup route only forwards HttpError messages to
+  // the caller. An anonymous visitor gets the generic failure; the real cause goes to Sentry.
   const plan = await rawDb.plan.findUnique({ where: { key: account.planKey } });
   if (!plan) throw new Error(`The ${account.planKey} plan is not seeded — run \`npm run seed\` first.`);
 
@@ -159,7 +163,7 @@ export async function signupTenant(input: SignupInput): Promise<void> {
   // than inside provisionTenant keeps it ahead of the email branch below, so a taken slug is still
   // a real error even when the email is also in use.
   const existingTenant = await rawDb.tenant.findUnique({ where: { slug: input.slug }, select: { id: true } });
-  if (existingTenant) throw new Error("That restaurant URL is already taken.");
+  if (existingTenant) throw new HttpError(400, "That restaurant URL is already taken.");
 
   // Hashed before the duplicate check, not after, so both outcomes pay the same ~100ms of bcrypt.
   // Short-circuiting first made "email already registered" measurably faster to answer than a real

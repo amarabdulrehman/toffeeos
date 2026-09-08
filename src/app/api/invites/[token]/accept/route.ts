@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { z } from "zod";
 import { acceptInvite } from "@/server/staff-invites";
+import { HttpError } from "@/server/handler";
 
 const schema = z.object({
   name: z.string().min(2).max(120),
@@ -24,7 +26,14 @@ export async function POST(req: NextRequest, routeCtx: { params: Promise<{ token
     }
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Could not accept invite.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    // Unauthenticated endpoint — a raw Prisma error here would hand an anonymous caller the model
+    // name, operation and constraint columns (e.g. a duplicate-email unique violation). Only the
+    // deliberate HttpError messages are safe to forward; see /api/signup for the same split.
+    if (err instanceof HttpError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    Sentry.captureException(err);
+    console.error(err);
+    return NextResponse.json({ error: "Could not accept invite." }, { status: 400 });
   }
 }

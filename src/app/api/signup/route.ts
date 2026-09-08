@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { z } from "zod";
 import { signupTenant } from "@/server/tenant-signup";
+import { HttpError } from "@/server/handler";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 // Public, unauthenticated — this is the one route that legitimately creates a Tenant. No session
@@ -44,7 +46,15 @@ export async function POST(req: NextRequest) {
     // them anyway now that signup no longer auto-signs-in.
     return NextResponse.json({ ok: true }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Signup failed";
-    return NextResponse.json({ error: message }, { status: 400 });
+    // Only messages this code deliberately wrote for a human reach the caller. Anything else — a
+    // Prisma constraint violation, a connection failure, an unseeded-plan deployment error — names
+    // tables, columns and internals, and this endpoint is unauthenticated, so it goes to Sentry and
+    // the caller gets a flat failure. Same split defineHandler makes for authenticated routes.
+    if (err instanceof HttpError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    Sentry.captureException(err);
+    console.error(err);
+    return NextResponse.json({ error: "Could not create the account. Please try again." }, { status: 400 });
   }
 }
