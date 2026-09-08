@@ -30,6 +30,8 @@ interface DrawerDay {
   closedByName: string | null;
   closedAt: string | null;
   variancePaisa: number | null;
+  correctedByName: string | null;
+  correctedAt: string | null;
   note: string | null;
 }
 
@@ -55,12 +57,13 @@ function Figure({ label, value, hint, strong }: { label: string; value: string; 
   );
 }
 
-export function CashDrawerView({ canClose }: { canClose: boolean }) {
+export function CashDrawerView({ canClose, canCorrect }: { canClose: boolean; canCorrect: boolean }) {
   const [today, setToday] = useState<DrawerDay | null>(null);
   const [history, setHistory] = useState<DrawerDay[]>([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [closeDialog, setCloseDialog] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const [amountRupees, setAmountRupees] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -108,15 +111,17 @@ export function CashDrawerView({ canClose }: { canClose: boolean }) {
         toast.success(`Drawer opened with ${formatPkr(paisa, { showPaisa: true })}.`);
       } else {
         const v: number = data.day.variancePaisa;
+        const verb = data.isCorrection ? "corrected" : "closed";
         // Silence on a discrepancy is how it gets ignored, so the toast names it either way.
-        if (v === 0) toast.success("Day closed — the drawer balanced exactly.");
+        if (v === 0) toast.success(`Day ${verb} — the drawer balanced exactly.`);
         else
           toast.warning(
-            `Day closed — ${v > 0 ? "over" : "short"} by ${formatPkr(Math.abs(v), { showPaisa: true })}.`
+            `Day ${verb} — ${v > 0 ? "over" : "short"} by ${formatPkr(Math.abs(v), { showPaisa: true })}.`
           );
       }
       setOpenDialog(false);
       setCloseDialog(false);
+      setCorrecting(false);
       setNote("");
       setAmountRupees("");
       await load();
@@ -154,7 +159,7 @@ export function CashDrawerView({ canClose }: { canClose: boolean }) {
             <Wallet className="size-4" />
             Today
             {closed ? (
-              <Badge variant="outline">Closed</Badge>
+              <Badge variant="outline">{today.correctedAt ? "Closed · corrected" : "Closed"}</Badge>
             ) : notOpenedYet ? (
               <Badge variant="outline">Not opened</Badge>
             ) : (
@@ -172,8 +177,7 @@ export function CashDrawerView({ canClose }: { canClose: boolean }) {
               <Banknote className="size-4" />
               Open the drawer
             </Button>
-          ) : (
-            !closed &&
+          ) : !closed ? (
             canClose && (
               <Button
                 size="sm"
@@ -181,11 +185,30 @@ export function CashDrawerView({ canClose }: { canClose: boolean }) {
                   // Prefilled with what should be there — the counter still types their own figure,
                   // but starting from a blank box invites a lazy copy of the expected number.
                   setAmountRupees(String(paisaToRupees(today.expectedClosingPaisa ?? 0)));
+                  setCorrecting(false);
                   setCloseDialog(true);
                 }}
               >
                 <LockKeyhole className="size-4" />
                 Close the day
+              </Button>
+            )
+          ) : (
+            // A closed day can only be corrected, never re-closed the ordinary way — restricted to
+            // Owner/Branch Manager (pos.cashDrawer.correctClose), not the cashier who closed it.
+            canCorrect && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setAmountRupees(String(paisaToRupees(today.closingCountedPaisa ?? 0)));
+                  setNote("");
+                  setCorrecting(true);
+                  setCloseDialog(true);
+                }}
+              >
+                <LockKeyhole className="size-4" />
+                Correct the count
               </Button>
             )
           )}
@@ -220,7 +243,13 @@ export function CashDrawerView({ canClose }: { canClose: boolean }) {
             <Figure
               label="Counted"
               value={today.closingCountedPaisa == null ? "—" : formatPkr(today.closingCountedPaisa, { showPaisa: true })}
-              hint={today.closedByName ? `by ${today.closedByName}` : undefined}
+              hint={
+                today.correctedByName
+                  ? `closed by ${today.closedByName}, corrected by ${today.correctedByName}`
+                  : today.closedByName
+                    ? `by ${today.closedByName}`
+                    : undefined
+              }
               strong
             />
           </div>
@@ -274,11 +303,16 @@ export function CashDrawerView({ canClose }: { canClose: boolean }) {
                         {d.closingCountedPaisa == null ? "—" : formatPkr(d.closingCountedPaisa)}
                       </TableCell>
                       <TableCell>
-                        {d.variancePaisa == null ? (
-                          <Badge variant="outline">Open</Badge>
-                        ) : (
-                          <VarianceBadge paisa={d.variancePaisa} />
-                        )}
+                        <div className="flex items-center gap-2">
+                          {d.variancePaisa == null ? (
+                            <Badge variant="outline">Open</Badge>
+                          ) : (
+                            <VarianceBadge paisa={d.variancePaisa} />
+                          )}
+                          {d.correctedByName && (
+                            <span className="text-xs text-muted-foreground">corrected by {d.correctedByName}</span>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -331,12 +365,20 @@ export function CashDrawerView({ canClose }: { canClose: boolean }) {
       <Dialog open={closeDialog} onOpenChange={(o) => !o && setCloseDialog(false)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="font-heading">Close the day</DialogTitle>
+            <DialogTitle className="font-heading">{correcting ? "Correct the count" : "Close the day"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Count what is physically in the drawer and enter it. Anything left over or missing is
-              recorded as a difference — it is not adjusted away.
+              {correcting ? (
+                <>
+                  This day was already closed
+                  {today.closedByName ? ` by ${today.closedByName}` : ""}. Entering a new count replaces
+                  it — the original closer and close time stay on record, and this correction is
+                  audit-logged with who made it and what the count changed from.
+                </>
+              ) : (
+                "Count what is physically in the drawer and enter it. Anything left over or missing is recorded as a difference — it is not adjusted away."
+              )}
             </p>
             <div className="space-y-1.5">
               <Label htmlFor="counted">Counted in drawer (Rs)</Label>
@@ -352,14 +394,15 @@ export function CashDrawerView({ canClose }: { canClose: boolean }) {
               />
               <p className="text-xs text-muted-foreground">
                 Expected: {formatPkr(today.expectedClosingPaisa ?? 0, { showPaisa: true })}
+                {correcting && ` · Previously counted: ${formatPkr(today.closingCountedPaisa ?? 0, { showPaisa: true })}`}
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="close-note">Note (optional)</Label>
+              <Label htmlFor="close-note">{correcting ? "Reason for the correction" : "Note (optional)"}</Label>
               <Textarea
                 id="close-note"
                 rows={2}
-                placeholder="e.g. Rs 500 short — cashier float taken for change"
+                placeholder={correcting ? "e.g. Typed Rs 45,000 instead of Rs 4,500" : "e.g. Rs 500 short — cashier float taken for change"}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
@@ -370,7 +413,7 @@ export function CashDrawerView({ canClose }: { canClose: boolean }) {
               Cancel
             </Button>
             <Button onClick={() => submit("close")} disabled={saving || !(parseFloat(amountRupees) >= 0)}>
-              {saving ? "Closing…" : "Close the day"}
+              {saving ? "Saving…" : correcting ? "Save correction" : "Close the day"}
             </Button>
           </DialogFooter>
         </DialogContent>

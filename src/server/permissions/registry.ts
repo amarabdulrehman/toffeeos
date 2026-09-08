@@ -36,6 +36,7 @@ export const PERMISSIONS: PermissionDef[] = [
   perm("pos", "payment.split", "Split payment across multiple methods"),
   perm("pos", "payment.refund", "Issue a refund"),
   perm("pos", "cashDrawer.openNoSale", "Open the cash drawer without a sale"),
+  perm("pos", "cashDrawer.correctClose", "Correct a closed cash drawer day's counted amount"),
   perm("pos", "shift.open", "Open a POS shift"),
   perm("pos", "shift.close", "Close a POS shift"),
   perm("pos", "shift.bypassTimeRestriction", "Bypass shift time restriction"),

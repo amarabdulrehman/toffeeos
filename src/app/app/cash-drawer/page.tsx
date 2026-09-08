@@ -11,5 +11,10 @@ export default async function CashDrawerPage() {
   if (!user || user.kind !== "tenant") redirect("/login");
   if (!user.permissions.includes("pos.shift.open")) redirect("/app/dashboard");
 
-  return <CashDrawerView canClose={user.permissions.includes("pos.shift.close")} />;
+  return (
+    <CashDrawerView
+      canClose={user.permissions.includes("pos.shift.close")}
+      canCorrect={user.permissions.includes("pos.cashDrawer.correctClose")}
+    />
+  );
 }

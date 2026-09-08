@@ -34,6 +34,8 @@ export interface CashDrawerDayView {
   closedAt: string | null;
   /** counted - expected. Positive is over, negative is short. Null until the day is closed. */
   variancePaisa: number | null;
+  correctedByName: string | null;
+  correctedAt: string | null;
   note: string | null;
 }
 
@@ -100,7 +102,7 @@ export async function getDrawerDay(tenantId: string, branchId: string, day?: str
     cashMovement(tenantId, branchId, businessDate, branch.timezone),
   ]);
 
-  const names = await resolveNames(tenantId, [row?.openedById, row?.closedById]);
+  const names = await resolveNames(tenantId, [row?.openedById, row?.closedById, row?.correctedById]);
   const expectedClosingPaisa =
     row == null ? null : row.openingBalancePaisa + movement.cashSalesPaisa - movement.cashExpensesPaisa;
 
@@ -122,6 +124,8 @@ export async function getDrawerDay(tenantId: string, branchId: string, day?: str
       row?.closingCountedPaisa != null && expectedClosingPaisa != null
         ? row.closingCountedPaisa - expectedClosingPaisa
         : null,
+    correctedByName: row?.correctedById ? (names.get(row.correctedById) ?? null) : null,
+    correctedAt: row?.correctedAt?.toISOString() ?? null,
     note: row?.note ?? null,
   };
 }
@@ -160,12 +164,21 @@ export async function openDrawerDay(
   return getDrawerDay(tenantId, branchId, businessDate);
 }
 
+export interface CloseDrawerDayResult {
+  day: CashDrawerDayView;
+  /** Distinguishes a correction from an ordinary first close, so the route can audit-log the right
+   * action name and the previous figure a correction overwrote. */
+  isCorrection: boolean;
+  previousClosingCountedPaisa: number | null;
+}
+
 export async function closeDrawerDay(
   tenantId: string,
   branchId: string,
   actorId: string,
+  permissions: readonly string[],
   input: { closingCountedPaisa: number; businessDate?: string; note?: string | null }
-): Promise<CashDrawerDayView> {
+): Promise<CloseDrawerDayResult> {
   const branch = await branchOrThrow(tenantId, branchId);
   const businessDate = input.businessDate ?? todayFor(branch.timezone);
   if (!isBusinessDay(businessDate)) throw new HttpError(400, "That isn't a valid date.");
@@ -177,20 +190,40 @@ export async function closeDrawerDay(
     where: { branchId_businessDate: { branchId, businessDate } },
   });
   if (!existing) throw new HttpError(400, "This day's drawer was never opened, so there's nothing to close.");
-  // A second count would overwrite the first and erase the variance that was actually investigated.
-  if (existing.closedAt) throw new HttpError(409, "This day has already been closed.");
+
+  const isCorrection = existing.closedAt != null;
+  // An ordinary second close would silently overwrite the first count and erase whatever variance
+  // was already investigated — refused for anyone without the dedicated correction permission.
+  // pos.cashDrawer.correctClose is Owner/Branch Manager only (see registry.ts): the person who did
+  // the original close can't quietly redo it, only someone reviewing it after the fact can correct
+  // it, and closedById/closedAt below are left untouched either way so the record of who actually
+  // closed the till never changes.
+  if (isCorrection && !permissions.includes("pos.cashDrawer.correctClose")) {
+    throw new HttpError(409, "This day has already been closed.");
+  }
 
   await tenantDb(tenantId).cashDrawerDay.update({
     where: { id: existing.id },
-    data: {
-      closingCountedPaisa: input.closingCountedPaisa,
-      closedById: actorId,
-      closedAt: new Date(),
-      note: input.note?.trim() || existing.note,
-    },
+    data: isCorrection
+      ? {
+          closingCountedPaisa: input.closingCountedPaisa,
+          correctedById: actorId,
+          correctedAt: new Date(),
+          note: input.note?.trim() || existing.note,
+        }
+      : {
+          closingCountedPaisa: input.closingCountedPaisa,
+          closedById: actorId,
+          closedAt: new Date(),
+          note: input.note?.trim() || existing.note,
+        },
   });
 
-  return getDrawerDay(tenantId, branchId, businessDate);
+  return {
+    day: await getDrawerDay(tenantId, branchId, businessDate),
+    isCorrection,
+    previousClosingCountedPaisa: isCorrection ? existing.closingCountedPaisa : null,
+  };
 }
 
 /** Recent days for one branch, newest first — the history strip under today's drawer. */
