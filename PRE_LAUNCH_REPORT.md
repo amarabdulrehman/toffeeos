@@ -514,6 +514,49 @@ false positive in my scanner (matched a code comment; it's a public route).
 
 ---
 
+## 7b. SECRET EXPOSURE — FULL SWEEP
+
+Asked directly whether anything sensitive is public or should have been gitignored. Checked properly
+rather than repeating the earlier pass.
+
+**Repository is PRIVATE** (GitHub API returns 404 unauthenticated). That bounds the §2.3 password
+exposure to people with repo access rather than the open internet — still worth fixing, since repo
+access is not the same population as "should be able to log into production as an owner", but the
+blast radius was smaller than the original write-up implied.
+
+| Check | Result |
+|---|---|
+| Connection strings with real credentials, **entire git history** | none, ever |
+| JWTs / `sk_live` / `AKIA` / `ghp_` / `xox` / `re_` keys, **entire history** | none, ever |
+| Secret-bearing files ever committed (`.env`, `.pem`, `.key`, `id_rsa`…) | none — only `.env.example`, which holds placeholders |
+| Server secrets in the **built client bundle** (113 files scanned) | none — service-role key, `AUTH_SECRET`, all three DB URLs, both seed passwords: all absent |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the bundle | present, **as designed** — and safe here specifically because `anon`/`authenticated` hold zero grants on the public schema |
+| Tracked files >1 MB (accidental blobs) | none |
+| `.next`, `node_modules`, `test-results`, `e2e/.auth` ignored | all correctly ignored |
+| `playwright-report/` | correctly ignored once it exists (the pattern is directory-scoped) |
+
+### One live account found and closed
+
+Sweeping *all* repo-committed passwords — not just the seed one — against every loginable account
+turned up one my earlier rotation had missed, because that rotation was scoped to
+`@karachikarahi.pk` addresses:
+
+**`overnight-test-invite@example.com`** — an active staff account on the **ACTIVE demo tenant**,
+openable with `InvitedStaffPassw0rd!`, hardcoded in `e2e/staff-invite.spec.ts`. Leftover residue
+from a staff-invite test that didn't clean up after itself.
+
+Deactivated rather than deleted: reversible, blocks login immediately (both `authorize()` and
+`defineHandler` check `isActive`), and leaves referencing rows intact.
+
+**Re-verified after: across all 12 loginable accounts on ACTIVE tenants, 0 open with any password
+committed in this repo.** Every other match was on a CANCELLED tenant, which `tenantAcceptsLogin`
+already refuses.
+
+This is a second argument for §5a step 2 (clean the test residue): the specs create real accounts
+with known passwords in the same database production uses, and teardown does not always run.
+
+---
+
 ## 8a. SUPABASE STATE (verified against the live project)
 
 | Check | Result |
