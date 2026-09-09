@@ -17,6 +17,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "seed": "cross-env NODE_OPTIONS=--conditions=react-server tsx prisma/seed.ts",
+    "db:verify": "tsx prisma/verify-database-setup.ts",
     "db:sync-roles": "tsx prisma/backfill-role-permissions.ts",
     "db:sync-features": "tsx prisma/backfill-feature-toggles.ts",
     "db:backfill-finance": "tsx prisma/backfill-finance-module.ts",
