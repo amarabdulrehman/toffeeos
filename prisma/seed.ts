@@ -8,6 +8,7 @@ import { hashPassword, hashPin } from "@/lib/password";
 import { SEED_ROLES } from "@/server/permissions/registry";
 import { finalizeOrder, type PricingLineInput, type TaxRuleInput } from "@/lib/pricing";
 import { defaultExpenseCategoryRows } from "@/lib/expense-categories";
+import { GATEABLE_MODULES } from "@/lib/tiers";
 
 // Every write below the initial Tenant row goes through tenantDb(tenantId), never rawDb directly —
 // rawDb is RLS-bound (app_user) and, with no app.tenant_id session var set, RLS's WITH CHECK would
@@ -358,6 +359,19 @@ async function seedDemoTenant() {
       branchLimit: growthPlan.maxBranches,
       trialEndsAt: addDays(new Date(), 14),
       currentPeriodEnd: addDays(new Date(), 30),
+      // Was omitted entirely, which left it at the column default of [] — every gated feature off,
+      // on a tenant whose whole purpose is demonstrating them. It went unnoticed because the only
+      // seeded database anyone used was production, where a platform admin had turned the modules
+      // on by hand long ago; it surfaced the moment a second database was seeded from scratch and
+      // ~40 e2e tests failed with "This feature isn't enabled for this restaurant."
+      //
+      // Every module, not defaultModulesForTier("growth"): delivery/online/whatsapp/hr sit above
+      // the Growth tier, the suite exercises all four, and production's demo tenant has them
+      // custom-enabled anyway. A demo tenant with features switched off is not a demo.
+      //
+      // Real signups were never affected — provisionTenant (src/server/tenant-signup.ts) has always
+      // set this correctly from the chosen tier.
+      enabledModules: GATEABLE_MODULES.flatMap((m) => m.storageKeys),
     },
   });
 
