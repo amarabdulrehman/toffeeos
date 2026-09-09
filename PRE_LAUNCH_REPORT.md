@@ -341,15 +341,20 @@ deletion (which is tested and cleans up orphans properly).
 
 ### 3. Verify a backup actually restores
 
-`/api/cron/backup` writes to Supabase Storage nightly and the code is sound, but I never restored
-one. Take the newest backup, restore it into the new dev project from step 1, and confirm you can
-sign in and see orders. An unverified backup is a hope, not a backup — and step 1 gives you a safe
-place to test it.
+**Correction to an earlier draft of this report:** backups are not just configured, they are
+*running*. `db-backups` holds 12 files, one per night at 03:42 UTC, newest `full-backup-2026-09-09
+.json.gz` at 486 KB — consistent with the 14-day retention. So the mechanism works.
 
-### 4. Set `CRON_SECRET` in Vercel production
+What is still unverified is the half that matters: **restoring one.** Take the newest, restore it
+into the new dev project from step 1, and confirm you can sign in and see orders. Note the format is
+gzipped JSON produced by the app, not `pg_dump` — so restoring means running the app's own import
+path, which is exactly the thing worth rehearsing before you need it at 2am.
 
-If unset, **both** cron endpoints reject every request and the nightly summary and backup silently
-never run. They fail closed, which is right, but silently.
+### 4. ~~Set `CRON_SECRET` in Vercel production~~ — already set, verified
+
+I listed this as a to-do. It was wrong, and the backups above are the proof: the cron route rejects
+every request with 401 unless `CRON_SECRET` matches, so twelve nightly backups landing on schedule
+means it is set correctly in production. Nothing to do.
 
 ### 5. Get one real performance number
 
@@ -506,6 +511,27 @@ brute-force channel); `platform/request-password-reset` (rate-limited).
 Three `defineHandler` routes declare no permission, all correctly — `account/change-password` and
 `hr/clock-out` both act only on `session.id` with no user-supplied identifier, and `signup` was a
 false positive in my scanner (matched a code comment; it's a public route).
+
+---
+
+## 8a. SUPABASE STATE (verified against the live project)
+
+| Check | Result |
+|---|---|
+| Database size | **20 MB — 4% of the 500 MB free-tier limit.** Ample headroom, and ~45 of 65 tenants are test residue, so real usage is smaller still. |
+| Public-role lockdown | **Holds.** Zero grants to `anon` / `authenticated` / `public` on the public schema. |
+| RLS | 53 of 56 tables enabled **and forced**; `app_user` has `rolbypassrls = false`. |
+| `delivery-proofs` bucket | exists, **private** — correct, it holds tenant data |
+| `db-backups` bucket | exists, **private** — correct |
+| `tenant-logos` bucket | exists, **public** — intentional (logos render on the unauthenticated storefront) |
+| Nightly backups | **Running.** 12 files, one per night at 03:42 UTC, newest 486 KB. |
+| Connection pooling | Runtime on pgbouncer transaction mode (6543); migrations direct (5432). Correct for serverless. |
+
+Largest tables: `AuditLog` (1.9 MB), `OrderEvent` (616 kB), `Role` (520 kB), `Order` (480 kB).
+`AuditLog` is the one that grows without bound by design — worth watching, not acting on.
+
+The only Supabase work outstanding is **creating a second project** for dev/test (§5a step 1).
+Everything else on the Supabase side is healthy.
 
 ---
 
