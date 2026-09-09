@@ -8,19 +8,23 @@
 
 ## 1. GO / NO-GO VERDICT
 
-> **VERDICT REVISED — see §2.3. This was GO; it is now NO-GO until one thing is fixed.**
+> **Verdict went GO → NO-GO → GO. The middle step was real and is now fixed (§2.3).**
 >
-> After writing the GO below I went looking for loopholes I'd noticed early and never chased. One of
-> them is real and live: **six accounts on your public production site, including a restaurant
-> owner, open with a password published in plaintext in this repo.** Anyone who reads
-> `prisma/seed.ts` can sign in to `toffeeos.vercel.app` right now as the owner of the
-> `karachi-karahi` tenant. That is a working unauthorized login on production.
+> After first writing GO, I chased a loophole I'd noticed early and never followed up: six accounts
+> on the public production site — including a restaurant owner — opened with a password committed in
+> plaintext in this repo. That was a working unauthorized login on production, and I was wrong to
+> write GO before checking it.
 >
-> It is not a client-data breach — that tenant holds demo data, not a paying customer's. And the fix
-> is small. But "anyone with the repo can log into production as an owner" is not a state to launch
-> from, and I was wrong to write GO before checking it. Everything else below stands.
+> It is fixed and verified: the passwords are out of the repo, both entry points refuse to run
+> without an environment variable rather than falling back, and the six live accounts are rotated.
+> The committed password now opens 0 of 6; the new one opens 6 of 6.
+>
+> **One thing still needs you before launch, and it is not code:** dev, test and production share a
+> single Supabase database (§2.4). That is what made the above a production issue instead of a local
+> one, and it is why your test suite deletes tenants in production. Splitting it is a provisioning
+> task I can't do from here.
 
-**Original verdict (still accurate for everything except §2.3):** I'd ship this to paying clients.
+**Verdict: GO once §2.4 is addressed.** I'd ship this to paying clients.
 
 The thing you said matters most — one client seeing another's data — is genuinely well built, and I
 mean that after trying to break it rather than after reading it. Isolation is not enforced in the
@@ -103,7 +107,28 @@ reach the log; in dev it still returns `{ ok: true }` and still logs.
 
 ---
 
-### 2.3 — NOT FIXED, BLOCKS LAUNCH: seeded passwords open live accounts on production
+### 2.3 — FIXED: seeded passwords opened live accounts on production — `fe225a9`
+
+**Resolved.** Both passwords now come from the environment with no committed default; both entry
+points throw an actionable error if the variable is missing (verified — running the suite with it
+unset fails immediately naming the variable, rather than falling back to anything). The six live
+accounts are rotated to a generated value held only in `.env`: **the committed password opens 0 of
+6, the new one opens 6 of 6.** I then deleted the cached `e2e/.auth/*.json` sessions so global-setup
+had to perform a real login with the new credential instead of reusing a valid old one — it did, and
+the specs pass.
+
+`.env.example` is now tracked (the blanket `.env*` rule had been swallowing it, so it was never
+actually in the repo) and documents the new variables. Checked before tracking: every value in it is
+a placeholder.
+
+**The new demo password is in your `.env` as `DEMO_SEED_PASSWORD`.** Put it in your password manager
+— it is not recoverable from the repo, which is the point.
+
+The original finding is preserved below, because the shape of it is worth remembering.
+
+---
+
+#### Original finding
 
 `prisma/seed.ts:17` and `e2e/fixtures/test-data.ts:10` both contain, in plaintext and committed:
 
@@ -131,19 +156,13 @@ platform super-admin account is **not** affected — I checked, and it does not 
 password. So this is not a customer-data breach. It is a working unauthorized foothold on the
 production system, which is bad on its own and worse combined with any future isolation bug.
 
-**Why I did not just fix it:** every available fix breaks your test suite, because of §2.4. Rotating
-those passwords, suspending the tenant, or deleting it all break `e2e/` — which authenticates as
-these exact accounts against this exact database. That makes it your call, not mine.
+**What made it awkward:** every fix touches the test suite, because of §2.4 — `e2e/` authenticates
+as these exact accounts against this exact database. Option 1 below is what I did, because it closes
+the hole without taking the demo tenant away from you.
 
-Options, cheapest first:
-
-1. **Rotate the demo tenant's passwords in production**, and keep `Passw0rd!` for local dev only.
-   The suite then needs the real password from an env var rather than a committed constant.
-2. **Suspend the demo tenant** (`status != ACTIVE` blocks login via `tenantAcceptsLogin`). Keeps the
-   data for later, kills the login. Breaks the suite until it points somewhere else.
-3. **Delete it** — cleanest security posture, loses the demo you may want for sales calls.
-
-All three are better done alongside §2.4.
+1. **Rotate the demo passwords, move them to an env var** ← done (`fe225a9`).
+2. Suspend the demo tenant — kills the login, keeps the data, breaks the suite.
+3. Delete it — cleanest posture, loses the demo you may want for sales calls.
 
 ### 2.4 — STRUCTURAL: the test suite runs against the production database
 
@@ -179,6 +198,8 @@ being tolerable. A separate Supabase project for dev/test is the fix, and it mak
 | 7 | `TENANT_SCOPED_MODELS` had drifted from the schema; pinned with a test | `5f759a8` |
 | 8 | SVG dropped from the public logo bucket's allowlist | `6723498` |
 | 9 | Added a 404 page | `e92c61e` |
+| 10 | **Seed passwords removed from the repo; six live demo accounts rotated** (§2.3) | `fe225a9` |
+| 11 | `.env.example` was itself gitignored and absent from the repo — now tracked and documented | `fe225a9` |
 
 **On #2** — both routes ended with `err instanceof Error ? err.message : "..."` and returned that to
 the caller. Both are unauthenticated. Proven by planting an internal error and calling with a
@@ -284,6 +305,56 @@ need runtime secrets).
 | `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` | Source-map upload skipped (build warning only). |
 
 `NODE_ENV` is set by Vercel — don't set it yourself. Note it now also gates rider OTP login (§2.2).
+
+---
+
+## 5a. WHAT YOU MUST DO BEFORE LAUNCH
+
+Everything I could fix in code is fixed. These are the ones that need your account, your data, or a
+decision — in priority order.
+
+### 1. Split dev/test off production (§2.4) — the one that actually matters
+
+Create a second Supabase project and point local dev + the E2E suite at it. Concretely:
+
+1. New Supabase project → run `prisma migrate deploy` against it, then `npm run seed`
+   (which now needs `DEMO_SEED_PASSWORD` and `PLATFORM_SEED_PASSWORD` set — see `.env.example`).
+2. Point your local `.env` (`DATABASE_URL`, `DIRECT_URL`, `PLATFORM_DATABASE_URL`) at the new project.
+   Vercel's production env vars stay as they are.
+3. Re-run the suite against it.
+
+This kills a whole class of problem at once: the test suite stops deleting production tenants,
+test residue stops accumulating there, rate-limit budget stops being shared, and the demo tenant
+stops needing to exist on production at all.
+
+**It also gives you the fresh-database migration test you have never run** — step 1 *is* that test.
+If your migrations don't replay cleanly from zero, that is where you find out, safely, instead of
+during a disaster restore.
+
+### 2. Clean the test residue out of production
+
+**65 tenant rows; only 4 are ACTIVE** (`karachi-karahi`, `slice`, `bigmac`, `sigma`) and ~45 look
+test-generated (`isolation-test-*`, `e2e-*`, probe/canary slugs). I did not delete any: "looks like a
+test tenant" is a heuristic, and getting it wrong destroys a real client. Confirm which of `slice`,
+`bigmac` and `sigma` are yours, then delete the rest through the platform admin's existing tenant
+deletion (which is tested and cleans up orphans properly).
+
+### 3. Verify a backup actually restores
+
+`/api/cron/backup` writes to Supabase Storage nightly and the code is sound, but I never restored
+one. Take the newest backup, restore it into the new dev project from step 1, and confirm you can
+sign in and see orders. An unverified backup is a hope, not a backup — and step 1 gives you a safe
+place to test it.
+
+### 4. Set `CRON_SECRET` in Vercel production
+
+If unset, **both** cron endpoints reject every request and the nightly summary and backup silently
+never run. They fail closed, which is right, but silently.
+
+### 5. Get one real performance number
+
+Deploy a preview and run `npx autocannon -c 20 -d 10 <preview-url>/api/orders` with a session cookie.
+Ten minutes, and it replaces the guesswork in §6.1.
 
 ---
 
@@ -453,6 +524,14 @@ Re-run cleanly in isolation, all 11 of those tests pass in 3.0 minutes — inclu
 tenant-isolation assertion actually executing this time. Worth remembering: a red suite here is more
 often the shared database or a consumed rate-limit budget than a real regression, and the two look
 identical until you read the failure.
+
+**One genuinely flaky test.** A later full run showed 87 passed / 1 failed, the failure being
+`kds-and-online-ordering.spec.ts › kitchen staff sees a sent order and can mark it ready`. It passes
+on re-run. KDS depends on Supabase Realtime, and that run logged repeated
+`Realtime send() is automatically falling back to REST API` — so it's timing-sensitive under load
+rather than broken. Not worth chasing tonight, but worth knowing before you wire this suite into CI,
+because a test that fails ~1 run in N teaches people to ignore red, which is how a real failure gets
+waved through.
 
 ---
 
