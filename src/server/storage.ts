@@ -79,7 +79,13 @@ export async function getDeliveryProofSignedUrl(path: string, expiresInSeconds =
 const TENANT_LOGOS_BUCKET = "tenant-logos";
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024;
-const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+// SVG is deliberately absent. This bucket is public, and an SVG is a script-carrying document, not
+// a flat image — an uploaded one is served as-is from the storage origin. It can't reach a session
+// there (different origin from the app), so the risk is modest rather than severe, but raster
+// formats cover every real logo and nothing is given up by excluding it. Checked before removing:
+// of 64 tenants, one has a logo at all and none of them is an SVG, so this rejects nothing that
+// anybody is actually using.
+const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 let logoBucketEnsured = false;
 async function ensureLogoBucket(): Promise<void> {

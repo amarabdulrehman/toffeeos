@@ -829,12 +829,12 @@ function ReceiptBrandingCard() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium">{logoUrl ? "Your logo" : "No logo yet"}</div>
-            <p className="text-xs text-muted-foreground">PNG, JPEG, WebP or SVG, up to 2MB.</p>
+            <p className="text-xs text-muted-foreground">PNG, JPEG or WebP, up to 2MB.</p>
           </div>
           <input
             ref={fileRef}
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            accept="image/png,image/jpeg,image/webp"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
