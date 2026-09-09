@@ -8,7 +8,19 @@
 
 ## 1. GO / NO-GO VERDICT
 
-**GO.** I'd ship this to paying clients.
+> **VERDICT REVISED — see §2.3. This was GO; it is now NO-GO until one thing is fixed.**
+>
+> After writing the GO below I went looking for loopholes I'd noticed early and never chased. One of
+> them is real and live: **six accounts on your public production site, including a restaurant
+> owner, open with a password published in plaintext in this repo.** Anyone who reads
+> `prisma/seed.ts` can sign in to `toffeeos.vercel.app` right now as the owner of the
+> `karachi-karahi` tenant. That is a working unauthorized login on production.
+>
+> It is not a client-data breach — that tenant holds demo data, not a paying customer's. And the fix
+> is small. But "anyone with the repo can log into production as an owner" is not a state to launch
+> from, and I was wrong to write GO before checking it. Everything else below stands.
+
+**Original verdict (still accurate for everything except §2.3):** I'd ship this to paying clients.
 
 The thing you said matters most — one client seeing another's data — is genuinely well built, and I
 mean that after trying to break it rather than after reading it. Isolation is not enforced in the
@@ -88,6 +100,69 @@ its config and phone login starts working with no other change.
 
 Verified both directions: against a production build, `request-otp` returns 503 and **zero** codes
 reach the log; in dev it still returns `{ ok: true }` and still logs.
+
+---
+
+### 2.3 — NOT FIXED, BLOCKS LAUNCH: seeded passwords open live accounts on production
+
+`prisma/seed.ts:17` and `e2e/fixtures/test-data.ts:10` both contain, in plaintext and committed:
+
+```ts
+const DEMO_PASSWORD = "Passw0rd!";
+```
+
+Checked against the live database rather than assumed. On the **ACTIVE** `karachi-karahi` tenant:
+
+| account | isActive | mustChangePassword | opens with `Passw0rd!` |
+|---|---|---|---|
+| `owner@karachikarahi.pk` | true | false | **yes** |
+| `manager@karachikarahi.pk` | true | false | **yes** |
+| `cashier@karachikarahi.pk` | true | false | **yes** |
+| `waiter@karachikarahi.pk` | true | false | **yes** |
+| `kitchen@karachikarahi.pk` | true | false | **yes** |
+| `rider@karachikarahi.pk` | true | false | **yes** |
+
+Nothing blocks these logins: all active, none forced to change password, tenant ACTIVE, and
+`toffeeos.vercel.app` is publicly reachable (verified). So **anyone who reads this repo can sign in
+to production as a restaurant owner.**
+
+Scope, stated fairly: the data behind that login is seeded demo data, not a paying client's, and the
+platform super-admin account is **not** affected — I checked, and it does not use the seeded
+password. So this is not a customer-data breach. It is a working unauthorized foothold on the
+production system, which is bad on its own and worse combined with any future isolation bug.
+
+**Why I did not just fix it:** every available fix breaks your test suite, because of §2.4. Rotating
+those passwords, suspending the tenant, or deleting it all break `e2e/` — which authenticates as
+these exact accounts against this exact database. That makes it your call, not mine.
+
+Options, cheapest first:
+
+1. **Rotate the demo tenant's passwords in production**, and keep `Passw0rd!` for local dev only.
+   The suite then needs the real password from an env var rather than a committed constant.
+2. **Suspend the demo tenant** (`status != ACTIVE` blocks login via `tenantAcceptsLogin`). Keeps the
+   data for later, kills the login. Breaks the suite until it points somewhere else.
+3. **Delete it** — cleanest security posture, loses the demo you may want for sales calls.
+
+All three are better done alongside §2.4.
+
+### 2.4 — STRUCTURAL: the test suite runs against the production database
+
+This is the root cause behind §2.3, and behind several oddities earlier in this run. `DATABASE_URL`
+for local dev, the Playwright suite, and the deployed production app are the same Supabase database.
+Consequences I hit personally during this audit:
+
+- The demo tenant **must** stay ACTIVE with known passwords, or the suite cannot log in (§2.3).
+- My error-leak canary probes consumed **production's** signup rate-limit budget, which is what
+  caused 5 spurious suite failures (§9).
+- My load test contended with **production's** database.
+- `e2e/tenant-delete.spec.ts` performs real tenant deletions against **production**.
+- Test residue accumulates in production: of **65 tenant rows, 45 look test-generated** and only 4
+  are ACTIVE (`karachi-karahi`, `slice`, `bigmac`, `sigma` — check whether the last three are yours
+  or real).
+
+None of this is a code defect, and none of it is urgent in the way §2.3 is. But you are about to
+put paying clients in this database, and at that point "the test suite deletes tenants here" stops
+being tolerable. A separate Supabase project for dev/test is the fix, and it makes §2.3 trivial.
 
 ---
 
@@ -209,6 +284,27 @@ need runtime secrets).
 | `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` | Source-map upload skipped (build warning only). |
 
 `NODE_ENV` is set by Vercel — don't set it yourself. Note it now also gates rider OTP login (§2.2).
+
+---
+
+## 5b. WHAT I DID *NOT* AUDIT
+
+Stated plainly, so you know the edges of this report rather than assuming it covered everything:
+
+- **Migrations against a fresh database.** Never tested. Every migration here has only ever been
+  applied incrementally to one long-lived database. If you ever provision a second environment — and
+  §2.4 says you should — that is the moment you find out whether they replay cleanly from zero. This
+  is the single most likely unpleasant surprise remaining.
+- **Backup restore.** `/api/cron/backup` writes to Supabase Storage. I confirmed the code and the
+  schedule; I never restored one. An unverified backup is a hope, not a backup.
+- **Business-logic correctness.** I audited security and reliability, not whether your PRA tax split,
+  payroll maths, or P&L are *right*. There are good tests for these and I trusted them; I did not
+  re-derive the arithmetic.
+- **The offline sync subsystem in depth.** Its e2e tests pass, but I did not attack it — conflict
+  resolution and replay-after-permission-change are exactly where multi-device POS bugs live.
+- **Real penetration testing** of the public storefront and QR ordering beyond confirming rate
+  limits and tenant scoping.
+- **Production-representative load.** See §6.1.
 
 ---
 
