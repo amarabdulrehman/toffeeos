@@ -48,3 +48,7 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# ...but the example file carries no real values and is the only place the required vars are
+# documented, which matters now that seeding and the E2E suite refuse to run without some of them.
+!.env.example

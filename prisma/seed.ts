@@ -14,10 +14,29 @@ import { defaultExpenseCategoryRows } from "@/lib/expense-categories";
 // reject every insert. tenantDb() handles the set_config(...)+query dance per call. See
 // src/server/tenant-signup.ts for the same bootstrap pattern used at real signup time.
 
-const DEMO_PASSWORD = "Passw0rd!";
-const DEMO_PIN = "1234";
+/**
+ * Both passwords come from the environment and have no committed default, deliberately.
+ *
+ * They used to be the literals "Passw0rd!" and "ChangeMe123!" right here. Because this repo's dev,
+ * test and production all point at one database, that meant the seeded accounts on the live public
+ * deployment — including the demo tenant's *owner* — were openable by anyone who read this file.
+ * A default here would quietly recreate that the next time someone seeds, so there isn't one.
+ */
+function requiredEnv(name: string, usedFor: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `${name} is not set, and there is no default on purpose — it would end up as a live password ` +
+        `on whatever database this points at. Set it in .env (gitignored) before seeding. Used for: ${usedFor}.`
+    );
+  }
+  return value;
+}
+
+const DEMO_PASSWORD = requiredEnv("DEMO_SEED_PASSWORD", "the demo tenant's owner and staff logins");
+const DEMO_PIN = process.env.DEMO_SEED_PIN ?? "1234";
 const PLATFORM_EMAIL = "admin@tableos.app";
-const PLATFORM_PASSWORD = "ChangeMe123!";
+const PLATFORM_PASSWORD = requiredEnv("PLATFORM_SEED_PASSWORD", "the platform super-admin login");
 
 // Phase D's three tiers — feature gating keys off Plan.key directly (see src/server/tier.ts),
 // not a separate field, so these three key strings are load-bearing beyond just pricing.
