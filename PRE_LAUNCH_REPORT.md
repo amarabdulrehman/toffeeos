@@ -509,6 +509,24 @@ false positive in my scanner (matched a code comment; it's a public route).
 
 ---
 
+## 8b. FINAL STATE
+
+Run after every fix on this branch, including the credential rotation:
+
+| Gate | Result |
+|---|---|
+| E2E suite | **88 passed, 0 failed**, 1 skipped (11.7 min) |
+| Unit tests | **90 passed, 0 failed** |
+| Production build | **Compiles clean** — zero errors, zero warnings |
+| Working tree | Clean; 14 commits on `pre-launch-hardening`, nothing pushed |
+
+The e2e run is worth one note: it happened *after* the six demo accounts were rotated and the cached
+sessions deleted, so every role had to authenticate through the real login flow with the new
+credential. A green suite here isn't just "the fixes didn't break anything" — it's independent
+evidence that the new credential path works end to end.
+
+---
+
 ## 9. A NOTE ON THE TEST SUITE
 
 One full-suite run mid-pass reported 5 failures. They were **mine, not the code's**, and I want the
