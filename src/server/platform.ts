@@ -7,6 +7,7 @@ import { TIER_ORDER, GATEABLE_MODULES, defaultModulesForTier, type TierKey } fro
 import { getBillingStatus, effectiveMonthlyRatePaisa } from "@/lib/billing";
 import { listTenantPayments } from "@/server/billing";
 import { TENANT_OWNED_TABLES } from "@/lib/tenant-tables";
+import { generateTempPassword, hashPassword } from "@/lib/password";
 
 export async function platformMetrics() {
   const now = new Date();
@@ -84,6 +85,65 @@ export async function getTenantDetail(tenantId: string) {
   ]);
 
   return { tenant, users, recentActivity, payments };
+}
+
+/**
+ * Resets one tenant user's password to a generated temporary one, for the support call where a
+ * client is locked out.
+ *
+ * Until this existed there was no way to do that at all: the platform panel could only change a
+ * platform admin's *own* password, a tenant owner can only activate/deactivate staff, and the
+ * self-service email flow is useless if mail isn't reaching the client. The fallback was editing a
+ * bcrypt hash into the database by hand.
+ *
+ * Three things this deliberately does:
+ *
+ * - Looks the user up through tenantDb, not platformDb. platformDb has BYPASSRLS, so a lookup by
+ *   id alone would happily resolve a user in a *different* tenant than the one named in the URL.
+ *   RLS scoping makes that impossible rather than relying on the caller passing a matching pair.
+ * - Bumps sessionsValidFrom, so any session that account already has dies on its next request. A
+ *   reset that leaves the old session alive is not a reset — and if the reason for the call is
+ *   "someone else has my password", it is the whole point.
+ * - Forces mustChangePassword, so the temporary one this returns cannot become their real password.
+ *
+ * The caller shows the temp password once and reads it out. It is never logged or emailed.
+ */
+export async function resetTenantUserPassword(
+  tenantId: string,
+  userId: string,
+  platformUserId: string,
+  platformUserEmail: string
+): Promise<{ tempPassword: string; name: string; email: string | null }> {
+  const db = tenantDb(tenantId);
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true },
+  });
+  if (!user) throw new HttpError(404, "That staff member doesn't exist for this restaurant.");
+
+  const tempPassword = generateTempPassword();
+  await db.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: await hashPassword(tempPassword),
+      mustChangePassword: true,
+      sessionsValidFrom: new Date(),
+    },
+  });
+
+  await platformDb.auditLog.create({
+    data: {
+      tenantId,
+      actorId: platformUserId,
+      action: "platform.user.password.reset",
+      entityType: "User",
+      entityId: user.id,
+      // Records who was reset and by whom. Never the password itself.
+      metadata: { platformUserEmail, targetEmail: user.email, targetName: user.name },
+    },
+  });
+
+  return { tempPassword, name: user.name, email: user.email };
 }
 
 /** Issues a one-time impersonation token for the tenant's earliest-created owner membership, and

@@ -90,6 +90,30 @@ export default function TenantDetailPage() {
   const [pendingTier, setPendingTier] = useState<TierKey | null>(null);
   const [savingFeatures, setSavingFeatures] = useState(false);
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
+  const [resettingUserId, setResettingUserId] = useState<string | null>(null);
+  // Shown once, in a dialog, and never persisted anywhere — the admin reads it out and it is gone.
+  const [tempPasswordFor, setTempPasswordFor] = useState<{ name: string; tempPassword: string } | null>(null);
+
+  async function resetPassword(userId: string, name: string) {
+    setResettingUserId(userId);
+    try {
+      const r = await fetch(`/api/platform/tenants/${params.tenantId}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        toast.error(body.error ?? "Could not reset that password.");
+        return;
+      }
+      setTempPasswordFor({ name, tempPassword: body.tempPassword });
+    } catch {
+      toast.error("Could not reset that password.");
+    } finally {
+      setResettingUserId(null);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -344,6 +368,7 @@ export default function TenantDetailPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Branch</TableHead>
+                  <TableHead className="text-right">Locked out?</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -352,6 +377,16 @@ export default function TenantDetailPage() {
                     <TableCell className="font-medium">{m.user.name}</TableCell>
                     <TableCell className="text-muted-foreground">{m.role.name}</TableCell>
                     <TableCell className="text-muted-foreground">{m.branch.name}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={resettingUserId !== null}
+                        onClick={() => resetPassword(m.user.id, m.user.name)}
+                      >
+                        {resettingUserId === m.user.id ? "Resetting…" : "Reset password"}
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -750,6 +785,31 @@ export default function TenantDetailPage() {
           effectiveMonthlyRatePaisa={monthlyRatePaisa}
         />
       )}
+
+      {/* Shown once. Closing it is the only exit — there is no way to retrieve this again, which is
+          deliberate: it exists to be read out on the call, not stored. */}
+      <Dialog open={!!tempPasswordFor} onOpenChange={(o) => !o && setTempPasswordFor(null)}>
+        <DialogContent className="dark sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Temporary password for {tempPasswordFor?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Read this out to them now — it is not shown again and is not emailed anywhere.
+            </p>
+            <div className="rounded-lg border bg-muted/30 px-3 py-2 text-center font-mono text-lg tracking-wide select-all">
+              {tempPasswordFor?.tempPassword}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              They will be forced to choose a new password the first time they sign in, and any
+              session this account already had has been signed out.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setTempPasswordFor(null)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
