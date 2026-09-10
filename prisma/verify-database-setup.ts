@@ -98,10 +98,17 @@ async function run(): Promise<void> {
   );
   const noRls = rls.rows.filter((r) => !r.relrowsecurity).map((r) => r.relname);
   const noForce = rls.rows.filter((r) => r.relrowsecurity && !r.relforcerowsecurity).map((r) => r.relname);
+  // pg types rowCount as number | null; rls.rows.length is the same count without the null case.
+  const tenantTableCount = rls.rows.length;
   checks.push({
     name: "RLS enabled on every tenant table",
-    ok: rls.rowCount > 0 && noRls.length === 0,
-    detail: rls.rowCount === 0 ? "no tenant tables found at all" : noRls.length ? `missing on: ${noRls.join(", ")}` : `${rls.rowCount} tables`,
+    ok: tenantTableCount > 0 && noRls.length === 0,
+    detail:
+      tenantTableCount === 0
+        ? "no tenant tables found at all"
+        : noRls.length
+          ? `missing on: ${noRls.join(", ")}`
+          : `${tenantTableCount} tables`,
     fix: "npx prisma migrate deploy (the *_rls migrations)",
   });
   checks.push({
