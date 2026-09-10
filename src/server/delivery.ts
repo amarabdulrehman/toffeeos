@@ -140,7 +140,15 @@ export async function listDeliveryBoard(tenantId: string, branchId: string) {
   };
 }
 
-export async function resolveProofUrl(path: string | null) {
+/**
+ * Currently unreferenced — kept for the delivery-proof viewer this was written for. It takes the
+ * tenantId and refuses a path outside that tenant's prefix on purpose: uploadDeliveryProof stores
+ * under `{tenantId}/...`, and a signed URL is minted with the service-role key, which ignores RLS
+ * entirely. Without this check, wiring it to anything that accepts a caller-supplied path would
+ * hand out a readable URL for another tenant's delivery photos.
+ */
+export async function resolveProofUrl(tenantId: string, path: string | null) {
   if (!path) return null;
+  if (!path.startsWith(`${tenantId}/`)) return null;
   return getDeliveryProofSignedUrl(path);
 }

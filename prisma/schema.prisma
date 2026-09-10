@@ -1348,10 +1348,18 @@ model CashDrawerDay {
   openingBalancePaisa Int
   openedById          String
   openedAt            DateTime  @default(now())
-  /// What a human counted in the drawer at close. Null while the day is still open.
+  /// What a human counted in the drawer at close. Null while the day is still open. If corrected
+  /// (see below), this holds the corrected figure — closedBy/closedAt still name who did the
+  /// original close, so a correction never rewrites who was actually on shift when the day closed.
   closingCountedPaisa Int?
   closedById          String?
   closedAt            DateTime?
+  /// A closed day can be corrected exactly once by pos.cashDrawer.correctClose (Owner/Branch
+  /// Manager only, never the closer themselves via a second ordinary close) — see closeDrawerDay in
+  /// src/server/cash-drawer.ts. Both null until a correction happens; the pre-correction count isn't
+  /// duplicated here since the audit log already carries it.
+  correctedById       String?
+  correctedAt         DateTime?
   note                String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt

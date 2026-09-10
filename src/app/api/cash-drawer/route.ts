@@ -64,20 +64,29 @@ export const PATCH = defineHandler(
     permission: "pos.shift.close",
     input: closeSchema,
     // The variance is what an owner comes back to this log for, so it is recorded alongside the
-    // counted figure rather than left to be recomputed from a day whose numbers may have moved.
-    audit: (input, result) => ({
-      action: "cash.drawer.close",
-      entityType: "CashDrawerDay",
-      metadata: { ...input, variancePaisa: (result as { day: { variancePaisa: number | null } }).day.variancePaisa },
-    }),
+    // counted figure rather than left to be recomputed from a day whose numbers may have moved. A
+    // correction (see closeDrawerDay) gets its own action name and the figure it overwrote, so the
+    // log reads as "X corrected this from Y" rather than an unexplained second close entry.
+    audit: (input, result) => {
+      const r = result as { day: { variancePaisa: number | null }; isCorrection: boolean; previousClosingCountedPaisa: number | null };
+      return {
+        action: r.isCorrection ? "cash.drawer.correctClose" : "cash.drawer.close",
+        entityType: "CashDrawerDay",
+        metadata: {
+          ...input,
+          variancePaisa: r.day.variancePaisa,
+          ...(r.isCorrection ? { previousClosingCountedPaisa: r.previousClosingCountedPaisa } : {}),
+        },
+      };
+    },
   },
   async ({ session, input }) => {
     const branchId = input.branchId ?? session.branchId;
     await assertWritableBranchId(session, branchId);
-    const day = await closeDrawerDay(session.tenantId, branchId, session.id, input);
+    const result = await closeDrawerDay(session.tenantId, branchId, session.id, session.permissions, input);
     // A variance is the one thing here worth making impossible to miss, so it is named in the
     // response rather than left for the client to derive from two numbers.
-    if (day.variancePaisa == null) throw new HttpError(500, "The drawer closed without a variance.");
-    return { day };
+    if (result.day.variancePaisa == null) throw new HttpError(500, "The drawer closed without a variance.");
+    return result;
   }
 );

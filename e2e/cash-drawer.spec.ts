@@ -65,25 +65,71 @@ test.describe("Cash drawer", () => {
     expect(closed.closedByName).toBeTruthy();
   });
 
-  test("a day cannot be opened twice or closed twice", async ({ request }) => {
+  test("a day cannot be opened twice", async ({ request }) => {
     await request.post("/api/cash-drawer", { data: { businessDate: DAY, openingBalancePaisa: 100_000 } });
 
-    // Reopening would rewrite the float the day is reconciled against.
+    // Reopening would rewrite the float the day is reconciled against. Unlike closing, there is no
+    // correction path for this — the opening float is what a day is reconciled *against*, not a
+    // figure that itself gets reconciled.
     const reopen = await request.post("/api/cash-drawer", {
       data: { businessDate: DAY, openingBalancePaisa: 999_999 },
     });
     expect(reopen.status()).toBe(409);
     const still = await request.get(`/api/cash-drawer?businessDate=${DAY}`);
     expect((await still.json()).day.openingBalancePaisa).toBe(100_000);
+  });
 
-    await request.patch("/api/cash-drawer", { data: { businessDate: DAY, closingCountedPaisa: 90_000 } });
-    // A second count would overwrite the first and erase the variance someone investigated.
-    const reclose = await request.patch("/api/cash-drawer", {
-      data: { businessDate: DAY, closingCountedPaisa: 100_000 },
+  test("closing a day twice without pos.cashDrawer.correctClose is refused", async ({ browser, baseURL }) => {
+    // Cashier holds pos.shift.close (can do the ordinary close) but not the dedicated correction
+    // permission — an ordinary second close from the same role that closed it must still be refused,
+    // not silently treated as a correction.
+    const ctx = await browser.newContext({ baseURL, storageState: authFile("cashier") });
+    try {
+      await ctx.request.post("/api/cash-drawer", { data: { businessDate: DAY, openingBalancePaisa: 100_000 } });
+      await ctx.request.patch("/api/cash-drawer", { data: { businessDate: DAY, closingCountedPaisa: 90_000 } });
+      const reclose = await ctx.request.patch("/api/cash-drawer", {
+        data: { businessDate: DAY, closingCountedPaisa: 100_000 },
+      });
+      expect(reclose.status()).toBe(409);
+      const after = await ctx.request.get(`/api/cash-drawer?businessDate=${DAY}`);
+      expect((await after.json()).day.variancePaisa).toBe(-10_000);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test("an owner can correct a closed day's count without erasing who originally closed it", async ({ request }) => {
+    await request.post("/api/cash-drawer", { data: { businessDate: DAY, openingBalancePaisa: 100_000 } });
+    const firstClose = await request.patch("/api/cash-drawer", {
+      data: { businessDate: DAY, closingCountedPaisa: 90_000, note: "short, checked twice" },
     });
-    expect(reclose.status()).toBe(409);
+    expect(firstClose.ok(), await firstClose.text()).toBeTruthy();
+    const firstBody = await firstClose.json();
+    expect(firstBody.isCorrection).toBe(false);
+    const originalClosedByName = firstBody.day.closedByName;
+    const originalClosedAt = firstBody.day.closedAt;
+
+    // Owner holds pos.cashDrawer.correctClose — a second close from Owner is a correction, not a
+    // rejected duplicate.
+    const correction = await request.patch("/api/cash-drawer", {
+      data: { businessDate: DAY, closingCountedPaisa: 100_000, note: "typo — recounted, exact" },
+    });
+    expect(correction.ok(), await correction.text()).toBeTruthy();
+    const body = await correction.json();
+    expect(body.isCorrection).toBe(true);
+    expect(body.previousClosingCountedPaisa).toBe(90_000);
+    expect(body.day.closingCountedPaisa).toBe(100_000);
+    expect(body.day.variancePaisa).toBe(0);
+    // The original close is preserved, not overwritten by the correction.
+    expect(body.day.closedByName).toBe(originalClosedByName);
+    expect(body.day.closedAt).toBe(originalClosedAt);
+    expect(body.day.correctedByName).toBeTruthy();
+    expect(body.day.correctedAt).toBeTruthy();
+
     const after = await request.get(`/api/cash-drawer?businessDate=${DAY}`);
-    expect((await after.json()).day.variancePaisa).toBe(-10_000);
+    const day = (await after.json()).day;
+    expect(day.closingCountedPaisa).toBe(100_000);
+    expect(day.variancePaisa).toBe(0);
   });
 
   test("closing a day that was never opened is refused", async ({ request }) => {

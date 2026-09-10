@@ -93,12 +93,21 @@ if (env.NODE_ENV !== "production") {
 const TENANT_SCOPED_MODELS = new Set([
   "Branch",
   "BranchSettings",
+  "CashDrawerDay",
   "TaxRule",
   "User",
   "Role",
   "Membership",
   "Invite",
   "StaffPin",
+  // Both are reached only through platformDb today (a single-use token has to resolve to a tenant
+  // before any tenant context exists to scope by), so listing them changes nothing that runs now.
+  // They are listed because they do carry a tenantId, and the rule above is "every model that does"
+  // — leaving them out meant a future tenantDb call on either would skip scoping AND the RLS
+  // session var, and return zero rows with no obvious reason why. tests/tenant-scoped-models.test.ts
+  // pins this.
+  "ImpersonationToken",
+  "PasswordResetToken",
   "Category",
   "MenuItem",
   "ItemVariant",
@@ -138,7 +147,6 @@ const TENANT_SCOPED_MODELS = new Set([
   "ExpenseCategory",
   "Expense",
   "RecurringExpense",
-  "CashDrawerDay",
 ]);
 
 const WHERE_OPERATIONS = new Set([

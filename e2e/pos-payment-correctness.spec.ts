@@ -14,6 +14,29 @@ import { getAvailableTable } from "./fixtures/api";
 test.use({ storageState: authFile("owner") });
 
 test.describe("POS payment — cash/card tax switching never overcharges", () => {
+  // Every figure below is the bare item plus tax. A dine-in service charge would land on top of
+  // all of them, so this pins it to zero for the duration rather than assuming it is.
+  //
+  // It used to assume. The numbers were written against production, where this branch's service
+  // charge happens to have been zeroed by hand at some point — while prisma/seed.ts sets 5% on
+  // dine-in. So the test passed on production for an accidental reason and failed the moment it
+  // met a freshly-seeded database, which is also what it would do for any real client who charges
+  // a service fee.
+  let previousServiceCharge = 0;
+
+  test.beforeAll(async ({ request }) => {
+    const before = await request.get("/api/branch-settings");
+    previousServiceCharge = (await before.json())?.settings?.serviceChargeBasisPoints ?? 0;
+    const res = await request.patch("/api/branch-settings", { data: { serviceChargeBasisPoints: 0 } });
+    expect(res.ok(), await res.text()).toBeTruthy();
+  });
+
+  test.afterAll(async ({ request }) => {
+    await request.patch("/api/branch-settings", {
+      data: { serviceChargeBasisPoints: previousServiceCharge },
+    });
+  });
+
   test("switching Cash -> Card mid-payment updates the actual charged amount, not just the display", async ({ page, request }) => {
     const table = await getAvailableTable(request);
 

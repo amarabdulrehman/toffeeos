@@ -1,3 +1,8 @@
+// Loaded here rather than relying on each spec: DEMO_PASSWORD below is resolved at module-eval
+// time, and this file is imported by global-setup and 20-odd specs, not all of which load dotenv
+// first.
+import "dotenv/config";
+
 /**
  * Shared constants for the E2E suite. Points at the seeded demo tenant (prisma/seed.ts) — every
  * credential here matches what `npx prisma db seed` produces. Tests must never assume these rows
@@ -7,7 +12,30 @@
  * "the only order."
  */
 export const TENANT_SLUG = "karachi-karahi";
-export const DEMO_PASSWORD = "Passw0rd!";
+
+/**
+ * Read from the environment, never committed. This used to be the literal string "Passw0rd!", which
+ * is also what prisma/seed.ts wrote into the database — so the demo tenant's owner account on the
+ * live, publicly reachable deployment was openable by anyone who read this file. Since dev, test and
+ * production share one database (see PRE_LAUNCH_REPORT.md §2.4), that was a working unauthorized
+ * login on production rather than a local-only inconvenience.
+ *
+ * Deliberately throws rather than falling back to a default: a fallback would silently restore the
+ * exact problem the moment the variable went missing, and a suite that cannot log in should say why.
+ */
+function requireDemoPassword(): string {
+  const value = process.env.DEMO_SEED_PASSWORD;
+  if (!value) {
+    throw new Error(
+      "DEMO_SEED_PASSWORD is not set. The E2E suite signs in as the seeded demo staff and there is " +
+        "no committed default on purpose. Add it to .env (it is gitignored) — the value is whatever " +
+        "prisma/seed.ts last wrote for the demo tenant."
+    );
+  }
+  return value;
+}
+
+export const DEMO_PASSWORD = requireDemoPassword();
 
 export const USERS = {
   owner: { email: "owner@karachikarahi.pk", role: "owner" },

@@ -8,16 +8,36 @@ import { hashPassword, hashPin } from "@/lib/password";
 import { SEED_ROLES } from "@/server/permissions/registry";
 import { finalizeOrder, type PricingLineInput, type TaxRuleInput } from "@/lib/pricing";
 import { defaultExpenseCategoryRows } from "@/lib/expense-categories";
+import { GATEABLE_MODULES } from "@/lib/tiers";
 
 // Every write below the initial Tenant row goes through tenantDb(tenantId), never rawDb directly —
 // rawDb is RLS-bound (app_user) and, with no app.tenant_id session var set, RLS's WITH CHECK would
 // reject every insert. tenantDb() handles the set_config(...)+query dance per call. See
 // src/server/tenant-signup.ts for the same bootstrap pattern used at real signup time.
 
-const DEMO_PASSWORD = "Passw0rd!";
-const DEMO_PIN = "1234";
+/**
+ * Both passwords come from the environment and have no committed default, deliberately.
+ *
+ * They used to be the literals "Passw0rd!" and "ChangeMe123!" right here. Because this repo's dev,
+ * test and production all point at one database, that meant the seeded accounts on the live public
+ * deployment — including the demo tenant's *owner* — were openable by anyone who read this file.
+ * A default here would quietly recreate that the next time someone seeds, so there isn't one.
+ */
+function requiredEnv(name: string, usedFor: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `${name} is not set, and there is no default on purpose — it would end up as a live password ` +
+        `on whatever database this points at. Set it in .env (gitignored) before seeding. Used for: ${usedFor}.`
+    );
+  }
+  return value;
+}
+
+const DEMO_PASSWORD = requiredEnv("DEMO_SEED_PASSWORD", "the demo tenant's owner and staff logins");
+const DEMO_PIN = process.env.DEMO_SEED_PIN ?? "1234";
 const PLATFORM_EMAIL = "admin@tableos.app";
-const PLATFORM_PASSWORD = "ChangeMe123!";
+const PLATFORM_PASSWORD = requiredEnv("PLATFORM_SEED_PASSWORD", "the platform super-admin login");
 
 // Phase D's three tiers — feature gating keys off Plan.key directly (see src/server/tier.ts),
 // not a separate field, so these three key strings are load-bearing beyond just pricing.
@@ -339,6 +359,19 @@ async function seedDemoTenant() {
       branchLimit: growthPlan.maxBranches,
       trialEndsAt: addDays(new Date(), 14),
       currentPeriodEnd: addDays(new Date(), 30),
+      // Was omitted entirely, which left it at the column default of [] — every gated feature off,
+      // on a tenant whose whole purpose is demonstrating them. It went unnoticed because the only
+      // seeded database anyone used was production, where a platform admin had turned the modules
+      // on by hand long ago; it surfaced the moment a second database was seeded from scratch and
+      // ~40 e2e tests failed with "This feature isn't enabled for this restaurant."
+      //
+      // Every module, not defaultModulesForTier("growth"): delivery/online/whatsapp/hr sit above
+      // the Growth tier, the suite exercises all four, and production's demo tenant has them
+      // custom-enabled anyway. A demo tenant with features switched off is not a demo.
+      //
+      // Real signups were never affected — provisionTenant (src/server/tenant-signup.ts) has always
+      // set this correctly from the chosen tier.
+      enabledModules: GATEABLE_MODULES.flatMap((m) => m.storageKeys),
     },
   });
 

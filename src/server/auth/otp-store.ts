@@ -1,6 +1,7 @@
 import "server-only";
 import { platformDb } from "@/server/db";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { env } from "@/lib/env";
 
 /**
  * Persistent (Postgres-backed) OTP store — was an in-memory Map, which is exactly wrong for a
@@ -14,10 +15,29 @@ import { checkRateLimit } from "@/lib/rate-limit";
  */
 const OTP_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Whether an issued code can actually reach the person it belongs to.
+ *
+ * There is no SMS/WhatsApp sender wired up, so the only "delivery" is the console.log below —
+ * which is a development affordance and must never be a production one: it writes a live login
+ * credential and a phone number into the log stream in plaintext, readable by anyone with access
+ * to Vercel's logs or any drain attached to them, well within the code's 5-minute validity.
+ *
+ * So production has no delivery channel at all, and says so (see /api/auth/request-otp) instead of
+ * minting codes nobody can receive. Riders sign in with email + password at /login meanwhile —
+ * the same credentials flow every other role uses. When a real sender is added, this becomes a
+ * check on that sender's config and phone login starts working with no other change.
+ */
+export function otpDeliveryAvailable(): boolean {
+  return env.NODE_ENV !== "production";
+}
+
 export async function issueOtp(key: string): Promise<string> {
   const code = Math.floor(100_000 + Math.random() * 900_000).toString();
   await platformDb.otpCode.create({ data: { key, code, expiresAt: new Date(Date.now() + OTP_TTL_MS) } });
-  console.log(`[OTP STUB] ${key} -> ${code} (expires in 5 min)`);
+  if (otpDeliveryAvailable()) {
+    console.log(`[OTP STUB] ${key} -> ${code} (expires in 5 min)`);
+  }
   return code;
 }
 

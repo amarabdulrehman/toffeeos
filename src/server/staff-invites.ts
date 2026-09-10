@@ -2,6 +2,7 @@ import "server-only";
 import crypto from "crypto";
 import { addDays } from "date-fns";
 import { platformDb, runInTenantTransaction } from "@/server/db";
+import { HttpError } from "@/server/handler";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { newId } from "@/lib/ids";
 import { hashPassword } from "@/lib/password";
@@ -84,7 +85,7 @@ export async function acceptInvite(
 
   await runInTenantTransaction(invite.tenantId, async (tx) => {
     const fresh = await tx.invite.findUniqueOrThrow({ where: { id: invite.id } });
-    if (fresh.acceptedAt) throw new Error("This invite has already been used.");
+    if (fresh.acceptedAt) throw new HttpError(400, "This invite has already been used.");
 
     await tx.user.create({
       data: {
