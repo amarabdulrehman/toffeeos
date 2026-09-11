@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ToffeeOS">
+  <rect width="512" height="512" rx="112" fill="#1c1917"/>
+  <text x="50%" y="50%" dy="0.34em" text-anchor="middle"
+        font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+        font-size="248" font-weight="700" fill="#faf9f7">T</text>
+</svg>

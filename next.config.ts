@@ -31,6 +31,12 @@ const csp = [
   `base-uri 'self'`,
   `form-action 'self'`,
   `object-src 'none'`,
+  // Both would fall back through child-src to script-src/default-src ('self') and be allowed in
+  // theory, but registration failed in practice until they were stated outright, and relying on a
+  // fallback chain for the thing that makes the till work offline is not worth the cleverness.
+  // public/sw.js is what lets the POS open with no connection; the manifest makes it installable.
+  `worker-src 'self'`,
+  `manifest-src 'self'`,
 ].join("; ");
 
 const securityHeaders = [

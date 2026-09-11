@@ -1,0 +1,19 @@
+{
+  "name": "ToffeeOS",
+  "short_name": "ToffeeOS",
+  "description": "Restaurant management for Pakistan's kitchens.",
+  "start_url": "/pos",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#faf9f7",
+  "theme_color": "#1c1917",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
