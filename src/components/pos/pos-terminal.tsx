@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { useSync } from "@/lib/offline/use-sync";
 import { cacheMenu, cacheOpenOrders, getCachedMenu, getCachedOpenOrders, listQueue, type CreateOrderAction } from "@/lib/offline/db";
 import { queueCreateOrder, queuePayOrder, queueVoidOrder } from "@/lib/offline/queue";
 import { newOrderId } from "@/lib/ids";
+import { computeProvisionalTotal, settingsForOrderType, type BranchPricingSnapshot } from "@/lib/pricing";
 import type {
   CartLine,
   CustomerDto,
@@ -44,6 +45,7 @@ export function PosTerminal({
   logoUrl,
   showLogoOnReceipt,
   receiptHeader,
+  pricingSnapshot,
   canTakePayment,
   canApplyDiscount,
   canVoid,
@@ -57,6 +59,7 @@ export function PosTerminal({
   logoUrl: string | null;
   showLogoOnReceipt: boolean;
   receiptHeader: string | null;
+  pricingSnapshot: BranchPricingSnapshot;
   canTakePayment: boolean;
   canApplyDiscount: boolean;
   canVoid: boolean;
@@ -144,9 +147,35 @@ export function PosTerminal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sync.isSyncing]);
 
+  /**
+   * The same pricing engine the server runs, against the branch snapshot that came down with the
+   * page. Used as the offline fallback below, and as the value queued when an order is punched with
+   * no connection.
+   */
+  const localTotals = useMemo(() => {
+    if (lines.length === 0) return null;
+    return computeProvisionalTotal(
+      lines.map((l, i) => ({
+        id: String(i),
+        unitPricePaisa: l.unitPricePaisa,
+        quantity: l.quantity,
+        discount: l.discount,
+      })),
+      discount ?? undefined,
+      pricingSnapshot.taxRules,
+      settingsForOrderType(pricingSnapshot, orderType)
+    );
+  }, [lines, orderType, discount, pricingSnapshot]);
+
   // Live totals: recompute from the pricing engine whenever the cart or order type changes.
   // (When the cart is empty we simply skip fetching — displayedTotals below hides stale totals
   // rather than the effect reaching back to clear state synchronously.)
+  //
+  // The server stays authoritative while it is reachable: it prices against live branch settings,
+  // whereas the snapshot is as old as this page load. But a failed request must not leave the cart
+  // with no total at all — that was the offline bug, and it showed the cashier Tax (0%) and a total
+  // of Rs 0 while a customer stood waiting. An aborted request is not a failure: it means the cart
+  // changed again and a newer request is already in flight, so leave the totals alone.
   useEffect(() => {
     if (lines.length === 0) return;
     const controller = new AbortController();
@@ -163,13 +192,16 @@ export function PosTerminal({
       })
         .then((r) => r.json())
         .then(setTotals)
-        .catch(() => {});
+        .catch((err) => {
+          if (controller.signal.aborted || (err as Error)?.name === "AbortError") return;
+          setTotals(localTotals);
+        });
     }, 200);
     return () => {
       clearTimeout(handle);
       controller.abort();
     };
-  }, [lines, orderType, discount]);
+  }, [lines, orderType, discount, localTotals]);
 
   function addLine(item: MenuItemDto, variantId?: string) {
     const variant = variantId ? item.variants.find((v) => v.id === variantId) : undefined;
@@ -303,7 +335,10 @@ export function PosTerminal({
         customer,
         lines,
         orderDiscount: discount ?? undefined,
-        totalPaisa: totals?.totalPaisa ?? lines.reduce((a, l) => a + l.unitPricePaisa * l.quantity, 0),
+        // localTotals, not a bare sum of the lines: that fallback silently dropped tax, service
+        // charge and rounding, so an order queued offline displayed a different figure in the queue
+        // than the server assigns it on sync.
+        totalPaisa: totals?.totalPaisa ?? localTotals?.totalPaisa ?? 0,
         localOrderNumber: localOrderCounter.current--,
         deliveryAddress: orderType === "DELIVERY" ? deliveryAddress.trim() || undefined : undefined,
       });

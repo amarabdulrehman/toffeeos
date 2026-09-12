@@ -9,8 +9,10 @@ import { recordConflict } from "@/server/sync-conflicts";
 import { notifyLowStock, notifyOrderThankYou } from "@/server/whatsapp/triggers";
 import type { TenantSessionUser } from "@/server/auth/types";
 import {
+  DEFAULT_BRANCH_PRICING,
   computeProvisionalTotal,
   finalizeOrder,
+  settingsForOrderType,
   type DiscountInput,
   type PaymentMethodKey,
   type PricingLineInput,
@@ -142,12 +144,17 @@ export async function getBranchPricingContext(
     db.taxRule.findMany({ where: { branchId, isActive: true } }),
   ]);
 
-  const settings: PricingSettings = {
-    serviceChargeBasisPoints: branchSettings?.serviceChargeBasisPoints ?? 0,
-    serviceChargeApplies: (branchSettings?.serviceChargeAppliesTo ?? ["DINE_IN"]).includes(orderType),
-    serviceChargeTaxable: branchSettings?.serviceChargeTaxable ?? true,
-    roundingMode: branchSettings?.roundingMode ?? "NEAREST_1",
-  };
+  // Through the shared resolver, so these defaults have exactly one definition — the POS computes
+  // the same totals in the browser when it is offline, and a second copy of them here would drift.
+  const settings: PricingSettings = settingsForOrderType(
+    {
+      serviceChargeBasisPoints: branchSettings?.serviceChargeBasisPoints ?? DEFAULT_BRANCH_PRICING.serviceChargeBasisPoints,
+      serviceChargeAppliesTo: branchSettings?.serviceChargeAppliesTo ?? [...DEFAULT_BRANCH_PRICING.serviceChargeAppliesTo],
+      serviceChargeTaxable: branchSettings?.serviceChargeTaxable ?? DEFAULT_BRANCH_PRICING.serviceChargeTaxable,
+      roundingMode: branchSettings?.roundingMode ?? DEFAULT_BRANCH_PRICING.roundingMode,
+    },
+    orderType
+  );
 
   return {
     settings,

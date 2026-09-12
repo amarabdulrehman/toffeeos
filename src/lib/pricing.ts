@@ -66,6 +66,60 @@ export interface PricingSettings {
   deliveryFeePaisa?: Paisa;
 }
 
+/**
+ * Everything needed to price a cart, in a form that can be handed to the browser and kept.
+ *
+ * The POS used to get its running total from POST /api/orders/preview, which meant a cart had no
+ * total at all with the line down: the cashier saw Tax (0%) and a total of Rs 0 while holding a
+ * customer's order. Caching this snapshot lets the same engine run in the browser and produce the
+ * same numbers, so an outage costs the round trip, not the arithmetic.
+ *
+ * Deliberately the raw branch configuration rather than a resolved PricingSettings:
+ * `serviceChargeApplies` depends on the order type, and the cashier can switch between dine-in and
+ * takeaway after the snapshot was taken. Resolving it here would bake in whichever type happened to
+ * be selected when the page loaded.
+ */
+export interface BranchPricingSnapshot {
+  serviceChargeBasisPoints: BasisPoints;
+  /** Order types that attract a service charge, e.g. ["DINE_IN"]. */
+  serviceChargeAppliesTo: string[];
+  serviceChargeTaxable: boolean;
+  roundingMode: RoundingModeKey;
+  taxRules: TaxRuleInput[];
+}
+
+/**
+ * Resolves a snapshot into the settings the engine wants, for one order type.
+ *
+ * The server's getBranchPricingContext() and the POS's offline path both go through here, so the
+ * defaults for a branch that has never been configured (no service charge, taxable, nearest-1) are
+ * defined exactly once. Two copies of these defaults that drift apart would show the cashier one
+ * total offline and charge the customer another on sync — which is the failure this whole path
+ * exists to prevent.
+ */
+export function settingsForOrderType(
+  snapshot: Pick<
+    BranchPricingSnapshot,
+    "serviceChargeBasisPoints" | "serviceChargeAppliesTo" | "serviceChargeTaxable" | "roundingMode"
+  >,
+  orderType: string
+): PricingSettings {
+  return {
+    serviceChargeBasisPoints: snapshot.serviceChargeBasisPoints,
+    serviceChargeApplies: snapshot.serviceChargeAppliesTo.includes(orderType),
+    serviceChargeTaxable: snapshot.serviceChargeTaxable,
+    roundingMode: snapshot.roundingMode,
+  };
+}
+
+/** The branch defaults, in one place, for a branch with no BranchSettings row yet. */
+export const DEFAULT_BRANCH_PRICING = {
+  serviceChargeBasisPoints: 0,
+  serviceChargeAppliesTo: ["DINE_IN"],
+  serviceChargeTaxable: true,
+  roundingMode: "NEAREST_1",
+} as const satisfies Omit<BranchPricingSnapshot, "taxRules">;
+
 /** Applies a line-level discount, clamped so a line can never go negative. */
 function applyLineDiscount(grossPaisa: Paisa, discount: DiscountInput | undefined): {
   discountPaisa: Paisa;
