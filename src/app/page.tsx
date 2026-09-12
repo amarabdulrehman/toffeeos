@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -114,6 +115,36 @@ function BrandMark() {
     >
       T
     </span>
+  );
+}
+
+/**
+ * The KRIMSOL company mark.
+ *
+ * Two files, not one with a CSS filter: the artwork is near-black ink plus a violet accent, and on
+ * the navy footer the original measures 1.02:1 against its background — invisible, not merely dim.
+ * krimsol-logo-dark.png lifts the neutral ink to near-white (15.28:1) and raises the violet's
+ * lightness while holding its hue (4.42:1), so the K reads as one mark instead of half of one.
+ *
+ * Both are trimmed from the supplied file, which carried 58% empty margin and would otherwise
+ * render the mark at about a third of the space it occupies.
+ *
+ * Deliberately not paired with the company name in text anywhere: this is a wordmark, and setting
+ * it beside the same word spelled out reads as a duplication. That also keeps a known difference
+ * out of the reader's eye — the artwork reads KRIMSOL, while COMPANY_NAME is KRIMSOLS, which is the
+ * spelling the owner confirmed and the one the @krimsols handle uses. Not a typo on either side;
+ * the logo is the thing to re-cut if they are ever brought into line.
+ */
+function KrimsolLogo({ variant = "dark", className = "" }: { variant?: "dark" | "light"; className?: string }) {
+  return (
+    <Image
+      src={variant === "dark" ? "/krimsol-logo-dark.png" : "/krimsol-logo.png"}
+      alt={COMPANY_NAME}
+      width={284}
+      height={190}
+      className={className}
+      priority={false}
+    />
   );
 }
 
@@ -575,10 +606,8 @@ function ContactSection() {
     <section id="contact" className="scroll-mt-16 bg-sidebar">
       <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-2xl text-center">
-          <p className="text-2xs font-semibold tracking-[0.2em] text-sidebar-foreground/50 uppercase">
-            From {COMPANY_NAME}
-          </p>
-          <h2 className="mt-4 font-heading text-3xl font-bold tracking-tight text-balance text-sidebar-foreground sm:text-4xl">
+          <KrimsolLogo className="mx-auto h-14 w-auto" />
+          <h2 className="mt-6 font-heading text-3xl font-bold tracking-tight text-balance text-sidebar-foreground sm:text-4xl">
             Let&rsquo;s get your restaurant running on it.
           </h2>
           <p className="mt-4 text-lg text-pretty text-sidebar-foreground/70">
@@ -640,9 +669,15 @@ function SiteFooter() {
               {BRAND_NAME}
             </span>
           </div>
-          <p className="mt-3 text-sm text-sidebar-foreground/55">
-            Restaurant software by {COMPANY_NAME}, built in Pakistan.
-          </p>
+          <div className="mt-5 flex items-center gap-3">
+            <KrimsolLogo className="h-9 w-auto" />
+            <span className="h-8 w-px bg-white/15" aria-hidden />
+            <p className="text-sm text-sidebar-foreground/55">
+              Restaurant software,
+              <br />
+              built in Pakistan.
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
