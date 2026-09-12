@@ -44,17 +44,31 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-/** An offline navigation that has no cached copy still needs to render something. */
-const OFFLINE_FALLBACK_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+/**
+ * An offline navigation that has no cached copy still needs to render something.
+ *
+ * `tillAvailable` decides whether to offer a way through to /pos. Reaching a dead end mid-shift
+ * because someone tapped Reports is a bad outage; being one tap from the till is a survivable one.
+ * The link is only shown when /pos is genuinely in the cache — offering it otherwise would just
+ * bounce staff to this same screen and teach them the button is broken.
+ */
+function offlineFallbackHtml(tillAvailable) {
+  const till = tillAvailable
+    ? `<a href="/pos">Open the till</a>`
+    : "";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title>
 <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
 font-family:system-ui,sans-serif;background:#faf9f7;color:#1c1917}div{max-width:22rem;text-align:center;padding:1.5rem}
 h1{font-size:1.125rem;margin:0 0 .5rem}p{font-size:.875rem;color:#57534e;margin:0 0 1rem;line-height:1.5}
-button{font:inherit;padding:.5rem 1rem;border-radius:.5rem;border:1px solid #d6d3d1;background:#fff;cursor:pointer}</style>
+a,button{font:inherit;display:inline-block;padding:.5rem 1rem;border-radius:.5rem;border:1px solid #d6d3d1;
+background:#fff;color:inherit;text-decoration:none;cursor:pointer;margin:0 .25rem}
+a{background:#1c1917;color:#faf9f7;border-color:#1c1917}</style>
 </head><body><div><h1>You're offline</h1>
 <p>This screen hasn't been opened on this device yet, so there's no saved copy to show.
 Anything already taken on this till is saved and will sync once you're back online.</p>
-<button onclick="location.reload()">Try again</button></div></body></html>`;
+${till}<button onclick="location.reload()">Try again</button></div></body></html>`;
+}
 
 async function handleNavigation(request) {
   try {
@@ -69,7 +83,11 @@ async function handleNavigation(request) {
   } catch {
     const cached = (await caches.match(request)) || (await caches.match(new URL(request.url).pathname));
     if (cached) return cached;
-    return new Response(OFFLINE_FALLBACK_HTML, { headers: { "Content-Type": "text/html; charset=utf-8" }, status: 503 });
+    const till = await caches.match("/pos");
+    return new Response(offlineFallbackHtml(Boolean(till)), {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+      status: 503,
+    });
   }
 }
 

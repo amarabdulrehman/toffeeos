@@ -27,7 +27,18 @@ class FakeCache {
   }
 }
 
-function harness(fetchImpl: (url: string) => Promise<Response>) {
+type Net = (url: string) => Promise<Response>;
+
+function harness(route: Net) {
+  // The worker calls fetch() with a bare string when warming and with a Request when handling a
+  // navigation. Normalising here keeps each test's routing table readable — and getting this wrong
+  // is what made the first version of these tests pass through a 404 instead of the offline path.
+  let online = true;
+  const fetchImpl = async (input: string | { url: string }) => {
+    if (!online) throw new TypeError("Failed to fetch");
+    const raw = typeof input === "string" ? input : input.url;
+    return route(raw.replace("https://toffeeos.com", ""));
+  };
   const cacheStorage = {
     _caches: new Map<string, FakeCache>(),
     async open(name: string) {
@@ -64,10 +75,27 @@ function harness(fetchImpl: (url: string) => Promise<Response>) {
 
   return {
     caches: cacheStorage,
+    /** Cuts the line, the way a café's connection goes mid-shift. */
+    goOffline() {
+      online = false;
+    },
     async send(data: unknown) {
       const waits: Promise<unknown>[] = [];
       for (const fn of listeners.message ?? []) fn({ data, waitUntil: (p) => waits.push(p) });
       await Promise.all(waits);
+    },
+    /** Drives the fetch handler as a browser would for a top-level navigation. */
+    async navigate(url: string): Promise<Response | undefined> {
+      const request = { method: "GET", mode: "navigate", url: `https://toffeeos.com${url}`, destination: "document" };
+      let responded: Promise<Response> | undefined;
+      for (const fn of listeners.fetch ?? [])
+        (fn as unknown as (e: unknown) => void)({
+          request,
+          respondWith: (p: Promise<Response>) => {
+            responded = p;
+          },
+        });
+      return responded ? await responded : undefined;
     },
   };
 }
@@ -137,5 +165,59 @@ describe("service worker page warming", () => {
     await sw.send({ type: "SOMETHING_ELSE" });
     await sw.send(null);
     expect(await (await sw.caches.open(pagesCacheName())).match("/pos")).toBeTruthy();
+  });
+});
+
+describe("offline navigation fallback", () => {
+  /** The app as the worker sees it: /pos and /kds are real pages, everything else is a 404. */
+  const routes: Net = async (url) =>
+    url === "/pos" || url === "/kds" ? html(`<h1>${url}</h1>`) : new Response("nope", { status: 404 });
+
+  it("serves the warmed till instead of the fallback once the line drops", async () => {
+    const sw = harness(routes);
+    await sw.send({ type: "WARM_PAGES", urls: ["/pos"] });
+
+    sw.goOffline();
+    const res = await sw.navigate("/pos");
+
+    const body = await res!.text();
+    expect(body, "the whole point: a warmed till must render offline").toContain("/pos");
+    expect(body).not.toContain("You're offline");
+  });
+
+  it("offers the till when it is cached, so an uncached screen isn't a dead end", async () => {
+    const sw = harness(routes);
+    await sw.send({ type: "WARM_PAGES", urls: ["/pos"] });
+
+    sw.goOffline();
+    const res = await sw.navigate("/app/reports");
+
+    expect(res!.status).toBe(503);
+    const body = await res!.text();
+    expect(body).toContain("You're offline");
+    expect(body, "staff mid-shift need a way back to the till").toContain('href="/pos"');
+  });
+
+  it("does not offer the till when it isn't cached, rather than linking to a dead end", async () => {
+    const sw = harness(routes);
+    sw.goOffline();
+    const res = await sw.navigate("/app/reports");
+
+    expect(res!.status).toBe(503);
+    const body = await res!.text();
+    expect(body).toContain("You're offline");
+    expect(body, "a link that just bounces back here teaches staff the button is broken").not.toContain(
+      'href="/pos"'
+    );
+  });
+
+  it("prefers the network while it is up, so staff never see a stale build online", async () => {
+    const sw = harness(routes);
+    await sw.send({ type: "WARM_PAGES", urls: ["/pos"] });
+
+    // Still online: the response must come from the network, not the cache.
+    const res = await sw.navigate("/pos");
+    expect(res!.status).toBe(200);
+    expect(await res!.text()).toContain("/pos");
   });
 });
