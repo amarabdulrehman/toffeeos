@@ -664,6 +664,45 @@ controlled can follow a redirect to `/login` and cache *that* as the POS.
   cashier's tenant, branch and permission flags in the HTML. Sign-out now drops the page cache, so
   the next cashier cannot be handed the previous one's screen during an outage.
 
+### The second bug the live test found: a cart that priced at Rs 0
+
+With the shell cached, the till opened offline — and showed `Tax (0%)` and a total of **Rs 0** with
+three items in the cart.
+
+The running total came only from `POST /api/orders/preview`, and the failed request was swallowed by
+an empty `catch`, so `totals` stayed `null`. Tax collapsed to 0% and `formatPkr(totals?.totalPaisa ??
+0)` printed Rs 0. The POS opened, took the order and queued it correctly; the cashier simply could
+not tell the customer what to charge. For a café that is the whole feature failing at the last step.
+
+`src/lib/pricing.ts` was already pure — its header says it exists to be *"reused identically by the
+POS cart, the offline queue replay, and the server-side order finalization endpoint."* Only its
+inputs were server-bound. `/pos` now ships a snapshot of the branch's pricing config with the page,
+the same way it already ships receipt branding and for the same stated reason, and the terminal runs
+the real engine against it when the request fails. The service worker caches `/pos`, so the snapshot
+survives the outage with it.
+
+The server stays authoritative while reachable — it prices against live settings, where the snapshot
+is as old as the page load. An aborted request is not a failure: the cart changed and a newer request
+is already in flight.
+
+Two further defects fell out of the same fix:
+
+- **The queued total was wrong.** Offline orders recorded `lines.reduce(...)`, a bare line sum that
+  silently dropped tax, service charge and rounding. The server re-prices on sync so the database was
+  never wrong, but the queue displayed a figure the order would not settle at.
+- **Two copies of the branch defaults.** `getBranchPricingContext` built its `PricingSettings`
+  inline. Both sides now go through `settingsForOrderType()` with `DEFAULT_BRANCH_PRICING`, so an
+  unconfigured branch cannot resolve one way on the server and another in the browser — which is
+  precisely how you get one total shown offline and another charged on sync.
+
+Also disabled next-auth's session poll while offline: it cannot succeed with no connection and was
+logging `Failed to fetch` from a till that was working correctly. Nothing gates on client session
+state — auth is enforced server-side on every request.
+
+**Worth knowing:** `DiscountInput.value` for a `PERCENT` discount is in **basis points**, not
+percent — it goes through the same `applyRate()` as the tax rate. The field is named `value`, so
+`10` reads like 10% and silently means 0.1%. This caught me while writing the tests.
+
 ### Coverage
 
 `tests/service-worker.test.ts` loads `sw.js` into a sandbox with fake `caches`/`fetch` and drives it
@@ -682,6 +721,9 @@ claimed to cover. They failed loudly rather than passing green, which is the onl
 ### Still not covered
 
 - Whether the *queue* replays correctly after a long outage with permission changes in between.
+- A branch whose pricing config changes *while* a tablet is offline. The snapshot is as old as the
+  last online page load, so the cashier would quote the previous rate until the page reloads. The
+  server re-prices on sync, so the books stay right — but the customer was quoted the old figure.
 - Multi-device conflict resolution under real concurrent offline edits.
 - iOS Safari specifically. Verified on Chrome; Safari's service-worker eviction under storage
   pressure is stricter and untested here.
