@@ -167,17 +167,24 @@ export function PosTerminal({
     );
   }, [lines, orderType, discount, pricingSnapshot]);
 
-  // Live totals: recompute from the pricing engine whenever the cart or order type changes.
-  // (When the cart is empty we simply skip fetching — displayedTotals below hides stale totals
-  // rather than the effect reaching back to clear state synchronously.)
-  //
-  // The server stays authoritative while it is reachable: it prices against live branch settings,
-  // whereas the snapshot is as old as this page load. But a failed request must not leave the cart
-  // with no total at all — that was the offline bug, and it showed the cashier Tax (0%) and a total
-  // of Rs 0 while a customer stood waiting. An aborted request is not a failure: it means the cart
-  // changed again and a newer request is already in flight, so leave the totals alone.
+  /**
+   * Live totals: show the locally computed figure straight away, then let the server refine it.
+   *
+   * The cart is priced locally FIRST, on every change, rather than only when the request fails.
+   * Waiting for a failure to fall back sounds equivalent and is not: it assumes the request fails
+   * *fast*. Café wi-fi does not fail fast — it hangs. A router that is up but not routing leaves
+   * navigator.onLine true and the fetch pending until it times out, and for that whole window the
+   * cashier is looking at a total of Rs 0 with a customer in front of them. Seeding locally means
+   * the cart is never without a total, whatever the network is doing.
+   *
+   * The server still wins when it answers: it prices against live branch settings, where the
+   * snapshot is as old as this page load. Its response simply overwrites the local figure, which in
+   * the ordinary case is the same number — both run the same engine (tests/offline-pricing.test.ts).
+   */
   useEffect(() => {
     if (lines.length === 0) return;
+    setTotals(localTotals);
+
     const controller = new AbortController();
     const handle = setTimeout(() => {
       fetch("/api/orders/preview", {
@@ -192,11 +199,11 @@ export function PosTerminal({
       })
         .then((r) => r.json())
         .then(setTotals)
-        .catch((err) => {
-          if (controller.signal.aborted || (err as Error)?.name === "AbortError") return;
-          setTotals(localTotals);
-        });
+        // Offline, hanging, or aborted because the cart changed again — the locally computed total
+        // is already on screen, so there is nothing to recover here.
+        .catch(() => {});
     }, 200);
+
     return () => {
       clearTimeout(handle);
       controller.abort();

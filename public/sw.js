@@ -19,10 +19,15 @@
  *                     a cached POST response would be a silent lie about money.
  *   other same-origin stale-while-revalidate for fonts/images: instant, and quietly refreshed.
  *
- * Bump CACHE_VERSION to force every client to drop its caches on the next activate.
+ * Bump CACHE_VERSION to force every client to drop its caches on the next activate. This is the
+ * blunt instrument and should stay rare: it also discards the hashed static assets, so every client
+ * re-downloads the whole app over café wi-fi. Routine staleness is handled by the build marker
+ * instead (see dropPagesIfBuildChanged), which drops only the cached pages and needs nobody to
+ * remember anything. v3 is a one-off: v2 clients are holding a /pos from before the offline pricing
+ * fix, cached by a worker that had no way to notice.
  */
 
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const STATIC_CACHE = `toffeeos-static-${CACHE_VERSION}`;
 const PAGES_CACHE = `toffeeos-pages-${CACHE_VERSION}`;
 const ASSETS_CACHE = `toffeeos-assets-${CACHE_VERSION}`;
@@ -81,7 +86,9 @@ async function handleNavigation(request) {
     }
     return fresh;
   } catch {
-    const cached = (await caches.match(request)) || (await caches.match(new URL(request.url).pathname));
+    const path = new URL(request.url).pathname;
+    if (path === BUILD_MARKER) return new Response("", { status: 404 });
+    const cached = (await caches.match(request)) || (await caches.match(path));
     if (cached) return cached;
     const till = await caches.match("/pos");
     return new Response(offlineFallbackHtml(Boolean(till)), {
@@ -129,6 +136,39 @@ async function staleWhileRevalidate(request) {
  * redirect to /login as though it were the POS. Asking once the app is running means the request
  * carries the session it needs.
  */
+/**
+ * The build the cached pages were fetched from, kept inside the page cache itself as a marker.
+ *
+ * Not a real request — caches only store Responses, so the build id is stored as one under a
+ * synthetic key that no navigation can collide with.
+ */
+const BUILD_MARKER = "/__toffeeos_build__";
+
+/**
+ * Drops every cached page when the deployed build changes.
+ *
+ * CACHE_VERSION is a constant someone has to remember to bump, and the first time I forgot, a
+ * tablet kept serving the previous build's /pos offline — the cashier saw a bug that had already
+ * been fixed and redeployed. A hand-maintained version is exactly the wrong mechanism for this: it
+ * fails silently, in the direction of staleness, on the device of whoever is furthest from the
+ * person who forgot.
+ *
+ * Only the page cache is dropped. Hashed static assets are immutable by URL, so a new build simply
+ * requests different ones and the old entries age out — deleting them would force every client to
+ * re-download the whole app on every deploy, over café wi-fi.
+ */
+async function dropPagesIfBuildChanged(buildId) {
+  if (!buildId) return;
+  const cache = await caches.open(PAGES_CACHE);
+  const marker = await cache.match(BUILD_MARKER);
+  const previous = marker ? await marker.text() : null;
+  if (previous === buildId) return;
+
+  await caches.delete(PAGES_CACHE);
+  const fresh = await caches.open(PAGES_CACHE);
+  await fresh.put(BUILD_MARKER, new Response(buildId));
+}
+
 async function warmPages(urls) {
   const cache = await caches.open(PAGES_CACHE);
   await Promise.all(
@@ -152,7 +192,9 @@ self.addEventListener("message", (event) => {
   if (!data) return;
 
   if (data.type === "WARM_PAGES" && Array.isArray(data.urls)) {
-    event.waitUntil(warmPages(data.urls));
+    // Purge first, then warm — otherwise the warm would refill the cache and the purge would throw
+    // away the pages it just fetched.
+    event.waitUntil(dropPagesIfBuildChanged(data.buildId).then(() => warmPages(data.urls)));
     return;
   }
 

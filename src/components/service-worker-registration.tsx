@@ -38,7 +38,13 @@ export function ServiceWorkerRegistration() {
           // The page that triggered registration was itself fetched before the worker existed, so
           // it is not in the cache either — warm the current path alongside the critical ones.
           const urls = Array.from(new Set([window.location.pathname, ...CRITICAL_ROUTES]));
-          registration.active?.postMessage({ type: "WARM_PAGES", urls });
+          // buildId lets the worker throw away pages cached from an older deploy. Without it a
+          // tablet that went offline before a fix shipped keeps serving the broken page forever.
+          registration.active?.postMessage({
+            type: "WARM_PAGES",
+            urls,
+            buildId: process.env.NEXT_PUBLIC_BUILD_ID,
+          });
         })
         .catch(() => {
           // Non-fatal by design: no service worker just means no offline page-loads, which is

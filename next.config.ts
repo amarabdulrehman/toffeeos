@@ -47,7 +47,19 @@ const securityHeaders = [
   { key: "Content-Security-Policy", value: csp },
 ];
 
+/**
+ * Identifies this build to the service worker, which drops its cached pages whenever it changes.
+ *
+ * The commit SHA on Vercel; a timestamp locally, where every `next build` is legitimately a new
+ * build. The service worker's own CACHE_VERSION is a constant someone has to remember to bump, and
+ * the first time it was forgotten a tablet kept serving the previous build's POS offline. This
+ * removes the remembering.
+ */
+const buildId =
+  process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.NEXT_PUBLIC_BUILD_ID ?? `local-${Date.now()}`;
+
 const nextConfig: NextConfig = {
+  env: { NEXT_PUBLIC_BUILD_ID: buildId },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

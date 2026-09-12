@@ -221,3 +221,63 @@ describe("offline navigation fallback", () => {
     expect(await res!.text()).toContain("/pos");
   });
 });
+
+describe("build-aware page cache", () => {
+  const routes: Net = async (url) => html(`<h1>${url}</h1>`);
+
+  it("keeps cached pages while the build is unchanged", async () => {
+    const sw = harness(routes);
+    await sw.send({ type: "WARM_PAGES", urls: ["/pos"], buildId: "abc123" });
+    const first = await (await sw.caches.open(pagesCacheName())).match("/pos");
+    expect(first).toBeTruthy();
+
+    await sw.send({ type: "WARM_PAGES", urls: [], buildId: "abc123" });
+    expect(await (await sw.caches.open(pagesCacheName())).match("/pos")).toBeTruthy();
+  });
+
+  it("drops pages cached from an older build", async () => {
+    const sw = harness(routes);
+    await sw.send({ type: "WARM_PAGES", urls: ["/pos", "/app/reports"], buildId: "old-build" });
+    expect(await (await sw.caches.open(pagesCacheName())).match("/app/reports")).toBeTruthy();
+
+    // A deploy lands. The tablet reloads and announces the new build.
+    await sw.send({ type: "WARM_PAGES", urls: ["/pos"], buildId: "new-build" });
+    const cache = await sw.caches.open(pagesCacheName());
+
+    expect(
+      await cache.match("/app/reports"),
+      "a page from the previous build must not survive — this is the stale-POS bug"
+    ).toBeUndefined();
+    expect(await cache.match("/pos"), "the re-warmed page must be present after the purge").toBeTruthy();
+  });
+
+  it("purges before warming, not after", async () => {
+    // Ordering matters: warm-then-purge would fetch the new pages and then throw them away,
+    // leaving the cache empty and the next outage uncovered.
+    const sw = harness(routes);
+    await sw.send({ type: "WARM_PAGES", urls: ["/pos"], buildId: "v1" });
+    await sw.send({ type: "WARM_PAGES", urls: ["/pos", "/kds"], buildId: "v2" });
+
+    const cache = await sw.caches.open(pagesCacheName());
+    expect(await cache.match("/pos")).toBeTruthy();
+    expect(await cache.match("/kds")).toBeTruthy();
+  });
+
+  it("does nothing when the app sends no build id", async () => {
+    // An older client that predates buildId must not have its cache wiped on every message.
+    const sw = harness(routes);
+    await sw.send({ type: "WARM_PAGES", urls: ["/pos"], buildId: "v1" });
+    await sw.send({ type: "WARM_PAGES", urls: [] });
+    expect(await (await sw.caches.open(pagesCacheName())).match("/pos")).toBeTruthy();
+  });
+
+  it("never serves the build marker as a page", async () => {
+    const sw = harness(routes);
+    await sw.send({ type: "WARM_PAGES", urls: ["/pos"], buildId: "v1" });
+    sw.goOffline();
+
+    const res = await sw.navigate("/__toffeeos_build__");
+    const body = await res!.text();
+    expect(body, "the marker is a build id, not HTML — it must never render as a page").not.toContain("v1");
+  });
+});
