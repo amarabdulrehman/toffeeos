@@ -703,6 +703,36 @@ state — auth is enforced server-side on every request.
 percent — it goes through the same `applyRate()` as the tax rate. The field is named `value`, so
 `10` reads like 10% and silently means 0.1%. This caught me while writing the tests.
 
+### The third bug: the worker pinned tills to a build that was already fixed
+
+The pricing fix deployed correctly and the till still showed Rs 0. The tablet was being served the
+*previous* build's `/pos` out of the worker's own page cache.
+
+`CACHE_VERSION` was a constant someone had to remember to bump. It was bumped shipping the worker,
+then not bumped shipping the pricing fix — so every cached `/pos` stayed on the broken build. The
+file's own comment named this as the failure mode worth avoiding ("staff pinned to a stale build
+that no amount of refreshing fixes"), and the mechanism chosen to avoid it was remembering.
+
+The page cache now carries a marker recording which build filled it. The app sends its build id —
+`VERCEL_GIT_COMMIT_SHA` in production — when it asks the worker to warm, and a mismatch drops every
+cached page before re-warming. A fix now reaches a tablet on its next load instead of whenever
+someone thinks to bump a constant.
+
+Only pages are dropped. Hashed static assets are immutable by URL, so a new build requests different
+ones; discarding them would make every client re-download the app over café wi-fi on every deploy.
+
+**Also changed, and arguably the more important half:** the cart is priced locally *first* on every
+change, not only when the preview request fails. Falling back on failure assumes the request fails
+fast. Café wi-fi does not fail fast — it hangs. A router that is up but not routing leaves
+`navigator.onLine` true and the fetch pending until timeout, and for that entire window the cashier
+is looking at Rs 0 with a customer waiting. Seeding locally means the cart always has a total; the
+server's response overwrites it when it arrives, and in the ordinary case it is the same number.
+
+The general lesson, which is why this is written up rather than quietly fixed: **an offline feature
+cannot be verified from the machine that built it.** All three of these bugs — the empty cache, the
+Rs 0 cart, the stale build — were found by a real tablet going actually offline, and none of them
+would have been caught by the test suite, the build, or a local dev server.
+
 ### Coverage
 
 `tests/service-worker.test.ts` loads `sw.js` into a sandbox with fake `caches`/`fetch` and drives it
