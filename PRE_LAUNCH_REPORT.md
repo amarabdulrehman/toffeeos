@@ -367,17 +367,16 @@ Ten minutes, and it replaces the guesswork in §6.1.
 
 Stated plainly, so you know the edges of this report rather than assuming it covered everything:
 
-- **Migrations against a fresh database.** Never tested. Every migration here has only ever been
-  applied incrementally to one long-lived database. If you ever provision a second environment — and
-  §2.4 says you should — that is the moment you find out whether they replay cleanly from zero. This
-  is the single most likely unpleasant surprise remaining.
-- **Backup restore.** `/api/cron/backup` writes to Supabase Storage. I confirmed the code and the
-  schedule; I never restored one. An unverified backup is a hope, not a backup.
+- ~~**Migrations against a fresh database.**~~ **Since closed.** A second Supabase project was
+  provisioned and all 37 migrations replayed cleanly from zero, with the full suite green against it.
+- ~~**Backup restore.**~~ **Since closed.** Proven by destroying 271 rows and restoring them exactly
+  — Rs 41,743 recovered to the paisa via `prisma/restore-backup.ts`.
 - **Business-logic correctness.** I audited security and reliability, not whether your PRA tax split,
   payroll maths, or P&L are *right*. There are good tests for these and I trusted them; I did not
   re-derive the arithmetic.
 - **The offline sync subsystem in depth.** Its e2e tests pass, but I did not attack it — conflict
-  resolution and replay-after-permission-change are exactly where multi-device POS bugs live.
+  resolution and replay-after-permission-change are exactly where multi-device POS bugs live. The
+  *app shell* is now covered offline (§10); the *queue semantics* underneath it still are not.
 - **Real penetration testing** of the public storefront and QR ordering beyond confirming rate
   limits and tenant scoping.
 - **Production-representative load.** See §6.1.
@@ -622,6 +621,73 @@ waved through.
 
 ---
 
+## 10. OFFLINE: WHAT THE CAFÉ ACTUALLY GETS
+
+The offline queue already handled everything *after* the app was running — orders, payments and
+voids go to IndexedDB and replay on reconnect. What was missing was the app itself. A browser
+re-fetches HTML and JS on every load, so with no connection a refresh, a slept tablet waking, or
+simply opening the till in the morning before the line was back gave a blank page, with a full
+queue sitting in IndexedDB that nothing could reach.
+
+`public/sw.js` closes that. Deliberately conservative, because the failure mode of a careless
+service worker — staff pinned to a stale build that no amount of refreshing fixes — is worse than
+having none:
+
+| Request | Strategy | Why |
+|---|---|---|
+| `/_next/static/*` | cache-first | Content-hashed, so a URL's bytes never change. |
+| navigations | network-first | Online you always get the current build; offline, the last good copy. |
+| `/api/*` | never cached | A cached POST response would be a silent lie about money. |
+| fonts/images | stale-while-revalidate | Instant, quietly refreshed. |
+
+**Verified in production**, not just deployed: Chrome DevTools → Application → Service Workers
+reports `#1155 activated and is running` on `toffeeos.com`, and the offline fallback renders.
+
+### What that first test exposed
+
+Registration worked, but the cache was empty. A page only entered the cache once it had been
+fetched *through* the worker — so on a tablet that is set up and left on one screen, the first
+outage hit nothing. Going offline and reloading gave the fallback rather than the POS, which is the
+exact failure the worker exists to prevent.
+
+Fixed in `aa9f6fd`: the app now asks the worker to warm `/pos`, `/kds` and the current page as soon
+as registration completes. Warming is driven by a message from the page rather than a list baked
+into `install`, because these routes are behind auth and a fetch made before any client is
+controlled can follow a redirect to `/login` and cache *that* as the POS.
+
+### Two traps worth knowing about
+
+- **Caching a redirect.** A login page cached as `/pos` would be worse than an empty cache: the till
+  would appear to work offline and show the wrong thing. The worker refuses to cache a redirect, a
+  non-HTML body, or a non-200.
+- **A shared tablet.** Cached pages are server-rendered *for one person* — `/pos` carries that
+  cashier's tenant, branch and permission flags in the HTML. Sign-out now drops the page cache, so
+  the next cashier cannot be handed the previous one's screen during an outage.
+
+### Coverage
+
+`tests/service-worker.test.ts` loads `sw.js` into a sandbox with fake `caches`/`fetch` and drives it
+directly. This is not optional nicety: `sw.js` is plain static JS — not typechecked, not bundled,
+and out of reach of the e2e suite, which has no worker registered.
+
+Each behaviour was confirmed to fail when broken: removing the redirect guard breaks the caching
+test, pointing `CLEAR_PAGES` at the wrong cache breaks the sign-out test, forcing the offline
+"Open the till" link on or off breaks one test each, and disabling warming breaks five.
+
+The harness itself was initially wrong in a way worth recording — the worker calls `fetch()` with a
+bare string when warming and with a `Request` when handling a navigation, and the stub only matched
+strings. Every navigation fell through to a 404 and never reached the offline path those tests
+claimed to cover. They failed loudly rather than passing green, which is the only reason it surfaced.
+
+### Still not covered
+
+- Whether the *queue* replays correctly after a long outage with permission changes in between.
+- Multi-device conflict resolution under real concurrent offline edits.
+- iOS Safari specifically. Verified on Chrome; Safari's service-worker eviction under storage
+  pressure is stricter and untested here.
+
+---
+
 ## RUNNING LOG
 
 - Branched `pre-launch-hardening` from `main` @ `ecc0ceb`.
@@ -636,3 +702,7 @@ waved through.
 - P6: `npm audit fix` (`27afd54`); error-leak review; console.log review; 404 page (`e92c61e`).
 - Decisions taken on your instruction: OTP disabled in production (`2401b01`), drift test added
   (`5f759a8`, which found real drift), SVG dropped (`6723498`).
+- Offline app-shell: service worker added and confirmed activated in production; cache warming added
+  after the first live test showed an empty cache (`aa9f6fd`); offline fallback given a route back to
+  the till (`6f92eb2`). Sandbox coverage in `tests/service-worker.test.ts`, each assertion confirmed
+  to fail when its behaviour is broken. See §10.
