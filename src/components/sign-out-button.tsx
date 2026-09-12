@@ -5,6 +5,23 @@ import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { revokeMySessions } from "@/server/session-revocation";
 
+/**
+ * Drops the service worker's cached page HTML on the way out.
+ *
+ * Those pages are rendered for one person — /pos has the cashier's branch and permission flags
+ * baked into the HTML — and a café tablet is shared. Without this, the next cashier could be handed
+ * the previous one's page from cache during an outage. Best-effort: a sign-out must never be
+ * blocked by the cache refusing to clear.
+ */
+async function clearOfflinePageCache() {
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration();
+    registration?.active?.postMessage({ type: "CLEAR_PAGES" });
+  } catch {
+    // No worker, or messaging failed — sign out regardless.
+  }
+}
+
 /** `onDark` swaps to a variant legible on the dark navy chrome (POS/KDS headers) instead of the
  * default bordered button, which would render as a light box against a dark bar. */
 export function SignOutButton({
@@ -34,6 +51,7 @@ export function SignOutButton({
     } catch {
       // fall through
     }
+    await clearOfflinePageCache();
     await signOut({ callbackUrl });
   };
 

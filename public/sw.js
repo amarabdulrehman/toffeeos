@@ -22,7 +22,7 @@
  * Bump CACHE_VERSION to force every client to drop its caches on the next activate.
  */
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const STATIC_CACHE = `toffeeos-static-${CACHE_VERSION}`;
 const PAGES_CACHE = `toffeeos-pages-${CACHE_VERSION}`;
 const ASSETS_CACHE = `toffeeos-assets-${CACHE_VERSION}`;
@@ -97,6 +97,55 @@ async function staleWhileRevalidate(request) {
     .catch(() => null);
   return cached || (await network) || Response.error();
 }
+
+/**
+ * Warms the page cache on request from the app.
+ *
+ * Network-first caching only stores a page *after* it has been visited with the worker already
+ * running, which left the first session uncovered: install the worker, lose the line, reload, and
+ * there is nothing saved yet — the offline fallback, not the till. A café tablet should be usable
+ * offline from the moment it is set up, not once someone happens to have clicked around.
+ *
+ * Driven by a message from the page rather than a hardcoded list in install: these routes are
+ * behind auth, and fetching them from install — before any client is controlled — risks caching a
+ * redirect to /login as though it were the POS. Asking once the app is running means the request
+ * carries the session it needs.
+ */
+async function warmPages(urls) {
+  const cache = await caches.open(PAGES_CACHE);
+  await Promise.all(
+    urls.map(async (url) => {
+      try {
+        const res = await fetch(url, { credentials: "same-origin" });
+        // Only a real page. A redirect to the login screen cached as /pos would be worse than an
+        // empty cache: the till would "work" offline and show the wrong thing.
+        if (res.ok && !res.redirected && (res.headers.get("content-type") || "").includes("text/html")) {
+          await cache.put(url, res.clone());
+        }
+      } catch {
+        // Offline or the route is unavailable — nothing to warm, try again next time.
+      }
+    })
+  );
+}
+
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data) return;
+
+  if (data.type === "WARM_PAGES" && Array.isArray(data.urls)) {
+    event.waitUntil(warmPages(data.urls));
+    return;
+  }
+
+  // Sent on sign-out. Cached pages are server-rendered for one person: /pos carries that cashier's
+  // branch, tenant and permission flags in the HTML. On a shared café tablet the next person to
+  // sign in could otherwise be served the previous cashier's page from cache while offline. Any
+  // online visit overwrites it anyway; this closes the window where it would not.
+  if (data.type === "CLEAR_PAGES") {
+    event.waitUntil(caches.delete(PAGES_CACHE));
+  }
+});
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
