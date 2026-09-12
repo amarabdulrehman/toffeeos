@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { motion, useMotionValueEvent, useScroll, useReducedMotion } from "motion/react";
-import { EASE, Eyebrow } from "./motion";
+import { EASE } from "./motion";
 import { PosMock, type CartLine, type Connection } from "./pos-mock";
 
 /**
@@ -95,7 +95,7 @@ export function OutageScene() {
   const phase = PHASES[i];
 
   return (
-    <section id="outage" ref={ref} className="relative scroll-mt-0 bg-[#08070f]" style={{ height: `${PHASES.length * 90}vh` }}>
+    <section id="outage" ref={ref} className="tos-grain relative scroll-mt-0 bg-[color:var(--night)]" style={{ height: `${PHASES.length * 90}vh` }}>
       <div className="sticky top-0 flex min-h-svh items-center overflow-hidden py-16">
         {/* the light warms and cools with the story rather than sitting static */}
         <motion.div
@@ -119,11 +119,11 @@ export function OutageScene() {
               {/* y only, never opacity: a phase whose reveal never runs must still be readable,
                   and the status bar and queue count already carry the change clearly enough. */}
               <motion.div key={i} initial={{ y: 18 }} animate={{ y: 0 }} transition={{ duration: 0.6, ease: EASE }}>
-                <Eyebrow className="text-white/35">{phase.eyebrow}</Eyebrow>
-                <h2 className="mt-4 text-[clamp(1.9rem,4.4vw,3.1rem)] leading-[1.03] font-bold tracking-[-0.03em] text-white">
+                <p className="tos-folio text-white/40">{phase.eyebrow}</p>
+                <h2 className="font-display mt-4 text-[clamp(2.1rem,4.8vw,3.4rem)] leading-[1.02] tracking-[-0.015em] text-[color:var(--paper)]">
                   {phase.title}
                 </h2>
-                <p className="mt-5 max-w-md text-[15px] leading-relaxed text-white/55">{phase.body}</p>
+                <p className="mt-5 max-w-md text-[15px] leading-relaxed text-white/50">{phase.body}</p>
               </motion.div>
             </div>
 
@@ -158,13 +158,13 @@ export function OutageScene() {
 /** The reduced-motion path: the same five moments, stacked, nothing pinned or scrubbed. */
 function OutageStatic() {
   return (
-    <section id="outage" className="scroll-mt-20 bg-[#08070f] py-24">
+    <section id="outage" className="scroll-mt-20 bg-[color:var(--night)] py-24">
       <div className="mx-auto max-w-3xl space-y-14 px-5 sm:px-8">
         {PHASES.map((p, n) => (
           <div key={p.title} className="grid gap-6 sm:grid-cols-[1fr_1.1fr] sm:items-center">
             <div>
-              <Eyebrow className="text-white/35">{p.eyebrow}</Eyebrow>
-              <h2 className="mt-3 text-2xl font-bold tracking-[-0.02em] text-white">{p.title}</h2>
+              <p className="tos-folio text-white/40">{p.eyebrow}</p>
+              <h2 className="font-display mt-3 text-3xl tracking-[-0.015em] text-[color:var(--paper)]">{p.title}</h2>
               <p className="mt-3 text-[15px] leading-relaxed text-white/55">{p.body}</p>
             </div>
             {n === 2 && <PosMock lines={p.lines} connection={p.connection} queued={p.queued} />}

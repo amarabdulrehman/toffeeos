@@ -45,53 +45,53 @@ function quoteHref(tier: TierKey) {
 
 export function Plans() {
   return (
-    <section id="plans" className="scroll-mt-20 border-t border-white/[0.06] bg-[#08070f] py-24 sm:py-32">
+    <section id="plans" className="scroll-mt-20 border-t border-[color:var(--rule)] py-24 sm:py-32">
       <div className="mx-auto max-w-6xl px-5 sm:px-8">
         <Reveal className="max-w-2xl">
-          <Eyebrow className="text-white/35">Plans</Eyebrow>
-          <h2 className="mt-5 text-[clamp(2rem,4.6vw,3.4rem)] leading-[1.02] font-bold tracking-[-0.032em] text-white">
+          <Eyebrow className="text-[color:var(--ink-3)]">Plans</Eyebrow>
+          <h2 className="font-display mt-5 text-[clamp(2.1rem,4.8vw,3.5rem)] leading-[1.02] tracking-[-0.018em] text-[color:var(--ink)]">
             Priced per branch, not per seat.
           </h2>
-          <p className="mt-6 text-[15px] leading-relaxed text-white/50">
+          <p className="mt-6 text-[15px] leading-relaxed text-[color:var(--ink-2)]">
             Add as many cashiers as you have. Tell us how many locations you run and what you need,
             and we will quote you properly.
           </p>
         </Reveal>
 
-        <div className="mt-16 grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/[0.06] lg:grid-cols-3">
+        <div className="mt-16 grid gap-px overflow-hidden rounded-2xl border border-[color:var(--rule)] bg-[color:var(--rule)] lg:grid-cols-3">
           {TIER_ORDER.map((tier, i) => {
             const featured = tier === "growth";
             return (
               <Reveal key={tier} delay={0.08 * i} className="h-full">
-                <div className={`flex h-full flex-col p-8 ${featured ? "bg-white/[0.045]" : "bg-[#0b0a13]"}`}>
+                <div className={`flex h-full flex-col p-8 ${featured ? "bg-white" : "bg-[color:var(--paper-2)]"}`}>
                   <div className="flex items-baseline gap-3">
-                    <h3 className="text-lg font-bold text-white">{TIER_LABEL[tier]}</h3>
+                    <h3 className="font-display text-2xl text-[color:var(--ink)]">{TIER_LABEL[tier]}</h3>
                     {featured && (
-                      <span className="rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-violet-200 uppercase">
+                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-violet-800 uppercase">
                         Most start here
                       </span>
                     )}
                   </div>
-                  <p className="mt-2.5 text-[14px] text-white/45">{PITCH[tier]}</p>
+                  <p className="mt-2.5 text-[14px] text-[color:var(--ink-2)]">{PITCH[tier]}</p>
 
                   <a
                     href={quoteHref(tier)}
-                    className={`mt-7 inline-flex h-10 items-center justify-center rounded-full text-[13px] font-semibold transition-all duration-200 hover:scale-[1.02] ${
+                    className={`mt-7 inline-flex h-10 items-center justify-center rounded-sm text-[13px] font-semibold transition-colors duration-200 ${
                       featured
-                        ? "bg-white text-black"
-                        : "border border-white/15 text-white/85 hover:border-white/30"
+                        ? "bg-[color:var(--ink)] text-[color:var(--paper)] hover:bg-[color:var(--accent)]"
+                        : "border border-[color:var(--rule)] text-[color:var(--ink)] hover:border-[color:var(--ink)]"
                     }`}
                   >
                     Get a quote
                   </a>
 
-                  <p className="mt-8 text-[11px] font-medium tracking-[0.16em] text-white/30 uppercase">
+                  <p className="mt-8 text-[11px] font-medium tracking-[0.16em] text-[color:var(--ink-3)] uppercase">
                     {tier === "starter" ? "Includes" : "Everything in Starter, plus"}
                   </p>
                   <ul className="mt-4 space-y-2.5">
                     {(tier === "starter" ? CORE : modulesFor(tier)).map((f) => (
-                      <li key={f} className="flex items-start gap-2.5 text-[13.5px] text-white/65">
-                        <Check className="mt-[3px] size-3.5 shrink-0 text-violet-300" strokeWidth={3} />
+                      <li key={f} className="flex items-start gap-2.5 text-[13.5px] text-[color:var(--ink-2)]">
+                        <Check className="mt-[3px] size-3.5 shrink-0 text-[color:var(--accent)]" strokeWidth={3} />
                         {f}
                       </li>
                     ))}
@@ -106,62 +106,59 @@ export function Plans() {
   );
 }
 
+/**
+ * The closing ask, set on ink rather than paper.
+ *
+ * The page runs paper → dark (the outage) → paper → dark again here, so the two dark sections
+ * bookend the argument and the last thing a visitor sees has weight. It also puts the company mark
+ * on the background its dark variant was built for.
+ */
 export function Closing() {
   return (
-    <section id="contact" className="relative scroll-mt-20 overflow-hidden border-t border-white/[0.06] bg-[#08070f] py-28 sm:py-40">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute top-1/2 left-1/2 h-[34rem] w-[54rem] -translate-x-1/2 -translate-y-1/2 rounded-[50%] bg-[radial-gradient(ellipse_at_center,rgba(124,58,237,0.28),transparent_65%)] blur-2xl"
-      />
-      <div className="relative mx-auto max-w-3xl px-5 text-center sm:px-8">
+    <section id="contact" className="tos-grain relative scroll-mt-20 overflow-hidden bg-[color:var(--night)] py-28 sm:py-36">
+      <div className="relative mx-auto max-w-4xl px-5 sm:px-8">
         <Reveal>
-          <Image
-            src="/krimsol-logo-dark.png"
-            alt={COMPANY_NAME}
-            width={284}
-            height={190}
-            className="mx-auto h-12 w-auto"
-          />
-          <h2 className="mt-9 text-[clamp(2.1rem,5.2vw,3.6rem)] leading-[1.02] font-bold tracking-[-0.034em] text-white">
-            Put it on your counter this week.
+          <p className="tos-folio text-white/35">06 — START</p>
+          <h2 className="font-display mt-6 max-w-2xl text-[clamp(2.3rem,5.6vw,4rem)] leading-[1.0] tracking-[-0.018em] text-[color:var(--paper)]">
+            Put it on your counter <em className="text-violet-300">this week.</em>
           </h2>
-          <p className="mx-auto mt-6 max-w-lg text-[15px] leading-relaxed text-white/55">
+          <p className="mt-7 max-w-md text-[15px] leading-[1.65] text-white/50">
             Start the trial and look around yourself, or talk to us first — we will set up your menu,
             your branches and your tax rates with you.
           </p>
 
-          <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-4">
             <Link
               href="/signup"
-              className="group inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-white px-8 text-sm font-semibold text-black transition-transform duration-200 hover:scale-[1.03] active:scale-[0.99] sm:w-auto"
+              className="group inline-flex h-12 items-center gap-2 rounded-sm bg-[color:var(--paper)] px-7 text-[13px] font-semibold whitespace-nowrap text-[color:var(--night)] transition-colors hover:bg-violet-300"
             >
               Start free trial
               <ArrowRight className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
             </Link>
             <a
               href={`mailto:${COMPANY_EMAIL}`}
-              className="inline-flex h-12 w-full items-center justify-center rounded-full border border-white/15 px-8 text-sm font-medium text-white/85 transition-colors hover:border-white/30 hover:text-white sm:w-auto"
+              className="border-b border-white/25 pb-0.5 text-[13px] font-medium text-white/70 transition-colors hover:border-white hover:text-white"
             >
-              Talk to us
+              Talk to us instead
             </a>
           </div>
 
-          <div className="mt-12 flex flex-col items-center justify-center gap-x-8 gap-y-3 text-[13.5px] sm:flex-row">
-            <a
-              href={`mailto:${COMPANY_EMAIL}`}
-              className="text-white/45 transition-colors hover:text-white"
-            >
-              {COMPANY_EMAIL}
-            </a>
-            <a
-              href={COMPANY_INSTAGRAM}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="inline-flex items-center gap-2 text-white/45 transition-colors hover:text-white"
-            >
-              <InstagramGlyph className="size-4" />
-              {COMPANY_INSTAGRAM_HANDLE}
-            </a>
+          <div className="mt-16 flex flex-col gap-6 border-t border-white/10 pt-8 sm:flex-row sm:items-end sm:justify-between">
+            <Image src="/krimsol-logo-dark.png" alt={COMPANY_NAME} width={284} height={190} className="h-10 w-auto" />
+            <div className="flex flex-col gap-2 text-[13px] sm:items-end">
+              <a href={`mailto:${COMPANY_EMAIL}`} className="text-white/45 transition-colors hover:text-white">
+                {COMPANY_EMAIL}
+              </a>
+              <a
+                href={COMPANY_INSTAGRAM}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-2 text-white/45 transition-colors hover:text-white"
+              >
+                <InstagramGlyph className="size-4" />
+                {COMPANY_INSTAGRAM_HANDLE}
+              </a>
+            </div>
           </div>
         </Reveal>
       </div>

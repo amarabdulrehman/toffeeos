@@ -1,10 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { motion, useMotionValueEvent, useScroll } from "motion/react";
-import { COMPANY_EMAIL, COMPANY_INSTAGRAM, COMPANY_INSTAGRAM_HANDLE, COMPANY_NAME } from "@/config/brand";
+import { COMPANY_NAME } from "@/config/brand";
 
 /**
  * Header and footer.
@@ -28,18 +27,18 @@ export function SiteHeader() {
   return (
     <motion.header
       animate={{
-        backgroundColor: scrolled ? "rgba(8,7,15,0.72)" : "rgba(8,7,15,0)",
-        borderBottomColor: scrolled ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0)",
+        backgroundColor: scrolled ? "rgba(250,247,242,0.88)" : "rgba(250,247,242,0)",
+        borderBottomColor: scrolled ? "rgba(25,21,18,0.12)" : "rgba(25,21,18,0)",
       }}
       transition={{ duration: 0.3 }}
       className="fixed inset-x-0 top-0 z-50 border-b backdrop-blur-xl"
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-8 px-5 sm:px-8">
         <Link href="/" className="flex items-center gap-2.5" aria-label="ToffeeOS home">
-          <span className="grid size-7 place-items-center rounded-lg bg-violet-600 text-[13px] font-bold text-white">
+          <span className="grid size-7 place-items-center rounded-lg bg-[color:var(--ink)] text-[13px] font-bold text-[color:var(--paper)]">
             T
           </span>
-          <span className="text-[15px] font-semibold tracking-tight text-white">ToffeeOS</span>
+          <span className="font-display text-[19px] tracking-tight text-[color:var(--ink)]">ToffeeOS</span>
         </Link>
 
         <nav className="ml-auto hidden items-center gap-7 md:flex">
@@ -47,7 +46,7 @@ export function SiteHeader() {
             <a
               key={n.href}
               href={n.href}
-              className="text-[13px] font-medium text-white/55 transition-colors hover:text-white"
+              className="text-[13px] font-medium text-[color:var(--ink-2)] transition-colors hover:text-[color:var(--ink)]"
             >
               {n.label}
             </a>
@@ -57,13 +56,13 @@ export function SiteHeader() {
         <div className="ml-auto flex items-center gap-2 md:ml-0">
           <Link
             href="/login"
-            className="hidden h-9 items-center rounded-full px-4 text-[13px] font-medium whitespace-nowrap text-white/70 transition-colors hover:text-white sm:inline-flex"
+            className="hidden h-9 items-center rounded-full px-4 text-[13px] font-medium whitespace-nowrap text-[color:var(--ink-2)] transition-colors hover:text-[color:var(--ink)] sm:inline-flex"
           >
             Sign in
           </Link>
           <Link
             href="/signup"
-            className="inline-flex h-9 items-center rounded-full bg-white px-4 text-[13px] font-semibold whitespace-nowrap text-black transition-transform duration-200 hover:scale-[1.04] active:scale-[0.98]"
+            className="inline-flex h-9 items-center rounded-sm bg-[color:var(--ink)] px-4 text-[13px] font-semibold whitespace-nowrap text-[color:var(--paper)] transition-colors duration-200 hover:bg-[color:var(--accent)]"
           >
             Start free trial
           </Link>
@@ -94,89 +93,26 @@ export function InstagramGlyph({ className }: { className?: string }) {
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-white/[0.06] bg-[#08070f]">
-      <div className="mx-auto max-w-6xl px-5 py-14 sm:px-8">
-        <div className="flex flex-col gap-10 md:flex-row md:items-start md:justify-between">
-          <div>
-            {/* the company mark, on the dark-background variant built for exactly this surface */}
-            <Image
-              src="/krimsol-logo-dark.png"
-              alt={COMPANY_NAME}
-              width={284}
-              height={190}
-              className="h-9 w-auto"
-            />
-            <p className="mt-5 max-w-xs text-[13px] leading-relaxed text-white/35">
-              ToffeeOS is restaurant software by {COMPANY_NAME}, built in Pakistan for the way
-              restaurants here actually work.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-x-14 gap-y-8 sm:grid-cols-3">
-            <FooterCol title="Product">
-              <FooterLink href="#outage">Offline</FooterLink>
-              <FooterLink href="#features">What it runs</FooterLink>
-              <FooterLink href="#plans">Plans</FooterLink>
-            </FooterCol>
-            <FooterCol title="Get started">
-              <FooterLink href="/signup" internal>
-                Start free trial
-              </FooterLink>
-              <FooterLink href="/login" internal>
-                Sign in
-              </FooterLink>
-            </FooterCol>
-            <FooterCol title="Talk to us">
-              <FooterLink href={`mailto:${COMPANY_EMAIL}`}>{COMPANY_EMAIL}</FooterLink>
-              <FooterLink href={COMPANY_INSTAGRAM} external>
-                {COMPANY_INSTAGRAM_HANDLE}
-              </FooterLink>
-            </FooterCol>
-          </div>
-        </div>
-
-        <div className="mt-14 border-t border-white/[0.06] pt-6">
-          <p className="text-[12px] text-white/25">
-            © {new Date().getFullYear()} {COMPANY_NAME}. All rights reserved.
-          </p>
+    <footer className="border-t border-[color:var(--rule)] py-8">
+      <div className="mx-auto flex max-w-6xl flex-col gap-3 px-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+        <p className="text-[12px] text-[color:var(--ink-3)]">
+          © {new Date().getFullYear()} {COMPANY_NAME}. Restaurant software, built in Pakistan.
+        </p>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[12px]">
+          <a href="#outage" className="text-[color:var(--ink-3)] transition-colors hover:text-[color:var(--ink)]">
+            Offline
+          </a>
+          <a href="#features" className="text-[color:var(--ink-3)] transition-colors hover:text-[color:var(--ink)]">
+            What it runs
+          </a>
+          <a href="#plans" className="text-[color:var(--ink-3)] transition-colors hover:text-[color:var(--ink)]">
+            Plans
+          </a>
+          <Link href="/login" className="text-[color:var(--ink-3)] transition-colors hover:text-[color:var(--ink)]">
+            Sign in
+          </Link>
         </div>
       </div>
     </footer>
-  );
-}
-
-function FooterCol({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="text-[11px] font-medium tracking-[0.16em] text-white/30 uppercase">{title}</p>
-      <ul className="mt-4 space-y-2.5">{children}</ul>
-    </div>
-  );
-}
-
-function FooterLink({
-  href,
-  children,
-  internal,
-  external,
-}: {
-  href: string;
-  children: React.ReactNode;
-  internal?: boolean;
-  external?: boolean;
-}) {
-  const cls = "text-[13px] text-white/50 transition-colors hover:text-white";
-  return (
-    <li>
-      {internal ? (
-        <Link href={href} className={cls}>
-          {children}
-        </Link>
-      ) : (
-        <a href={href} className={cls} {...(external ? { target: "_blank", rel: "noreferrer noopener" } : {})}>
-          {children}
-        </a>
-      )}
-    </li>
   );
 }

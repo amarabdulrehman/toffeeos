@@ -67,17 +67,17 @@ export function TaxScene() {
   const total = SUBTOTAL + tax;
 
   return (
-    <section className="border-t border-white/[0.06] bg-[#08070f] py-24 sm:py-32">
+    <section className="border-t border-[color:var(--rule)] py-24 sm:py-32">
       <div ref={ref} className="mx-auto grid max-w-6xl items-center gap-14 px-5 sm:px-8 lg:grid-cols-2 lg:gap-20">
         <div>
           <Reveal>
-            <Eyebrow className="text-white/35">Built here, not translated</Eyebrow>
-            <h2 className="mt-5 text-[clamp(2rem,4.6vw,3.4rem)] leading-[1.02] font-bold tracking-[-0.032em] text-white">
+            <Eyebrow className="text-[color:var(--ink-3)]">Built here, not translated</Eyebrow>
+            <h2 className="font-display mt-5 text-[clamp(2.1rem,4.8vw,3.5rem)] leading-[1.02] tracking-[-0.018em] text-[color:var(--ink)]">
               Cash is taxed at 16%.
               <br />
               Card at 8%.
             </h2>
-            <p className="mt-6 max-w-md text-[15px] leading-relaxed text-white/55">
+            <p className="mt-6 max-w-md text-[15px] leading-relaxed text-[color:var(--ink-2)]">
               Punjab charges different rates depending on how the customer pays. Software written
               somewhere else charges one rate and leaves you to fix it at filing. Tap between them —
               it is the same bill.
@@ -87,9 +87,9 @@ export function TaxScene() {
           <dl className="mt-12 space-y-7">
             {POINTS.map((p, n) => (
               <Reveal key={p.k} delay={0.08 * n}>
-                <div className="border-t border-white/[0.08] pt-5">
-                  <dt className="text-sm font-semibold text-white">{p.k}</dt>
-                  <dd className="mt-2 max-w-md text-[14px] leading-relaxed text-white/45">{p.v}</dd>
+                <div className="border-t border-[color:var(--rule)] pt-5">
+                  <dt className="text-sm font-semibold text-[color:var(--ink)]">{p.k}</dt>
+                  <dd className="mt-2 max-w-md text-[14px] leading-relaxed text-[color:var(--ink-2)]">{p.v}</dd>
                 </div>
               </Reveal>
             ))}
@@ -98,28 +98,28 @@ export function TaxScene() {
 
         {/* the bill */}
         <Reveal delay={0.1}>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-6 sm:p-8">
+          <div className="rounded-2xl border border-[color:var(--rule)] bg-white p-6 sm:p-8">
             <div className="flex items-baseline justify-between">
-              <span className="text-[11px] font-medium tracking-[0.18em] text-white/35 uppercase">Table 7</span>
-              <span className="text-[11px] text-white/30">Order #1482</span>
+              <span className="text-[11px] font-medium tracking-[0.18em] text-[color:var(--ink-3)] uppercase">Table 7</span>
+              <span className="text-[11px] text-[color:var(--ink-3)]">Order #1482</span>
             </div>
 
             <div className="mt-6 space-y-2.5">
               {BILL.map((l) => (
                 <div key={l.name} className="flex items-baseline gap-3 text-sm">
-                  <span className="text-white/30 tabular-nums">{l.qty}×</span>
-                  <span className="text-white/70">{l.name}</span>
-                  <span className="ml-auto text-white/60 tabular-nums">{rs(l.priceRs * l.qty)}</span>
+                  <span className="text-[color:var(--ink-3)] tabular-nums">{l.qty}×</span>
+                  <span className="text-[color:var(--ink)]">{l.name}</span>
+                  <span className="ml-auto text-[color:var(--ink-2)] tabular-nums">{rs(l.priceRs * l.qty)}</span>
                 </div>
               ))}
             </div>
 
-            <div className="mt-6 space-y-2.5 border-t border-white/10 pt-5 text-sm">
-              <div className="flex justify-between text-white/40">
+            <div className="mt-6 space-y-2.5 border-t border-dashed border-[color:var(--rule)] pt-5 text-sm">
+              <div className="flex justify-between text-[color:var(--ink-2)]">
                 <span>Subtotal</span>
                 <span className="tabular-nums">Rs {rs(SUBTOTAL)}</span>
               </div>
-              <div className="flex justify-between text-white/40">
+              <div className="flex justify-between text-[color:var(--ink-2)]">
                 <span className="flex items-center gap-2">
                   Tax
                   <AnimatePresence mode="wait" initial={false}>
@@ -129,7 +129,7 @@ export function TaxScene() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -5 }}
                       transition={{ duration: 0.28, ease: EASE }}
-                      className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-violet-200 tabular-nums"
+                      className="rounded bg-violet-100 px-1.5 py-0.5 text-[11px] font-semibold text-violet-800 tabular-nums"
                     >
                       {Math.round(method.rate * 100)}%
                     </motion.span>
@@ -150,8 +150,8 @@ export function TaxScene() {
               </div>
             </div>
 
-            <div className="mt-5 flex items-baseline justify-between border-t border-white/10 pt-5">
-              <span className="text-[11px] font-semibold tracking-[0.18em] text-white/35 uppercase">Total</span>
+            <div className="mt-5 flex items-baseline justify-between border-t border-dashed border-[color:var(--rule)] pt-5">
+              <span className="text-[11px] font-semibold tracking-[0.18em] text-[color:var(--ink-3)] uppercase">Total</span>
               <AnimatePresence mode="wait" initial={false}>
                 <motion.span
                   key={total}
@@ -159,7 +159,7 @@ export function TaxScene() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.32, ease: EASE }}
-                  className="text-[clamp(1.6rem,3vw,2.1rem)] font-bold text-white tabular-nums"
+                  className="font-display text-[clamp(1.9rem,3.4vw,2.5rem)] text-[color:var(--ink)] tabular-nums"
                 >
                   Rs {rs(total)}
                 </motion.span>
@@ -178,14 +178,14 @@ export function TaxScene() {
                   }}
                   aria-pressed={idx === n}
                   className={`relative h-10 rounded-lg text-[13px] font-medium transition-colors ${
-                    idx === n ? "text-white" : "text-white/45 hover:text-white/70"
+                    idx === n ? "text-[color:var(--ink)]" : "text-[color:var(--ink-2)] hover:text-[color:var(--ink)]"
                   }`}
                 >
                   {idx === n && (
                     <motion.span
                       layoutId="tax-method"
                       transition={{ duration: 0.35, ease: EASE }}
-                      className="absolute inset-0 rounded-lg border border-white/15 bg-white/[0.07]"
+                      className="absolute inset-0 rounded-lg border border-[color:var(--ink)] bg-[color:var(--ink)]"
                     />
                   )}
                   <span className="relative">Paid by {m.label}</span>

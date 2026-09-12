@@ -23,10 +23,10 @@ type Panel = {
 
 function KdsTicket() {
   return (
-    <div className="w-full max-w-xs rounded-xl border border-white/10 bg-[#12111c] p-4 shadow-xl">
+    <div className="w-full max-w-xs rounded-xl border border-stone-200 bg-white p-4 shadow-[0_14px_40px_-16px_rgba(25,21,18,0.28)]">
       <div className="flex items-baseline justify-between">
-        <span className="text-sm font-bold text-white">Table 7</span>
-        <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">
+        <span className="text-sm font-bold text-stone-900">Table 7</span>
+        <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
           4:12
         </span>
       </div>
@@ -37,14 +37,14 @@ function KdsTicket() {
           ["4", "Naan", false],
         ].map(([q, n, done]) => (
           <div key={n as string} className="flex items-center gap-2.5 text-[12px]">
-            <span className="grid size-4 place-items-center rounded bg-white/10 text-[9px] font-semibold text-white/70">
+            <span className="grid size-4 place-items-center rounded bg-stone-100 text-[9px] font-semibold text-stone-600">
               {q as string}
             </span>
-            <span className={done ? "text-white/30 line-through" : "text-white/80"}>{n as string}</span>
+            <span className={done ? "text-stone-300 line-through" : "text-stone-700"}>{n as string}</span>
             {done ? (
-              <span className="ml-auto text-[10px] text-emerald-400">ready</span>
+              <span className="ml-auto text-[10px] text-emerald-600">ready</span>
             ) : (
-              <span className="ml-auto size-3.5 rounded-full border border-white/25" />
+              <span className="ml-auto size-3.5 rounded-full border border-stone-300" />
             )}
           </div>
         ))}
@@ -60,22 +60,22 @@ function StockRows() {
     ["Yoghurt", 0.12, "2.0 kg"],
   ];
   return (
-    <div className="w-full max-w-xs space-y-3.5 rounded-xl border border-white/10 bg-[#12111c] p-4 shadow-xl">
+    <div className="w-full max-w-xs space-y-3.5 rounded-xl border border-stone-200 bg-white p-4 shadow-[0_14px_40px_-16px_rgba(25,21,18,0.28)]">
       {rows.map(([name, pct, qty], i) => (
         <div key={name}>
           <div className="flex items-baseline justify-between text-[12px]">
-            <span className="text-white/75">{name}</span>
-            <span className={pct < 0.2 ? "text-amber-300" : "text-white/40"}>{qty}</span>
+            <span className="text-stone-700">{name}</span>
+            <span className={pct < 0.2 ? "text-amber-700" : "text-stone-400"}>{qty}</span>
           </div>
-          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-stone-100">
             <div
               style={{ width: `${pct * 100}%`, animationDelay: `${0.1 * i}s` }}
-              className={`tos-grow-x h-full rounded-full ${pct < 0.2 ? "bg-amber-400" : "bg-violet-400"}`}
+              className={`tos-grow-x h-full rounded-full ${pct < 0.2 ? "bg-amber-400" : "bg-[color:var(--accent)]"}`}
             />
           </div>
         </div>
       ))}
-      <p className="pt-1 text-[10px] text-amber-300/80">Yoghurt below re-order level</p>
+      <p className="pt-1 text-[10px] text-amber-700">Yoghurt below re-order level</p>
     </div>
   );
 }
@@ -84,9 +84,9 @@ function RevenueBars() {
   const bars = [0.45, 0.62, 0.38, 0.71, 0.55, 0.88, 1];
   const days = ["M", "T", "W", "T", "F", "S", "S"];
   return (
-    <div className="w-full max-w-xs rounded-xl border border-white/10 bg-[#12111c] p-4 shadow-xl">
+    <div className="w-full max-w-xs rounded-xl border border-stone-200 bg-white p-4 shadow-[0_14px_40px_-16px_rgba(25,21,18,0.28)]">
       <div className="flex items-baseline justify-between">
-        <span className="text-[11px] text-white/40">This week</span>
+        <span className="text-[11px] text-stone-400">This week</span>
         <span className="text-sm font-bold text-white tabular-nums">Rs 412,860</span>
       </div>
       <div className="mt-4 flex h-20 items-end gap-1.5">
@@ -94,13 +94,13 @@ function RevenueBars() {
           <div
             key={i}
             style={{ height: `${h * 100}%`, animationDelay: `${0.06 * i}s` }}
-            className={`tos-grow-y flex-1 rounded-t-sm ${i === bars.length - 1 ? "bg-violet-400" : "bg-white/15"}`}
+            className={`tos-grow-y flex-1 rounded-t-sm ${i === bars.length - 1 ? "bg-[color:var(--accent)]" : "bg-stone-200"}`}
           />
         ))}
       </div>
       <div className="mt-2 flex gap-1.5">
         {days.map((d, i) => (
-          <span key={i} className="flex-1 text-center text-[9px] text-white/25">
+          <span key={i} className="flex-1 text-center text-[9px] text-stone-300">
             {d}
           </span>
         ))}
@@ -116,24 +116,24 @@ function RiderTrack() {
     ["Delivered", false],
   ] as const;
   return (
-    <div className="w-full max-w-xs rounded-xl border border-white/10 bg-[#12111c] p-4 shadow-xl">
+    <div className="w-full max-w-xs rounded-xl border border-stone-200 bg-white p-4 shadow-[0_14px_40px_-16px_rgba(25,21,18,0.28)]">
       <div className="flex items-center gap-2.5">
         <span className="grid size-7 place-items-center rounded-full bg-violet-500/20 text-[10px] font-bold text-violet-200">
           FR
         </span>
         <div>
-          <p className="text-[12px] font-medium text-white/85">Faisal · Rider</p>
-          <p className="text-[10px] text-white/35">2 orders · DHA Phase 6</p>
+          <p className="text-[12px] font-medium text-stone-800">Faisal · Rider</p>
+          <p className="text-[10px] text-stone-400">2 orders · DHA Phase 6</p>
         </div>
       </div>
       <div className="mt-4 space-y-0">
         {steps.map(([label, done], i) => (
           <div key={label} className="flex gap-3">
             <div className="flex flex-col items-center">
-              <span className={`size-2 rounded-full ${done ? "bg-emerald-400" : "bg-white/20"}`} />
-              {i < steps.length - 1 && <span className="h-6 w-px bg-white/12" />}
+              <span className={`size-2 rounded-full ${done ? "bg-emerald-500" : "bg-stone-300"}`} />
+              {i < steps.length - 1 && <span className="h-6 w-px bg-stone-200" />}
             </div>
-            <span className={`-mt-0.5 text-[11px] ${done ? "text-white/70" : "text-white/30"}`}>{label}</span>
+            <span className={`-mt-0.5 text-[11px] ${done ? "text-stone-600" : "text-stone-300"}`}>{label}</span>
           </div>
         ))}
       </div>
@@ -176,11 +176,11 @@ const PANELS: Panel[] = [
 
 export function Capabilities() {
   return (
-    <section id="features" className="scroll-mt-20 border-t border-white/[0.06] bg-[#08070f] py-24 sm:py-32">
+    <section id="features" className="scroll-mt-20 border-t border-[color:var(--rule)] bg-transparent py-24 sm:py-32">
       <div className="mx-auto max-w-6xl px-5 sm:px-8">
         <Reveal className="max-w-2xl">
-          <Eyebrow className="text-white/35">Everything it runs</Eyebrow>
-          <h2 className="mt-5 text-[clamp(2rem,4.6vw,3.4rem)] leading-[1.02] font-bold tracking-[-0.032em] text-white">
+          <Eyebrow className="text-stone-400">Everything it runs</Eyebrow>
+          <h2 className="font-display mt-5 text-[clamp(2.1rem,4.8vw,3.5rem)] leading-[1.02] tracking-[-0.018em] text-[color:var(--ink)]">
             One system instead of five apps and a notebook.
           </h2>
         </Reveal>
@@ -192,14 +192,14 @@ export function Capabilities() {
               className={`grid items-center gap-10 lg:grid-cols-2 lg:gap-20 ${i % 2 ? "lg:[&>*:first-child]:order-2" : ""}`}
             >
               <Reveal>
-                <Eyebrow className="text-violet-300/70">{p.room}</Eyebrow>
-                <h3 className="mt-4 text-[clamp(1.5rem,3vw,2.15rem)] leading-[1.08] font-bold tracking-[-0.028em] text-white">
+                <Eyebrow className="text-[color:var(--ink-3)]">{p.room}</Eyebrow>
+                <h3 className="font-display mt-4 text-[clamp(1.7rem,3.2vw,2.35rem)] leading-[1.08] tracking-[-0.015em] text-[color:var(--ink)]">
                   {p.title}
                 </h3>
-                <p className="mt-5 max-w-md text-[15px] leading-relaxed text-white/50">{p.body}</p>
+                <p className="mt-5 max-w-md text-[15px] leading-relaxed text-[color:var(--ink-2)]">{p.body}</p>
                 <ul className="mt-7 flex flex-wrap gap-x-5 gap-y-2.5">
                   {p.covers.map((c) => (
-                    <li key={c} className="text-[13px] text-white/40">
+                    <li key={c} className="text-[13px] text-stone-400">
                       {c}
                     </li>
                   ))}

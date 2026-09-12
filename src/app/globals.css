@@ -315,3 +315,88 @@
     }
   }
 }
+
+/*
+ * ── Landing page: "ledger" ─────────────────────────────────────────────────
+ * Scoped to .tos-landing so none of it can leak into the product's design system.
+ *
+ * The previous version of this page was near-black with a violet radial glow, white geometric sans
+ * and pill buttons. That combination is the default output of every AI site builder, which is
+ * precisely why it read as machine-made however well it was built — the palette and composition
+ * were nobody's decision.
+ *
+ * This has a point of view instead: warm paper, deep ink, a display serif, and the visual language
+ * of a restaurant's own paperwork — dotted leader lines, hairline rules, monospaced figures. It is
+ * specific to food and money rather than to software, and it is not a look anything generates by
+ * accident. The violet survives as an accent, used about five times on the whole page.
+ */
+.tos-landing {
+  --paper: oklch(0.9820 0.0060 75);
+  --paper-2: oklch(0.9620 0.0090 75);
+  --ink: oklch(0.2150 0.0140 55);
+  --ink-2: oklch(0.4600 0.0130 55);
+  --ink-3: oklch(0.6100 0.0110 55);
+  --rule: oklch(0.8850 0.0110 70);
+  --accent: oklch(0.4900 0.2000 293);
+  --night: oklch(0.2050 0.0180 55);
+
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* A receipt's leader line: name on the left, figure on the right, dots between. */
+.tos-leader {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.tos-leader > :first-child {
+  flex: 0 1 auto;
+}
+.tos-leader::after {
+  content: "";
+  flex: 1 1 auto;
+  order: 1;
+  height: 0;
+  margin-bottom: 0.28em;
+  border-bottom: 1px dotted var(--rule);
+}
+.tos-leader > :last-child {
+  order: 2;
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Section numbering, set like an editorial rather than an icon in a rounded square. */
+.tos-folio {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  color: var(--ink-3);
+}
+
+/* The torn edge of a printed slip. Used once, where the paper meets the dark section. */
+.tos-torn {
+  --tooth: 12px;
+  mask-image: radial-gradient(var(--tooth) at 50% 0, #0000 98%, #000 101%);
+  mask-size: calc(var(--tooth) * 2) 100%;
+  mask-repeat: repeat-x;
+  mask-position: 0 0;
+}
+
+/* Paper tooth. Barely there — it exists to stop large fills reading as flat digital colour. */
+.tos-grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Plain class rather than a Tailwind theme token: `font-display` is also a real CSS property, and
+   registering it in @theme invites confusion at every call site. */
+.font-display {
+  font-family: var(--font-display), "Iowan Old Style", Georgia, serif;
+  font-weight: 400;
+}
