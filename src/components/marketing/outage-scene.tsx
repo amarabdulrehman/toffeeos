@@ -116,12 +116,9 @@ export function OutageScene() {
           {/* narrative */}
           <div className="lg:pr-4">
             <div className="min-h-[15rem] sm:min-h-[14rem]">
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, ease: EASE }}
-              >
+              {/* y only, never opacity: a phase whose reveal never runs must still be readable,
+                  and the status bar and queue count already carry the change clearly enough. */}
+              <motion.div key={i} initial={{ y: 18 }} animate={{ y: 0 }} transition={{ duration: 0.6, ease: EASE }}>
                 <Eyebrow className="text-white/35">{phase.eyebrow}</Eyebrow>
                 <h2 className="mt-4 text-[clamp(1.9rem,4.4vw,3.1rem)] leading-[1.03] font-bold tracking-[-0.03em] text-white">
                   {phase.title}

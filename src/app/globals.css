@@ -217,3 +217,101 @@
     width: 100%;
   }
 }
+/*
+ * ── Landing-page entrance animation ────────────────────────────────────────
+ * Deliberately CSS, not JavaScript.
+ *
+ * The first version of these reveals used motion's initial/animate, which renders the element into
+ * the server HTML at opacity:0 and relies on a requestAnimationFrame-driven animation to bring it
+ * back. That makes the content's *visibility* depend on JS running to completion — and rAF is
+ * throttled in an unfocused or background tab, which is exactly how a link opened in a new tab
+ * behaves. Measured on the live site with the pane unfocused: 1 rAF tick per 300ms, and the
+ * headline still at opacity 0 nine seconds after navigation. A blank hero.
+ *
+ * A CSS animation cannot fail that way. It is driven by the compositor rather than the main thread,
+ * it runs regardless of hydration, and `both` fill-mode guarantees the element ends at its final
+ * visible state. If the stylesheet somehow never applies, the element is simply visible — the
+ * failure mode is "no animation", never "no content".
+ */
+
+@keyframes tos-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--tos-rise, 1.5rem));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* On-load entrance. Pair with an inline animation-delay for a stagger. */
+.tos-enter {
+  animation: tos-rise 0.85s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/*
+ * Scroll-into-view reveal, with no observer and no JS at all.
+ *
+ * Gated behind @supports so that a browser without scroll-driven animations gets the element in its
+ * normal, visible state rather than a permanently hidden one — the same "worst case is no
+ * animation" rule as above.
+ */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .tos-reveal {
+      animation: tos-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 22%;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tos-enter {
+    animation: none;
+  }
+}
+
+/*
+ * Bar/meter growth for the landing page's small chart fragments.
+ *
+ * Uses a scaleX/scaleY transform rather than animating width or height, so the element's real size
+ * is always its final size: if the animation never runs, the bar is simply drawn full rather than
+ * collapsed to nothing. Animating width from 0 has the opposite failure mode — a chart that looks
+ * empty rather than un-animated.
+ */
+@keyframes tos-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes tos-grow-y {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .tos-grow-x {
+      transform-origin: left center;
+      animation: tos-grow-x linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 20%;
+    }
+    .tos-grow-y {
+      transform-origin: bottom center;
+      animation: tos-grow-y linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 20%;
+    }
+  }
+}

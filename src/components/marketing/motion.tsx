@@ -1,118 +1,100 @@
-"use client";
-
-import { useRef, type ReactNode } from "react";
-import { motion, useInView, useReducedMotion, type Variants } from "motion/react";
+import type { CSSProperties, ReactNode } from "react";
 
 /**
- * The marketing site's motion vocabulary, in one place so every section moves the same way.
+ * The marketing site's motion vocabulary.
  *
- * Two rules this file exists to enforce:
+ * These are deliberately server components with no JavaScript at all. An earlier version drove them
+ * with motion's initial/animate, which writes opacity:0 into the server HTML and depends on a
+ * requestAnimationFrame animation to bring the content back. That makes visibility conditional on
+ * JS completing, and rAF is throttled in unfocused and background tabs — which is how a link opened
+ * in a new tab from WhatsApp or a search result behaves. Measured on the live site: one rAF tick
+ * per 300ms, headline still invisible nine seconds in. The hero was blank.
  *
- * 1. Nothing bounces. Every transition uses the same expo-out curve, which decelerates hard and
- *    settles without overshoot. Springy, elastic motion is what makes a page feel like a template;
- *    restraint is what makes it feel expensive.
+ * So the reveals are CSS (see the landing-page block in globals.css). The compositor runs them
+ * without hydration, `both` fill-mode guarantees they finish visible, and a browser that supports
+ * none of it simply shows the content. The worst case is "no animation", never "no content".
  *
- * 2. Reduced motion is honoured everywhere, not as an afterthought. `useReducedMotion()` reads the
- *    OS setting, and when it is on, elements appear at their final state instead of animating. A
- *    visitor who gets motion sickness from parallax should still see a finished page, not a blank
- *    one — which is what happens when a reveal animation is simply skipped without also dropping
- *    its initial opacity: 0.
+ * motion is still used, but only for things that genuinely need JS and only ever on top of content
+ * that is already visible: the scroll-scrubbed outage scene, the cart's add/remove transitions, the
+ * tax toggle, and the header's background.
  */
 
-/** Expo-out. Fast start, long settle, no overshoot. */
+/** Expo-out — one curve for the whole page. Nothing bounces. */
 export const EASE = [0.16, 1, 0.3, 1] as const;
-
-/** Distances are small on purpose — a 24px rise reads as considered, an 80px one as a slideshow. */
-const RISE = 24;
 
 export function Reveal({
   children,
   delay = 0,
-  y = RISE,
-  className,
-  once = true,
+  className = "",
 }: {
   children: ReactNode;
   delay?: number;
-  y?: number;
   className?: string;
-  once?: boolean;
 }) {
-  const reduced = useReducedMotion();
-  const ref = useRef<HTMLDivElement>(null);
-  // -12% bottom margin so the reveal fires when the element is genuinely in view rather than the
-  // instant its first pixel crosses the fold, which reads as jumpy while scrolling fast.
-  const inView = useInView(ref, { once, margin: "0px 0px -12% 0px" });
-
   return (
-    <motion.div
-      ref={ref}
-      className={className}
-      initial={reduced ? false : { opacity: 0, y }}
-      animate={inView || reduced ? { opacity: 1, y: 0 } : undefined}
-      transition={{ duration: 0.8, delay, ease: EASE }}
-    >
+    <div className={`tos-reveal ${className}`} style={delay ? { animationDelay: `${delay}s` } : undefined}>
       {children}
-    </motion.div>
+    </div>
   );
 }
 
 /**
  * Headline reveal, word by word.
  *
- * Split on words rather than characters: character-by-character reveals are a signature of the
- * generated-landing-page look, and they make a long headline read as a slot machine. Words keep it
- * legible while still giving the line a sense of being written into place.
+ * Split on words, not characters: a character-by-character reveal is a signature of the generated
+ * landing page, and it turns a long headline into a slot machine. Each word sits in a clipping
+ * wrapper so it rises out of the line above rather than fading in from nowhere.
  */
 export function RevealWords({
   text,
-  className,
-  wordClassName,
+  className = "",
   delay = 0,
   accentFrom,
+  accentClassName = "",
 }: {
   text: string;
   className?: string;
-  wordClassName?: string;
   delay?: number;
   /** Index from which the remaining words take the accent colour. */
   accentFrom?: number;
+  accentClassName?: string;
 }) {
-  const reduced = useReducedMotion();
   const words = text.split(" ");
-
-  const container: Variants = {
-    hidden: {},
-    show: { transition: { staggerChildren: reduced ? 0 : 0.055, delayChildren: delay } },
-  };
-  const word: Variants = {
-    hidden: reduced ? { opacity: 1 } : { opacity: 0, y: "0.5em" },
-    show: { opacity: 1, y: 0, transition: { duration: 0.9, ease: EASE } },
-  };
-
   return (
-    <motion.h1 variants={container} initial="hidden" animate="show" className={className}>
+    <h1 className={className}>
       {words.map((w, i) => (
-        // The wrapper clips the rising word so it emerges from the line above rather than floating
-        // in from nowhere — the detail that makes a headline feel typeset instead of animated.
         <span key={`${w}-${i}`} className="inline-block overflow-hidden pb-[0.08em] align-bottom">
-          <motion.span
-            variants={word}
-            className={`inline-block ${accentFrom !== undefined && i >= accentFrom ? "text-[var(--accent-ink)]" : ""} ${wordClassName ?? ""}`}
+          <span
+            className={`tos-enter inline-block ${accentFrom !== undefined && i >= accentFrom ? accentClassName : ""}`}
+            style={{ animationDelay: `${delay + i * 0.055}s`, ["--tos-rise" as keyof CSSProperties]: "0.9em" } as CSSProperties}
           >
             {w}
             {i < words.length - 1 ? " " : ""}
-          </motion.span>
+          </span>
         </span>
       ))}
-    </motion.h1>
+    </h1>
   );
 }
 
-/** A quiet label that sits above a headline. Used instead of the pill-shaped badge every SaaS
- * template opens with. */
-export function Eyebrow({ children, className = "" }: { children: ReactNode; className?: string }) {
+/** An on-load entrance for a block of content, staggered after the headline. */
+export function Enter({
+  children,
+  delay = 0,
+  className = "",
+}: {
+  children: ReactNode;
+  delay?: number;
+  className?: string;
+}) {
   return (
-    <p className={`text-[0.6875rem] font-medium tracking-[0.22em] uppercase ${className}`}>{children}</p>
+    <div className={`tos-enter ${className}`} style={{ animationDelay: `${delay}s` }}>
+      {children}
+    </div>
   );
+}
+
+/** A quiet label above a headline, instead of the pill-shaped badge every template opens with. */
+export function Eyebrow({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <p className={`text-[0.6875rem] font-medium tracking-[0.22em] uppercase ${className}`}>{children}</p>;
 }

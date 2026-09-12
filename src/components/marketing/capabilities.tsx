@@ -1,8 +1,5 @@
-"use client";
-
 import type { ReactNode } from "react";
-import { motion, useReducedMotion } from "motion/react";
-import { EASE, Eyebrow, Reveal } from "./motion";
+import { Eyebrow, Reveal } from "./motion";
 
 /**
  * What the software covers, as four rooms of a restaurant rather than twelve equal boxes.
@@ -71,12 +68,9 @@ function StockRows() {
             <span className={pct < 0.2 ? "text-amber-300" : "text-white/40"}>{qty}</span>
           </div>
           <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
-            <motion.div
-              initial={{ width: 0 }}
-              whileInView={{ width: `${pct * 100}%` }}
-              viewport={{ once: true }}
-              transition={{ duration: 1, delay: 0.1 * i, ease: EASE }}
-              className={`h-full rounded-full ${pct < 0.2 ? "bg-amber-400" : "bg-violet-400"}`}
+            <div
+              style={{ width: `${pct * 100}%`, animationDelay: `${0.1 * i}s` }}
+              className={`tos-grow-x h-full rounded-full ${pct < 0.2 ? "bg-amber-400" : "bg-violet-400"}`}
             />
           </div>
         </div>
@@ -97,13 +91,10 @@ function RevenueBars() {
       </div>
       <div className="mt-4 flex h-20 items-end gap-1.5">
         {bars.map((h, i) => (
-          <motion.div
+          <div
             key={i}
-            initial={{ height: 0 }}
-            whileInView={{ height: `${h * 100}%` }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.8, delay: 0.06 * i, ease: EASE }}
-            className={`flex-1 rounded-t-sm ${i === bars.length - 1 ? "bg-violet-400" : "bg-white/15"}`}
+            style={{ height: `${h * 100}%`, animationDelay: `${0.06 * i}s` }}
+            className={`tos-grow-y flex-1 rounded-t-sm ${i === bars.length - 1 ? "bg-violet-400" : "bg-white/15"}`}
           />
         ))}
       </div>
@@ -184,8 +175,6 @@ const PANELS: Panel[] = [
 ];
 
 export function Capabilities() {
-  const reduced = useReducedMotion();
-
   return (
     <section id="features" className="scroll-mt-20 border-t border-white/[0.06] bg-[#08070f] py-24 sm:py-32">
       <div className="mx-auto max-w-6xl px-5 sm:px-8">
@@ -217,15 +206,7 @@ export function Capabilities() {
                 </ul>
               </Reveal>
 
-              <motion.div
-                initial={reduced ? false : { opacity: 0, y: 28 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "0px 0px -15% 0px" }}
-                transition={{ duration: 0.9, ease: EASE }}
-                className="flex justify-center lg:justify-start"
-              >
-                {p.visual}
-              </motion.div>
+              <Reveal className="flex justify-center lg:justify-start">{p.visual}</Reveal>
             </div>
           ))}
         </div>
