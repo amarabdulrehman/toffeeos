@@ -51,8 +51,21 @@ test.describe("POS payment — cash/card tax switching never overcharges", () =>
     await expect(page.getByText("Subtotal")).toBeVisible();
     await page.getByRole("button", { name: "Take Payment" }).click();
 
+    /**
+     * Longer than the 10s default because this one click is three sequential server round trips,
+     * not one: POST /api/orders, then send-to-kitchen, then GET /api/orders to load the order the
+     * dialog pays. A trace of a failing run measured 6.3s + 2.0s before the third request had even
+     * started, so the default budget was being spent before the dialog could possibly appear —
+     * against a `npm run dev` server talking to Supabase in ap-southeast-1.
+     *
+     * This is not covering up a hang: the run that failed had already created the order
+     * successfully ("Order #68 sent to kitchen." was on screen). The assertion was timing the
+     * network, not the behaviour it exists to check — which is the tax arithmetic below, and that
+     * still has to be exactly right. At 10s this failed roughly half of all runs, which is worse
+     * than no test: it teaches whoever sees it that red means nothing.
+     */
     const dialog = page.getByRole("dialog", { name: "Take payment" });
-    await expect(dialog).toBeVisible();
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
 
     // Cash first — Punjab PRA's cash rate is 16%. 480 * 1.16 = 556.8, rounded to 557.
     await expect(dialog.getByText(/incl\..*16%/)).toBeVisible();
