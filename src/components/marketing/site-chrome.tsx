@@ -27,8 +27,8 @@ export function SiteHeader() {
   return (
     <motion.header
       animate={{
-        backgroundColor: scrolled ? "rgba(250,247,242,0.88)" : "rgba(250,247,242,0)",
-        borderBottomColor: scrolled ? "rgba(25,21,18,0.12)" : "rgba(25,21,18,0)",
+        backgroundColor: scrolled ? "rgba(250,249,253,0.85)" : "rgba(250,249,253,0)",
+        borderBottomColor: scrolled ? "rgba(24,22,38,0.12)" : "rgba(24,22,38,0)",
       }}
       transition={{ duration: 0.3 }}
       className="fixed inset-x-0 top-0 z-50 border-b backdrop-blur-xl"

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useInView, useReducedMotion } from "motion/react";
 import { EASE, Eyebrow, Reveal } from "./motion";
 import { CARD_RATE, CASH_RATE } from "./pos-mock";
+import { CountUp, RevealLines } from "./anim";
 
 /**
  * Punjab PRA's split rate, shown rather than described.
@@ -72,11 +73,12 @@ export function TaxScene() {
         <div>
           <Reveal>
             <Eyebrow className="text-[color:var(--ink-3)]">Built here, not translated</Eyebrow>
-            <h2 className="font-display mt-5 text-[clamp(2.1rem,4.8vw,3.5rem)] leading-[1.02] tracking-[-0.018em] text-[color:var(--ink)]">
-              Cash is taxed at 16%.
-              <br />
-              Card at 8%.
-            </h2>
+            <RevealLines
+              lines={["Cash is taxed at 16%.", "Card at 8%."]}
+              accentIndex={1}
+              accentClassName="italic text-[color:var(--accent)]"
+              className="font-display mt-5 text-[clamp(2.1rem,4.8vw,3.5rem)] leading-[1.02] tracking-[-0.018em] text-[color:var(--ink)]"
+            />
             <p className="mt-6 max-w-md text-[15px] leading-relaxed text-[color:var(--ink-2)]">
               Punjab charges different rates depending on how the customer pays. Software written
               somewhere else charges one rate and leaves you to fix it at filing. Tap between them —
@@ -161,7 +163,7 @@ export function TaxScene() {
                   transition={{ duration: 0.32, ease: EASE }}
                   className="font-display text-[clamp(1.9rem,3.4vw,2.5rem)] text-[color:var(--ink)] tabular-nums"
                 >
-                  Rs {rs(total)}
+                  Rs <CountUp value={total} duration={0.5} />
                 </motion.span>
               </AnimatePresence>
             </div>

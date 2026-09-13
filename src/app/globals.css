@@ -331,14 +331,18 @@
  * accident. The violet survives as an accent, used about five times on the whole page.
  */
 .tos-landing {
-  --paper: oklch(0.9820 0.0060 75);
-  --paper-2: oklch(0.9620 0.0090 75);
-  --ink: oklch(0.2150 0.0140 55);
-  --ink-2: oklch(0.4600 0.0130 55);
-  --ink-3: oklch(0.6100 0.0110 55);
-  --rule: oklch(0.8850 0.0110 70);
-  --accent: oklch(0.4900 0.2000 293);
-  --night: oklch(0.2050 0.0180 55);
+  /* Hues sit at 268-293 to match the product's own tokens — --accent is literally the app's
+     --primary and --night its --sidebar, so the marketing page and the software read as one brand.
+     An earlier pass warmed these to hue 55-75, which produced a handsome page in entirely the wrong
+     colour: paper does not have to mean brown. */
+  --paper: oklch(0.9840 0.0035 285);
+  --paper-2: oklch(0.9640 0.0070 285);
+  --ink: oklch(0.2050 0.0250 275);
+  --ink-2: oklch(0.4700 0.0230 278);
+  --ink-3: oklch(0.6350 0.0180 282);
+  --rule: oklch(0.8900 0.0120 285);
+  --accent: oklch(0.5250 0.2250 293);
+  --night: oklch(0.1750 0.0250 268);
 
   background: var(--paper);
   color: var(--ink);

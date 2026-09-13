@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
 import { Eyebrow, Reveal } from "./motion";
+import { RevealLines, TiltCard } from "./anim";
 import { InstagramGlyph } from "./site-chrome";
 import { BRAND_NAME, COMPANY_EMAIL, COMPANY_INSTAGRAM, COMPANY_INSTAGRAM_HANDLE, COMPANY_NAME } from "@/config/brand";
 import { GATEABLE_MODULES, TIER_LABEL, TIER_ORDER, tierMeets, type TierKey } from "@/lib/tiers";
@@ -49,9 +50,10 @@ export function Plans() {
       <div className="mx-auto max-w-6xl px-5 sm:px-8">
         <Reveal className="max-w-2xl">
           <Eyebrow className="text-[color:var(--ink-3)]">Plans</Eyebrow>
-          <h2 className="font-display mt-5 text-[clamp(2.1rem,4.8vw,3.5rem)] leading-[1.02] tracking-[-0.018em] text-[color:var(--ink)]">
-            Priced per branch, not per seat.
-          </h2>
+          <RevealLines
+            lines={["Priced per branch,", "not per seat."]}
+            className="font-display mt-5 text-[clamp(2.1rem,4.8vw,3.5rem)] leading-[1.02] tracking-[-0.018em] text-[color:var(--ink)]"
+          />
           <p className="mt-6 text-[15px] leading-relaxed text-[color:var(--ink-2)]">
             Add as many cashiers as you have. Tell us how many locations you run and what you need,
             and we will quote you properly.
@@ -63,7 +65,8 @@ export function Plans() {
             const featured = tier === "growth";
             return (
               <Reveal key={tier} delay={0.08 * i} className="h-full">
-                <div className={`flex h-full flex-col p-8 ${featured ? "bg-white" : "bg-[color:var(--paper-2)]"}`}>
+                <TiltCard className={`h-full ${featured ? "bg-white" : "bg-[color:var(--paper-2)]"}`}>
+                <div className="flex h-full flex-col p-8">
                   <div className="flex items-baseline gap-3">
                     <h3 className="font-display text-2xl text-[color:var(--ink)]">{TIER_LABEL[tier]}</h3>
                     {featured && (
@@ -97,6 +100,7 @@ export function Plans() {
                     ))}
                   </ul>
                 </div>
+                </TiltCard>
               </Reveal>
             );
           })}
@@ -119,9 +123,12 @@ export function Closing() {
       <div className="relative mx-auto max-w-4xl px-5 sm:px-8">
         <Reveal>
           <p className="tos-folio text-white/35">06 — START</p>
-          <h2 className="font-display mt-6 max-w-2xl text-[clamp(2.3rem,5.6vw,4rem)] leading-[1.0] tracking-[-0.018em] text-[color:var(--paper)]">
-            Put it on your counter <em className="text-violet-300">this week.</em>
-          </h2>
+          <RevealLines
+            lines={["Put it on your counter", "this week."]}
+            accentIndex={1}
+            accentClassName="italic text-violet-300"
+            className="font-display mt-6 max-w-2xl text-[clamp(2.3rem,5.6vw,4rem)] leading-[1.0] tracking-[-0.018em] text-[color:var(--paper)]"
+          />
           <p className="mt-7 max-w-md text-[15px] leading-[1.65] text-white/50">
             Start the trial and look around yourself, or talk to us first — we will set up your menu,
             your branches and your tax rates with you.

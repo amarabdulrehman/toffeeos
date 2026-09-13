@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, useScroll, useTransform, useReducedMotion } from "motion/react";
 import { Enter, RevealWords } from "./motion";
 import { PosMock, type CartLine } from "./pos-mock";
+import { Parallax } from "./anim";
 
 /**
  * The hero.
@@ -121,7 +122,9 @@ export function Hero() {
               style={reduced || !wide ? undefined : { rotateY, rotateX, transformOrigin: "20% 50%" }}
               className="lg:-mr-20 xl:-mr-32"
             >
-              <PosMock lines={lines} activeItem={tapped} connection="online" />
+              <Parallax distance={34}>
+                <PosMock lines={lines} activeItem={tapped} connection="online" />
+              </Parallax>
             </motion.div>
           </div>
         </Enter>

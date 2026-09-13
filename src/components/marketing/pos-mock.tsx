@@ -71,7 +71,7 @@ export function PosMock({
 
   return (
     <div
-      className={`overflow-hidden rounded-lg bg-white shadow-[0_1px_0_rgba(0,0,0,0.04),0_18px_50px_-18px_rgba(25,21,18,0.35)] ring-1 ring-black/[0.07] ${className}`}
+      className={`overflow-hidden rounded-lg bg-white shadow-[0_1px_0_rgba(0,0,0,0.04),0_18px_50px_-18px_rgba(24,22,38,0.30)] ring-1 ring-black/[0.07] ${className}`}
     >
       {/* navy chrome, as in the product */}
       <div className="flex items-center gap-2.5 bg-[#1c1930] px-3.5 py-2.5">
@@ -102,12 +102,12 @@ export function PosMock({
 
       <div className="grid sm:grid-cols-[1.3fr_1fr]">
         {/* menu */}
-        <div className="hidden border-r border-stone-200/80 bg-stone-50/60 p-3.5 sm:block">
+        <div className="hidden border-r border-zinc-200/80 bg-zinc-50/60 p-3.5 sm:block">
           <div className="mb-3 flex flex-wrap gap-1">
             {CATEGORIES.map((c, i) => (
               <span
                 key={c}
-                className={`rounded px-2 py-0.5 text-[10px] font-medium ${i === 1 ? "bg-[#1c1930] text-white" : "text-stone-500"}`}
+                className={`rounded px-2 py-0.5 text-[10px] font-medium ${i === 1 ? "bg-[#1c1930] text-white" : "text-zinc-500"}`}
               >
                 {c}
               </span>
@@ -119,10 +119,10 @@ export function PosMock({
                 key={m.name}
                 animate={activeItem === m.name ? { scale: [1, 0.95, 1] } : {}}
                 transition={{ duration: 0.4 }}
-                className="rounded border border-stone-200 bg-white px-2 py-1.5"
+                className="rounded border border-zinc-200 bg-white px-2 py-1.5"
               >
-                <p className="truncate text-[10px] leading-tight text-stone-700">{m.name}</p>
-                <p className="mt-0.5 font-mono text-[10px] font-semibold text-stone-900 tabular-nums">{m.priceRs}</p>
+                <p className="truncate text-[10px] leading-tight text-zinc-700">{m.name}</p>
+                <p className="mt-0.5 font-mono text-[10px] font-semibold text-zinc-900 tabular-nums">{m.priceRs}</p>
               </motion.div>
             ))}
           </div>
@@ -130,9 +130,9 @@ export function PosMock({
 
         {/* order */}
         <div className="flex flex-col bg-white">
-          <div className="flex items-center gap-1.5 border-b border-stone-200/80 px-3.5 py-2">
-            <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-medium text-stone-600">Dine-in</span>
-            <span className="text-[10px] text-stone-400">Table 7</span>
+          <div className="flex items-center gap-1.5 border-b border-zinc-200/80 px-3.5 py-2">
+            <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">Dine-in</span>
+            <span className="text-[10px] text-zinc-400">Table 7</span>
           </div>
 
           <div className="min-h-[104px] flex-1 space-y-1 p-3.5 sm:min-h-[132px]">
@@ -146,29 +146,29 @@ export function PosMock({
                   exit={{ x: -10 }}
                   transition={{ duration: 0.35 }}
                   className="tos-leader text-[11px]"
-                  style={{ ["--rule" as string]: "rgb(214 211 209)" }}
+                  style={{ ["--rule" as string]: "rgb(212 212 216)" }}
                 >
-                  <span className="text-stone-700">
-                    <span className="font-mono text-stone-400 tabular-nums">{l.qty}</span> {l.name}
+                  <span className="text-zinc-700">
+                    <span className="font-mono text-zinc-400 tabular-nums">{l.qty}</span> {l.name}
                   </span>
-                  <span className="font-mono font-medium text-stone-900">{rs(l.priceRs * l.qty)}</span>
+                  <span className="font-mono font-medium text-zinc-900">{rs(l.priceRs * l.qty)}</span>
                 </motion.div>
               ))}
             </AnimatePresence>
-            {lines.length === 0 && <p className="pt-5 text-center text-[11px] text-stone-300">Tap items to add them.</p>}
+            {lines.length === 0 && <p className="pt-5 text-center text-[11px] text-zinc-300">Tap items to add them.</p>}
           </div>
 
-          <div className="space-y-1 border-t border-stone-200/80 px-3.5 py-3 text-[11px]">
-            <div className="tos-leader text-stone-500" style={{ ["--rule" as string]: "rgb(231 229 228)" }}>
+          <div className="space-y-1 border-t border-zinc-200/80 px-3.5 py-3 text-[11px]">
+            <div className="tos-leader text-zinc-500" style={{ ["--rule" as string]: "rgb(228 228 231)" }}>
               <span>Subtotal</span>
               <span className="font-mono">{rs(subtotal)}</span>
             </div>
-            <div className="tos-leader text-stone-500" style={{ ["--rule" as string]: "rgb(231 229 228)" }}>
+            <div className="tos-leader text-zinc-500" style={{ ["--rule" as string]: "rgb(228 228 231)" }}>
               <span>Tax {Math.round(rate * 100)}%</span>
               <span className="font-mono">{rs(tax)}</span>
             </div>
-            <div className="mt-2 flex items-baseline justify-between border-t border-dashed border-stone-300 pt-2">
-              <span className="text-[9px] font-semibold tracking-[0.14em] text-stone-400 uppercase">Total</span>
+            <div className="mt-2 flex items-baseline justify-between border-t border-dashed border-zinc-300 pt-2">
+              <span className="text-[9px] font-semibold tracking-[0.14em] text-zinc-400 uppercase">Total</span>
               <AnimatePresence mode="popLayout" initial={false}>
                 <motion.span
                   key={total}
@@ -176,14 +176,14 @@ export function PosMock({
                   animate={{ y: 0 }}
                   exit={{ y: -5 }}
                   transition={{ duration: 0.25 }}
-                  className="font-mono text-[15px] font-bold text-stone-900 tabular-nums"
+                  className="font-mono text-[15px] font-bold text-zinc-900 tabular-nums"
                 >
                   Rs {rs(total)}
                 </motion.span>
               </AnimatePresence>
             </div>
             <div className="flex gap-1.5 pt-2">
-              <span className="flex-1 rounded border border-stone-300 py-1.5 text-center text-[10px] font-medium text-stone-600">
+              <span className="flex-1 rounded border border-zinc-300 py-1.5 text-center text-[10px] font-medium text-zinc-600">
                 Send to Kitchen
               </span>
               <span className="flex-1 rounded bg-emerald-600 py-1.5 text-center text-[10px] font-semibold text-white">
