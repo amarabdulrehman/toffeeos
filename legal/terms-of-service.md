@@ -1,8 +1,8 @@
 # Terms of Service
 
-**Last updated: [DATE]**
+**Last updated: 13 September 2026**
 
-These Terms of Service ("Terms") are a legal agreement between **[Your Legal Name / Company Name]** ("ToffeeOS," "we," "us," or "our") and the restaurant, cafe, or other food-service business ("you," "Client," or "Tenant") that registers for or uses the ToffeeOS software platform ("Service"). By creating an account, signing up, or using the Service, you agree to these Terms.
+These Terms of Service ("Terms") are a legal agreement between **KRIMSOLS** ("ToffeeOS," "we," "us," or "our") and the restaurant, cafe, or other food-service business ("you," "Client," or "Tenant") that registers for or uses the ToffeeOS software platform ("Service"). By creating an account, signing up, or using the Service, you agree to these Terms.
 
 If you do not agree, do not use the Service.
 
@@ -72,8 +72,8 @@ We may update these Terms from time to time. We will notify you of material chan
 
 ## 12. Governing Law
 
-These Terms are governed by the laws of [Pakistan / your province], without regard to conflict-of-law principles. Any disputes will be subject to the exclusive jurisdiction of the courts of [City, Pakistan], unless otherwise required by applicable law.
+These Terms are governed by the laws of Pakistan, without regard to conflict-of-law principles.
 
 ## 13. Contact
 
-Questions about these Terms can be sent to **[support@yourdomain.com]**.
+Questions about these Terms can be sent to **krimsolcompany@gmail.com**.

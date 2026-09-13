@@ -111,6 +111,12 @@ export function SiteFooter() {
           <Link href="/login" className="text-[color:var(--ink-3)] transition-colors hover:text-[color:var(--ink)]">
             Sign in
           </Link>
+          <Link href="/terms" className="text-[color:var(--ink-3)] transition-colors hover:text-[color:var(--ink)]">
+            Terms
+          </Link>
+          <Link href="/privacy" className="text-[color:var(--ink-3)] transition-colors hover:text-[color:var(--ink)]">
+            Privacy
+          </Link>
         </div>
       </div>
     </footer>

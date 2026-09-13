@@ -404,3 +404,86 @@
   font-family: var(--font-display), "Iowan Old Style", Georgia, serif;
   font-weight: 400;
 }
+
+/*
+ * Legal document typography.
+ *
+ * Set for reading a contract rather than scanning a marketing page: a narrow measure, generous
+ * leading, and headings that separate clauses clearly enough that someone can find section 8 when
+ * they need it. Scoped to .legal-prose so it never touches the app.
+ */
+.legal-prose {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+.legal-prose h2 {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 1.6rem;
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  margin-top: 2.75rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--rule);
+}
+.legal-prose h2:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.legal-prose h3 {
+  font-weight: 600;
+  color: var(--ink);
+  margin-top: 1.75rem;
+}
+.legal-prose p {
+  margin-top: 1rem;
+}
+.legal-prose strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+.legal-prose a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.legal-prose ul {
+  margin-top: 1rem;
+  padding-left: 1.1rem;
+  list-style: none;
+}
+.legal-prose li {
+  position: relative;
+  margin-top: 0.55rem;
+}
+/* A rule rather than a bullet — it matches the leader lines elsewhere and stays out of the way. */
+.legal-prose li::before {
+  content: "";
+  position: absolute;
+  left: -1.1rem;
+  top: 0.8em;
+  width: 0.5rem;
+  border-top: 1px solid var(--rule);
+}
+.legal-prose table {
+  width: 100%;
+  margin-top: 1.25rem;
+  border-collapse: collapse;
+  font-size: 14px;
+  display: block;
+  overflow-x: auto;
+}
+.legal-prose th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+  padding: 0.5rem 0.75rem 0.5rem 0;
+}
+.legal-prose td {
+  border-bottom: 1px solid var(--rule);
+  padding: 0.6rem 0.75rem 0.6rem 0;
+  vertical-align: top;
+}

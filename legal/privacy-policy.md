@@ -1,8 +1,8 @@
 # Privacy Policy
 
-**Last updated: [DATE]**
+**Last updated: 13 September 2026**
 
-This Privacy Policy explains how **[Your Legal Name / Company Name]** ("ToffeeOS," "we," "us") collects, uses, and protects information through the ToffeeOS platform ("Service").
+This Privacy Policy explains how **KRIMSOLS** ("ToffeeOS," "we," "us") collects, uses, and protects information through the ToffeeOS platform ("Service").
 
 This policy covers two groups of people differently:
 - **Tenants** — the restaurants/cafes and their staff who use ToffeeOS to run their business.
@@ -98,4 +98,4 @@ We may update this Privacy Policy from time to time. Material changes will be co
 
 ## 13. Contact
 
-For privacy questions or requests, contact us at **[privacy@yourdomain.com]**.
+For privacy questions or requests, contact us at **krimsolcompany@gmail.com**.

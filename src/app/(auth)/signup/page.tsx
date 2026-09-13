@@ -120,6 +120,20 @@ export default function SignupPage() {
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Creating your restaurant…" : "Start free trial"}
           </Button>
+          {/* The Terms state that creating an account constitutes agreement to them, so the person
+              creating one has to be told that at the moment they do it. Asserting consent in a
+              document nobody was shown is not consent. */}
+          <p className="text-center text-xs leading-relaxed text-muted-foreground">
+            By creating an account you agree to our{" "}
+            <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </form>
         <p className="mt-4 text-center text-sm text-muted-foreground">
           Already have an account?{" "}
