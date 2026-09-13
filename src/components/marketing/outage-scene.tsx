@@ -163,12 +163,24 @@ function PhaseText({ phase, index, progress }: { phase: Phase; index: number; pr
   const at = index / (N - 1);
   const span = 1 / (N - 1);
 
-  const opacity = useTransform(progress, [at - span * 0.62, at, at + span * 0.62], [0, 1, 0]);
-  const y = useTransform(progress, [at - span * 0.62, at, at + span * 0.62], [26, 0, -26]);
-  // Blur on the way in and out: a few tenths of a pixel is invisible as an effect but reads as
-  // depth of field, which is what stops a crossfade looking like two flat layers.
-  const blur = useTransform(progress, [at - span * 0.62, at, at + span * 0.62], [3, 0, 3]);
-  const filter = useTransform(blur, (b) => `blur(${b.toFixed(2)}px)`);
+  /**
+   * The fade window is exactly one phase-width to each side, so adjacent phases hand over at 50/50
+   * and their opacities always sum to about one.
+   *
+   * This was 0.62 of a width, which left a dead zone halfway between every pair: measured, the
+   * brightest phase at the faintest point was 19% opacity. Scrolling slowly through that reads as
+   * an empty section rather than a transition — it is how this looked on a phone, and it is why the
+   * number matters more than it appears to.
+   */
+  const a = at - span;
+  const b = at + span;
+
+  const opacity = useTransform(progress, [a, at, b], [0, 1, 0]);
+  const y = useTransform(progress, [a, at, b], [22, 0, -22]);
+  // Blur on the way in and out: a couple of pixels is invisible as an effect but reads as depth of
+  // field, which is what stops a crossfade looking like two flat layers sliding past each other.
+  const blur = useTransform(progress, [a, at, b], [2.4, 0, 2.4]);
+  const filter = useTransform(blur, (v) => `blur(${v.toFixed(2)}px)`);
 
   return (
     <motion.div
