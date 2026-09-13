@@ -15,7 +15,7 @@ import { animate, motion, useInView, useMotionValue, useReducedMotion, useScroll
 /** Reading position, as a hairline across the top of the page. */
 export function ScrollProgress() {
   const { scrollYProgress } = useScroll();
-  const width = useSpring(scrollYProgress, { stiffness: 180, damping: 30, restDelta: 0.001 });
+  const width = useSpring(scrollYProgress, { stiffness: 90, damping: 26, restDelta: 0.0005 });
   return (
     <motion.div
       aria-hidden
@@ -45,23 +45,37 @@ export function CountUp({
   const reduced = useReducedMotion();
   const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, margin: "0px 0px -12% 0px" });
-  const [shown, setShown] = useState(value);
 
+  /**
+   * Writes each frame straight to the text node instead of through React state.
+   *
+   * setState per frame puts a full render and reconciliation between the animation and the pixels,
+   * which is exactly the kind of cost that turns a count into a stutter — and with several of these
+   * on screen it compounds. The element already holds the correct value from the server, so this
+   * only ever overwrites a number with another number.
+   */
   useEffect(() => {
-    if (reduced || !inView) return;
-    const mv = { n: value * 0.82 };
-    const controls = animate(mv.n, value, {
+    const el = ref.current;
+    if (!el || reduced || !inView) return;
+    const controls = animate(value * 0.8, value, {
       duration,
       ease: [0.16, 1, 0.3, 1],
-      onUpdate: (n) => setShown(n),
-      onComplete: () => setShown(value),
+      onUpdate: (n) => {
+        el.textContent = format(n);
+      },
+      onComplete: () => {
+        el.textContent = format(value);
+      },
     });
     return () => controls.stop();
+    // `format` is a literal at every call site; including it would restart the animation on each
+    // parent render for no behavioural gain.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inView, reduced, value, duration]);
 
   return (
     <span ref={ref} className={className}>
-      {format(shown)}
+      {format(value)}
     </span>
   );
 }
@@ -86,7 +100,7 @@ export function Parallax({
   const ref = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "end start"] });
   const y = useTransform(scrollYProgress, [0, 1], [distance, -distance]);
-  const smooth = useSpring(y, { stiffness: 120, damping: 26, restDelta: 0.5 });
+  const smooth = useSpring(y, { stiffness: 55, damping: 20, restDelta: 0.2 });
 
   return (
     <div ref={ref} className={className}>
@@ -99,16 +113,16 @@ export function Parallax({
  * A card that tilts very slightly toward the cursor.
  *
  * Pointer-driven, so it costs nothing on touch devices, where it simply never fires. The rotation
- * caps at four degrees: enough that the surface feels physical when you move across it, not enough
- * to read as a novelty.
+ * caps at five and a half degrees and is sprung softly enough to keep drifting for a moment after
+ * the cursor stops — enough that the surface feels physical, not enough to read as a novelty.
  */
 export function TiltCard({ children, className = "" }: { children: ReactNode; className?: string }) {
   const reduced = useReducedMotion();
   const ref = useRef<HTMLDivElement>(null);
   const px = useMotionValue(0);
   const py = useMotionValue(0);
-  const rx = useSpring(useTransform(py, [-0.5, 0.5], [4, -4]), { stiffness: 260, damping: 24 });
-  const ry = useSpring(useTransform(px, [-0.5, 0.5], [-4, 4]), { stiffness: 260, damping: 24 });
+  const rx = useSpring(useTransform(py, [-0.5, 0.5], [5.5, -5.5]), { stiffness: 150, damping: 18, mass: 0.6 });
+  const ry = useSpring(useTransform(px, [-0.5, 0.5], [-5.5, 5.5]), { stiffness: 150, damping: 18, mass: 0.6 });
 
   if (reduced) return <div className={className}>{children}</div>;
 
@@ -168,7 +182,7 @@ export function RevealLines({
               className={`block ${accentIndex === i ? accentClassName : ""}`}
               initial={reduced ? false : { y: "105%" }}
               animate={inView || reduced ? { y: 0 } : undefined}
-              transition={{ duration: 0.85, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ duration: 1.05, delay: i * 0.1, ease: [0.16, 1, 0.3, 1] }}
             >
               {line}
             </motion.span>

@@ -7,6 +7,7 @@ import { TaxScene } from "@/components/marketing/tax-scene";
 import { Plans, Closing } from "@/components/marketing/plans-closing";
 import { SiteFooter, SiteHeader } from "@/components/marketing/site-chrome";
 import { ScrollProgress } from "@/components/marketing/anim";
+import { SmoothScroll } from "@/components/marketing/smooth-scroll";
 import { BRAND_NAME, COMPANY_NAME } from "@/config/brand";
 
 export const metadata: Metadata = {
@@ -44,6 +45,7 @@ export const metadata: Metadata = {
 export default function Home() {
   return (
     <div className={`tos-landing ${displaySerif.variable} flex flex-1 flex-col`}>
+      <SmoothScroll />
       <ScrollProgress />
       <SiteHeader />
       <main className="flex-1">
