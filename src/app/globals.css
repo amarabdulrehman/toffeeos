@@ -339,7 +339,12 @@
   --paper-2: oklch(0.9640 0.0070 285);
   --ink: oklch(0.2050 0.0250 275);
   --ink-2: oklch(0.4700 0.0230 278);
-  --ink-3: oklch(0.6350 0.0180 282);
+  /* 0.635 rendered #898a96, which is 3.07:1 on --paper-2 and 3.25:1 on the footer's ground — the
+     tertiary ink carries the footer navigation, the "Includes" labels in the plan cards and the
+     legal pages' folio, so a reader who needs contrast loses the site's navigation, not decoration.
+     0.540 is the first step that clears 4.5:1 against all three grounds it actually sits on
+     (5.05 / 4.81 / 4.53); chroma and hue are untouched, so it still reads as the same grey. */
+  --ink-3: oklch(0.5400 0.0180 282);
   --rule: oklch(0.8900 0.0120 285);
   --accent: oklch(0.5250 0.2250 293);
   --night: oklch(0.1750 0.0250 268);

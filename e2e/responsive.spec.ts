@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { authFile } from "./fixtures/test-data";
+import { test, expect, type Page } from "@playwright/test";
+import { authFile, TENANT_SLUG } from "./fixtures/test-data";
 
 /**
  * Every screen, at every size staff actually hold.
@@ -12,6 +12,43 @@ import { authFile } from "./fixtures/test-data";
  * Checks the document, not individual elements. A table that scrolls *inside its own container* is
  * correct and expected — the bug is the page itself scrolling sideways.
  */
+
+/**
+ * Measures sideways overflow on whatever is actually scrolling.
+ *
+ * The document is not the only thing that can scroll sideways: the app shell puts `overflow-auto`
+ * on <main>, so a too-wide card makes *main* scroll while documentElement stays exactly 100% wide —
+ * a page can be visibly broken while the document looks perfect. An earlier version of this test
+ * measured only the document and passed a deliberately sabotaged 1400px card without noticing.
+ */
+async function measureOverflow(page: Page) {
+  return page.evaluate(() => {
+    const de = document.documentElement;
+    const main = document.querySelector("main");
+    const host =
+      de.scrollWidth > de.clientWidth + 1
+        ? de
+        : main && main.scrollWidth > main.clientWidth + 1
+          ? main
+          : null;
+    if (!host) return null;
+
+    // Name the widest offender, so a failure says what to fix rather than just that something is
+    // wrong.
+    let culprit = "(unknown)";
+    let worst = host.clientWidth;
+    for (const el of Array.from(document.body.querySelectorAll<HTMLElement>("*"))) {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      if (cs.position === "fixed" || r.width === 0) continue;
+      if (r.right > worst) {
+        worst = r.right;
+        culprit = `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 70)}`;
+      }
+    }
+    return { scrollWidth: host.scrollWidth, clientWidth: host.clientWidth, culprit };
+  });
+}
 
 const SIZES = [
   { name: "phone", width: 390, height: 844 },
@@ -60,37 +97,7 @@ test.describe("Responsive layout", () => {
           .catch(() => {});
         await page.waitForTimeout(300);
 
-        const result = await page.evaluate(() => {
-          // The document is not the only thing that can scroll sideways. The app shell puts
-          // `overflow-auto` on <main>, so a too-wide card makes *main* scroll and the document
-          // stays exactly 100% wide — a page can be visibly broken while documentElement looks
-          // perfect. An earlier version of this test measured only the document and passed a
-          // deliberately sabotaged 1400px card without noticing.
-          const de = document.documentElement;
-          const main = document.querySelector("main");
-          const host =
-            de.scrollWidth > de.clientWidth + 1
-              ? de
-              : main && main.scrollWidth > main.clientWidth + 1
-                ? main
-                : null;
-          if (!host) return null;
-
-          // Name the widest offender, so a failure says what to fix rather than just that
-          // something is wrong.
-          let culprit = "(unknown)";
-          let worst = host.clientWidth;
-          for (const el of Array.from(document.body.querySelectorAll<HTMLElement>("*"))) {
-            const r = el.getBoundingClientRect();
-            const cs = getComputedStyle(el);
-            if (cs.position === "fixed" || r.width === 0) continue;
-            if (r.right > worst) {
-              worst = r.right;
-              culprit = `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 70)}`;
-            }
-          }
-          return { scrollWidth: host.scrollWidth, clientWidth: host.clientWidth, culprit };
-        });
+        const result = await measureOverflow(page);
 
         if (result) broken.push({ screen, ...result });
       }
@@ -143,4 +150,56 @@ test.describe("Back-office navigation on a phone", () => {
     await page.keyboard.press("Escape");
     await expect(drawer).toBeHidden();
   });
+});
+
+/**
+ * The public pages — the landing page above all.
+ *
+ * Nothing covered these. Every screen in the list above sits behind a login, so the pages a
+ * *stranger* sees — the landing page they judge the product on, the signup form, and the ordering
+ * page a guest opens from a QR code at their table — had no size coverage of any kind. The
+ * ordering page is the most phone-critical page in the whole product: it is only ever opened on a
+ * phone, by someone who has not chosen to be there and will not persevere.
+ *
+ * Anonymous on purpose. These render for people who have no session, so testing them with an
+ * owner's cookie would be testing a different page than the one that matters.
+ */
+const PUBLIC_SCREENS = ["/", "/login", "/signup", "/privacy", "/terms", `/order/${TENANT_SLUG}`];
+
+test.describe("Public pages", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  for (const size of SIZES) {
+    test(`no public page scrolls sideways at ${size.name} (${size.width}px)`, async ({ page }) => {
+      test.setTimeout(4 * 60_000);
+      await page.setViewportSize({ width: size.width, height: size.height });
+
+      const broken: { screen: string; scrollWidth: number; clientWidth: number; culprit: string }[] = [];
+
+      for (const screen of PUBLIC_SCREENS) {
+        // Assert the page actually rendered. A 404 or a redirect to login never overflows, so a
+        // typo'd route in the list above would sail through this test having measured nothing.
+        const response = await page.goto(screen, { waitUntil: "domcontentloaded" });
+        expect(response?.status(), `${screen} did not render`).toBeLessThan(400);
+        expect(new URL(page.url()).pathname, `${screen} redirected away`).toBe(screen);
+        await page
+          .waitForFunction(() => !document.querySelector('[aria-busy="true"]'), null, { timeout: 20_000 })
+          .catch(() => {});
+        // The landing page animates in and pins sections as they enter; settle before measuring, or
+        // a mid-flight transform reads as overflow that is not really there.
+        await page.waitForTimeout(700);
+
+        const result = await measureOverflow(page);
+        if (result) broken.push({ screen, ...result });
+      }
+
+      expect(
+        broken,
+        [
+          `public pages scrolling sideways at ${size.width}px:`,
+          ...broken.map((b) => `  ${b.screen}  ${b.scrollWidth}>${b.clientWidth}  widest: ${b.culprit}`),
+        ].join("\n")
+      ).toEqual([]);
+    });
+  }
 });
