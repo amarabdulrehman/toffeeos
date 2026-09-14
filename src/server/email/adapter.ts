@@ -13,8 +13,30 @@ const resend = env.RESEND_API_KEY ? new Resend(env.RESEND_API_KEY) : null;
 
 export async function sendEmail(to: string, subject: string, body: string): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!resend || !env.EMAIL_FROM) {
-    console.log(`[EMAIL STUB] -> ${to}\nSubject: ${subject}\n${body}\n`);
-    return { ok: true };
+    /**
+     * In development, printing the whole email is the point — it is how you get the reset link
+     * without a mail provider.
+     *
+     * In production it is an account-takeover hole. Both callers put a live password-reset link
+     * in the body (src/server/password-reset.ts), one of them for a *platform admin*, and Resend
+     * is not configured — so every reset request wrote a token granting that account into the
+     * platform's request logs, where it persists and is readable by anyone with log access. The
+     * OTP stub was gated to non-production for exactly this reason; this one was missed.
+     *
+     * It also returned ok:true, so nothing anywhere knew the mail had not been sent.
+     */
+    if (env.NODE_ENV !== "production") {
+      console.log(`[EMAIL STUB] -> ${to}\nSubject: ${subject}\n${body}\n`);
+      return { ok: true };
+    }
+
+    // Never the body, and never the address: that a send was attempted is all the log needs,
+    // and Sentry gets enough to act on without carrying the secret.
+    Sentry.captureException(new Error("sendEmail called with no email provider configured"), {
+      tags: { area: "email" },
+      extra: { subject },
+    });
+    return { ok: false, error: "Email delivery is not configured." };
   }
 
   const { error } = await resend.emails.send({

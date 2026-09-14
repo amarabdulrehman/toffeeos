@@ -1,4 +1,5 @@
 import "server-only";
+import { env } from "@/lib/env";
 
 /**
  * DEV-ONLY stub adapter — same caveats as src/server/auth/otp-store.ts: no real Meta Business
@@ -22,6 +23,16 @@ export async function sendWhatsAppCloudMessage(
   toPhone: string,
   body: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  console.log(`[WHATSAPP STUB] -> ${toPhone}\n${body}\n`);
+  // Customer phone numbers and message text are personal data; they belong in the tenant's own
+  // message log (src/server/whatsapp/send.ts records both), not in the platform's request logs,
+  // where they persist and are readable by anyone with log access. Same reasoning as the email
+  // and OTP stubs.
+  if (env.NODE_ENV !== "production") {
+    console.log(`[WHATSAPP STUB] -> ${toPhone}\n${body}\n`);
+  }
+
+  // Deliberately still ok:true. No provider is wired up at all yet, so returning false here
+  // would flip every WhatsApp message in every tenant's log from SENT to FAILED at once — a
+  // visible change to clients that should be a decision, not a side effect of a logging fix.
   return { ok: true };
 }
