@@ -8,6 +8,7 @@ import { getBillingStatus } from "@/lib/billing";
 import { BRAND_NAME } from "@/config/brand";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ClockOutButton } from "@/components/clock-out-button";
+import { MobileNav } from "@/components/layout/mobile-nav";
 import { AppSidebarNav } from "@/components/app-sidebar-nav";
 import { AccountSuspended } from "@/components/tier/account-suspended";
 
@@ -64,6 +65,29 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   });
   const showRenewalNotice = billing.isOverdue || billing.state === "due_soon";
 
+  const navContent = (
+    <>
+      <div className="mb-6 flex items-center gap-3 px-1">
+        <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+          <LayoutGrid className="size-4.5" />
+        </span>
+        <div className="min-w-0 leading-tight">
+          <div className="font-heading text-base font-semibold tracking-tight">{BRAND_NAME}</div>
+          <div className="truncate text-xs text-sidebar-foreground/55">{user.tenantName}</div>
+        </div>
+      </div>
+      <AppSidebarNav permissions={user.permissions} enabledModules={enabledModules} kdsEnabled={kdsEnabled} />
+      <div className="mt-auto space-y-2 border-t border-sidebar-border pt-4">
+        <div className="px-1 text-xs">
+          <div className="font-medium">{user.name}</div>
+          <div className="text-sidebar-foreground/55">{user.roleKey.replace("_", " ")}</div>
+        </div>
+        <ClockOutButton onDark />
+        <SignOutButton onDark />
+      </div>
+    </>
+  );
+
   return (
     <div className="flex min-h-screen">
       {/* h-screen + sticky, not just min-h-screen: AppSidebarNav's list already carries
@@ -71,27 +95,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           Without the cap the aside simply grew past the viewport and pushed Clock out / Sign out
           below the fold on shorter laptop screens (~700px), where the nav list is now long enough
           to overflow. */}
-      <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col bg-sidebar p-4 text-sidebar-foreground shadow-lg">
-        <div className="mb-6 flex items-center gap-3 px-1">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-            <LayoutGrid className="size-4.5" />
-          </span>
-          <div className="min-w-0 leading-tight">
-            <div className="font-heading text-base font-semibold tracking-tight">{BRAND_NAME}</div>
-            <div className="truncate text-xs text-sidebar-foreground/55">{user.tenantName}</div>
-          </div>
-        </div>
-        <AppSidebarNav permissions={user.permissions} enabledModules={enabledModules} kdsEnabled={kdsEnabled} />
-        <div className="mt-auto space-y-2 border-t border-sidebar-border pt-4">
-          <div className="px-1 text-xs">
-            <div className="font-medium">{user.name}</div>
-            <div className="text-sidebar-foreground/55">{user.roleKey.replace("_", " ")}</div>
-          </div>
-          <ClockOutButton onDark />
-          <SignOutButton onDark />
-        </div>
+      {/* Written once, rendered in two places: the fixed sidebar on a laptop, and the drawer on a
+          phone. Duplicating it would mean a nav item added in one and forgotten in the other. */}
+      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col bg-sidebar p-4 text-sidebar-foreground shadow-lg lg:flex">
+        {navContent}
       </aside>
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <MobileNav>{navContent}</MobileNav>
         {showRenewalNotice && (
           <div className="flex items-center px-4 py-2 text-sm font-medium bg-warning text-warning-foreground">
             {billing.isOverdue
