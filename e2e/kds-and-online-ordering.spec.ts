@@ -13,12 +13,21 @@ test.describe("KDS", () => {
     const createRes = await ownerCtx.post("/api/orders", {
       data: { type: "TAKEAWAY", idempotencyKey: `kds-e2e-${Date.now()}`, lines: [{ menuItemId: itemId, quantity: 1 }] },
     });
+    expect(createRes.ok(), await createRes.text()).toBeTruthy();
     const { order } = await createRes.json();
-    await ownerCtx.post(`/api/orders/${order.id}/send-to-kitchen`, { data: {} });
+    const sent = await ownerCtx.post(`/api/orders/${order.id}/send-to-kitchen`, { data: {} });
+    // Assert the setup, or a failure here surfaces as "the card never appeared" — a timeout that
+    // blames the board for an order that was never sent to it.
+    expect(sent.ok(), await sent.text()).toBeTruthy();
     await ownerCtx.dispose();
 
     await page.goto("/kds");
-    await expect(page.getByText(`#${order.orderNumber}`)).toBeVisible({ timeout: 15_000 });
+    // 15s was too tight to be a real budget. The board does fetch on mount, but this budget has to
+    // cover the dev server compiling /kds on its first visit in a run, hydration, and a query over
+    // a demo board carrying months of orders — and if any of that overruns, the next chance is the
+    // 15s poll (kds-board.tsx), which the old timeout could not wait for. Two poll periods plus
+    // slack, so the test fails on the behaviour rather than on the clock.
+    await expect(page.getByText(`#${order.orderNumber}`)).toBeVisible({ timeout: 35_000 });
 
     // This demo board carries months of other test orders (including ones also containing "Fish
     // Pakora") — scope to this specific order's own card (src/components/kds/kds-board.tsx's

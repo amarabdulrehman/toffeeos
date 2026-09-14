@@ -22,10 +22,21 @@ test.describe("Recipe costing", () => {
   test.use({ storageState: authFile("owner") });
 
   test("cost is the sum of ingredient costs, rounded once, and margin follows from it", async ({ request }) => {
+    // Create the stock location rather than assume the seed left one: the demo tenant has
+    // inventory items but no location, and a test that depends on seed state it did not create is
+    // a test that fails for a reason that has nothing to do with what it is checking.
     const locations = await request.get("/api/inventory/locations");
     expect(locations.ok(), await locations.text()).toBeTruthy();
-    const locationId = (await locations.json()).locations[0]?.id;
-    expect(locationId, "the demo tenant needs a stock location for this test").toBeTruthy();
+    let locationId: string | undefined = (await locations.json()).locations[0]?.id;
+
+    if (!locationId) {
+      const created = await request.post("/api/inventory/locations", {
+        data: { name: `costing-store-${uniq()}` },
+      });
+      expect(created.ok(), await created.text()).toBeTruthy();
+      locationId = (await created.json()).location.id;
+    }
+    expect(locationId).toBeTruthy();
 
     // Two ingredients with deliberately awkward unit costs: 1000/3 = 333.333… and 1000/7 =
     // 142.857…, neither of which is a whole paisa.
