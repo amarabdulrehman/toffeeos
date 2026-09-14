@@ -12,11 +12,15 @@ import type { MenuCategoryDto, MenuItemDto } from "./types";
  * primary/purple — that's reserved for the active-category and action-button state, so an inactive
  * pill never gets confused for the selected one. Written as complete, literal class strings (not
  * composed at runtime) since Tailwind's compiler needs to see the full class name in source. */
+/* The label is near-black in both themes; the category's colour is carried by the fill, the border
+ * and the stripe. Tinting the *text* as well was the prettier version and measured 4.39:1 against
+ * its own tint — under the threshold, on a screen read at arm's length in a kitchen. The colour
+ * coding survives; only the part that has to be read stopped depending on it. */
 const CATEGORY_ACCENTS = [
-  { pill: "bg-warning/18 text-warning-foreground border-warning/30", stripe: "bg-warning" },
-  { pill: "bg-success/15 text-success border-success/25", stripe: "bg-success" },
-  { pill: "bg-sky-500/12 text-sky-600 border-sky-500/25 dark:text-sky-400", stripe: "bg-sky-500" },
-  { pill: "bg-rose-500/12 text-rose-600 border-rose-500/25 dark:text-rose-400", stripe: "bg-rose-500" },
+  { pill: "bg-warning/18 text-foreground border-warning/40", stripe: "bg-warning" },
+  { pill: "bg-success/15 text-foreground border-success/40", stripe: "bg-success" },
+  { pill: "bg-sky-500/12 text-foreground border-sky-500/40", stripe: "bg-sky-500" },
+  { pill: "bg-rose-500/12 text-foreground border-rose-500/40", stripe: "bg-rose-500" },
 ];
 
 function accentFor(index: number) {
@@ -58,6 +62,9 @@ export function ProductGrid({
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Search menu…"
+          // A placeholder disappears as soon as the cashier types, so it cannot be the only name
+          // this field has.
+          aria-label="Search menu"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="rounded-full border-none bg-card pl-9 shadow-sm"

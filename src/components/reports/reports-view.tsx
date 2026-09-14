@@ -129,13 +129,19 @@ function DateRangePicker({
 }) {
   return (
     <div className="mb-5 flex items-end gap-3 rounded-xl border bg-card p-3 shadow-xs">
+      {/* htmlFor/id, not just a <Label> sitting above the field: without the pairing these read as
+          two unlabelled date boxes to a screen reader, and clicking the word "From" does nothing. */}
       <div className="space-y-1.5">
-        <Label className="text-xs text-muted-foreground">From</Label>
-        <Input type="date" value={from} onChange={(e) => onFrom(e.target.value)} className="w-40" />
+        <Label htmlFor="report-from" className="text-xs text-muted-foreground">
+          From
+        </Label>
+        <Input id="report-from" type="date" value={from} onChange={(e) => onFrom(e.target.value)} className="w-40" />
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs text-muted-foreground">To</Label>
-        <Input type="date" value={to} onChange={(e) => onTo(e.target.value)} className="w-40" />
+        <Label htmlFor="report-to" className="text-xs text-muted-foreground">
+          To
+        </Label>
+        <Input id="report-to" type="date" value={to} onChange={(e) => onTo(e.target.value)} className="w-40" />
       </div>
     </div>
   );
