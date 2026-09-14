@@ -181,5 +181,30 @@ export interface UpdateBrandingInput {
 
 export async function updateBranding(tenantId: string, input: UpdateBrandingInput) {
   const db = tenantDb(tenantId);
-  return db.tenant.update({ where: { id: tenantId }, data: input });
+
+  const before = await db.tenant.findUnique({ where: { id: tenantId }, select: { logoUrl: true } });
+  const tenant = await db.tenant.update({ where: { id: tenantId }, data: input });
+
+  /**
+   * Setting a logo for the first time switches it on for receipts.
+   *
+   * BranchSettings.showLogoOnReceipt defaults to false, which was right when the field was added —
+   * no existing client's receipts should change underneath them. But it left a dead end: a client
+   * uploads their logo, sees it on the storefront, prints a receipt, and it is not there, with no
+   * indication why. Uploading a logo is an unambiguous statement that you want it used.
+   *
+   * Deliberately only on the transition from no-logo to logo, never on a replacement. Before that
+   * moment the flag being false cannot have been a decision — there was no logo for it to suppress
+   * — so switching it on fills in an unmade choice rather than overruling a made one. Once a client
+   * has a logo, turning it off per branch is theirs to do and a later logo change will not undo it.
+   */
+  const gainedFirstLogo = !before?.logoUrl && !!tenant.logoUrl;
+  if (gainedFirstLogo) {
+    await db.branchSettings.updateMany({
+      where: { showLogoOnReceipt: false },
+      data: { showLogoOnReceipt: true },
+    });
+  }
+
+  return tenant;
 }

@@ -1,4 +1,4 @@
-import { formatPkr } from "@/lib/money";
+import { formatPkr, paymentStanding } from "@/lib/money";
 import type { OrderDto } from "./types";
 
 const METHOD_LABEL: Record<string, string> = {
@@ -42,6 +42,7 @@ export function Receipt({
   const taxableBase = discountedSubtotal + serviceCharge;
   const taxRatePct = taxableBase > 0 ? Math.round((tax / taxableBase) * 100) : 0;
   const payments = order.payments ?? [];
+  const standing = paymentStanding(order.totalPaisa, order.paidPaisa ?? 0);
 
   return (
     <div id="printable-receipt" className="print-area mx-auto w-[300px] font-mono text-[13px] leading-snug text-black">
@@ -138,11 +139,44 @@ export function Receipt({
                 <span className="tabular-nums">{formatPkr(p.amountPaisa, { showPaisa: true })}</span>
               </div>
             ))}
+            {standing.state === "PAID" && standing.changePaisa > 0 && (
+              <div className="flex justify-between">
+                <span>Change</span>
+                <span className="tabular-nums">{formatPkr(standing.changePaisa, { showPaisa: true })}</span>
+              </div>
+            )}
           </div>
         </>
       )}
+
+      {/*
+        Settlement status, stamped.
+
+        A bill handed to a customer and a bill already settled are different documents, and until
+        now they printed identically — which is how a table gets asked to pay twice, or walks out
+        having never been asked at all.
+
+        Drawn as a ruled box rather than white-on-black: a solid inverted block is the obvious way
+        to make this shout, but thermal heads render large black fills unevenly, it burns paper, and
+        on a weak printer the text inside can vanish into the fill. A double rule and letter-spaced
+        caps read just as loudly and survive a tired printer.
+      */}
       <div className="my-2 border-t border-dashed border-black" />
-      <div className="text-center">Thank you for dining with us!</div>
+      <div className="border-y-2 border-black py-1.5 text-center">
+        <div className="text-base font-bold tracking-[0.25em]">
+          {standing.state === "PAID" ? "PAID" : standing.state === "PART_PAID" ? "PART PAID" : "UNPAID"}
+        </div>
+        {standing.balancePaisa > 0 && (
+          <div className="mt-0.5 font-bold">
+            Balance due {formatPkr(standing.balancePaisa, { showPaisa: true })}
+          </div>
+        )}
+      </div>
+
+      <div className="my-2 border-t border-dashed border-black" />
+      <div className="text-center">
+        {standing.state === "PAID" ? "Thank you for dining with us!" : "This is not a payment receipt."}
+      </div>
     </div>
   );
 }

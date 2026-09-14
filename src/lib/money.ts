@@ -108,3 +108,37 @@ export function formatPkr(paisa: Paisa, opts: { showPaisa?: boolean; locale?: st
 export function sumPaisa(amounts: Paisa[]): Paisa {
   return amounts.reduce((a, b) => a + b, 0);
 }
+
+/**
+ * Where an order stands on settlement, for the receipt's stamp.
+ *
+ * Kept here beside the other money helpers rather than inside the receipt component, because the
+ * question "is this bill paid" is arithmetic, not presentation — and it is the arithmetic a
+ * customer disputes. A function can be tested; a ternary buried in JSX cannot.
+ *
+ * Three states, because two would be a lie. A bill half-settled across cash and card is a real and
+ * common thing in a restaurant, and a receipt that rounds it to either PAID or UNPAID is wrong in a
+ * way that costs somebody money.
+ *
+ * Compares against the rounded total the customer is actually asked for, so a bill settled to the
+ * rupee is not reported as underpaid by the rounding adjustment itself.
+ */
+export type PaymentStanding =
+  | { state: "PAID"; balancePaisa: 0; changePaisa: Paisa }
+  | { state: "PART_PAID"; balancePaisa: Paisa; changePaisa: 0 }
+  | { state: "UNPAID"; balancePaisa: Paisa; changePaisa: 0 };
+
+export function paymentStanding(totalPaisa: Paisa, paidPaisa: Paisa): PaymentStanding {
+  assertInt(totalPaisa, "totalPaisa");
+  assertInt(paidPaisa, "paidPaisa");
+
+  if (paidPaisa >= totalPaisa) {
+    // Tendering more than the bill is normal — a customer hands over a note and takes change. The
+    // receipt should say so rather than silently swallowing the difference.
+    return { state: "PAID", balancePaisa: 0, changePaisa: paidPaisa - totalPaisa };
+  }
+  if (paidPaisa > 0) {
+    return { state: "PART_PAID", balancePaisa: totalPaisa - paidPaisa, changePaisa: 0 };
+  }
+  return { state: "UNPAID", balancePaisa: totalPaisa, changePaisa: 0 };
+}

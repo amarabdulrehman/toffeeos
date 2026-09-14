@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apportion, applyRate, formatPkr, roundTotal, roundHalfUp } from "@/lib/money";
+import { apportion, applyRate, formatPkr, paymentStanding, roundTotal, roundHalfUp } from "@/lib/money";
 
 describe("roundHalfUp", () => {
   it("rounds .5 up, not banker's rounding", () => {
@@ -89,5 +89,40 @@ describe("formatPkr", () => {
 
   it("formats with paisa when requested", () => {
     expect(formatPkr(1234_56, { showPaisa: true })).toBe("Rs 1,234.56");
+  });
+});
+
+describe("paymentStanding — what the receipt stamps on a bill", () => {
+  it("settles exactly", () => {
+    expect(paymentStanding(404_800, 404_800)).toEqual({ state: "PAID", balancePaisa: 0, changePaisa: 0 });
+  });
+
+  it("reports change when the customer tenders more than the bill", () => {
+    // Rs 5,000 handed over against a Rs 4,048 bill — the receipt should say Rs 952 change,
+    // not quietly absorb it.
+    expect(paymentStanding(404_800, 500_000)).toEqual({ state: "PAID", balancePaisa: 0, changePaisa: 95_200 });
+  });
+
+  it("calls a half-settled bill part-paid, with the balance still owed", () => {
+    const s = paymentStanding(404_800, 200_000);
+    expect(s.state).toBe("PART_PAID");
+    expect(s.balancePaisa).toBe(204_800);
+  });
+
+  it("treats a single paisa short as unsettled, not as paid", () => {
+    // The whole point of the three-state model: rounding this to PAID is how a bill gets closed
+    // with money still on the table.
+    const s = paymentStanding(404_800, 404_799);
+    expect(s.state).toBe("PART_PAID");
+    expect(s.balancePaisa).toBe(1);
+  });
+
+  it("calls an untouched bill unpaid, owing the whole total", () => {
+    expect(paymentStanding(404_800, 0)).toEqual({ state: "UNPAID", balancePaisa: 404_800, changePaisa: 0 });
+  });
+
+  it("refuses non-integer paisa rather than guessing", () => {
+    expect(() => paymentStanding(404_800.5, 0)).toThrow();
+    expect(() => paymentStanding(404_800, 1.5)).toThrow();
   });
 });

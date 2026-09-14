@@ -70,8 +70,10 @@ test.describe("Receipt logo", () => {
     expect(after.logoUrl).not.toBe(before.logoUrl); // cache-busting key, so a replace is visible
   });
 
-  test("the toggle is off by default and is saved per branch", async ({ request }) => {
-    // Deploying this must not change any existing client's receipts.
+  test("the toggle is saved per branch, and off means off", async ({ request }) => {
+    // Turning it off is a decision the system must respect — including after a later logo change.
+    // (Gaining a *first* logo now switches it on; see the isolation test below. That fills in an
+    // unmade choice, and this test proves it does not then keep overriding a made one.)
     await withDb((c) =>
       c.query(
         `UPDATE "BranchSettings" bs SET "showLogoOnReceipt" = false
@@ -89,6 +91,65 @@ test.describe("Receipt logo", () => {
     const off = await request.patch("/api/branch-settings", { data: { showLogoOnReceipt: false } });
     expect(off.ok()).toBeTruthy();
     expect((await readState()).showLogoOnReceipt).toBe(false);
+  });
+
+  test("a first logo switches receipt printing on — for that tenant's branches only", async ({ request }) => {
+    // The write that earns this test: gaining a first logo flips showLogoOnReceipt with an
+    // updateMany across the tenant's branches. updateMany with a loose filter is exactly how a
+    // multi-tenant system writes into somebody else's data, so prove the scoping holds rather
+    // than trusting that BranchSettings is on the scoped-models list.
+    const foreignBefore = await withDb(async (c) => {
+      const r = await c.query(
+        `SELECT bs."branchId", bs."showLogoOnReceipt"
+           FROM "BranchSettings" bs
+           JOIN "Branch" b ON bs."branchId" = b.id
+           JOIN "Tenant" t ON b."tenantId" = t.id
+          WHERE t.slug <> $1
+          ORDER BY bs."branchId"`,
+        [TENANT_SLUG]
+      );
+      return r.rows as { branchId: string; showLogoOnReceipt: boolean }[];
+    });
+
+    // Put the tenant back to "never had a logo", with printing off everywhere.
+    // Two statements, two calls: pg refuses multiple commands in one parameterised query.
+    await withDb(async (c) => {
+      await c.query(`UPDATE "Tenant" SET "logoUrl" = NULL WHERE slug = $1`, [TENANT_SLUG]);
+      await c.query(
+        `UPDATE "BranchSettings" bs SET "showLogoOnReceipt" = false
+           FROM "Branch" b JOIN "Tenant" t ON b."tenantId" = t.id
+          WHERE bs."branchId" = b.id AND t.slug = $1`,
+        [TENANT_SLUG]
+      );
+    });
+    expect((await readState()).showLogoOnReceipt).toBe(false);
+
+    const upload = await request.post("/api/tenant-branding/logo", {
+      multipart: { file: { name: "logo.png", mimeType: "image/png", buffer: PNG_1X1 } },
+    });
+    expect(upload.ok(), await upload.text()).toBeTruthy();
+
+    // The point of the feature: an uploaded logo actually reaches the paper.
+    expect(
+      (await readState()).showLogoOnReceipt,
+      "a first logo upload should switch on receipt printing"
+    ).toBe(true);
+
+    // And the point of this test: nobody else's branches moved.
+    const foreignAfter = await withDb(async (c) => {
+      const r = await c.query(
+        `SELECT bs."branchId", bs."showLogoOnReceipt"
+           FROM "BranchSettings" bs
+           JOIN "Branch" b ON bs."branchId" = b.id
+           JOIN "Tenant" t ON b."tenantId" = t.id
+          WHERE t.slug <> $1
+          ORDER BY bs."branchId"`,
+        [TENANT_SLUG]
+      );
+      return r.rows as { branchId: string; showLogoOnReceipt: boolean }[];
+    });
+    expect(foreignAfter, "another tenant's receipt settings must not move").toEqual(foreignBefore);
+    expect(foreignBefore.length, "this assertion is vacuous without other tenants to check").toBeGreaterThan(0);
   });
 
   test("rejects a non-image and an oversized file with a usable message", async ({ request }) => {
