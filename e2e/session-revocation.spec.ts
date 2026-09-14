@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import "dotenv/config";
 import { test, expect, request as playwrightRequest, type APIRequestContext } from "@playwright/test";
 import { Client } from "pg";
@@ -161,13 +162,16 @@ test.describe("Session revocation", () => {
       const token = await withDb(async (c) => {
         const tenantId = (await c.query('SELECT id FROM "Tenant" WHERE slug = $1', [TENANT_SLUG])).rows[0].id;
         // `token` is the primary key and Prisma generates it in application code, so raw SQL has to
-        // supply one — there is no database-level default to fall back on.
-        const r = await c.query(
+        // supply one — there is no database-level default to fall back on. What the column holds is
+        // a SHA-256 of the token (src/server/password-reset.ts), so plant the digest and post the
+        // plaintext, the way a real reset link works.
+        const plaintext = `revocation-probe-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        await c.query(
           'INSERT INTO "PasswordResetToken" (token, "userType", "userId", "tenantId", "expiresAt") ' +
-            "VALUES (gen_random_uuid()::text, 'tenant', $1, $2, now() + interval '30 minutes') RETURNING token",
-          [userId, tenantId]
+            "VALUES ($1, 'tenant', $2, $3, now() + interval '30 minutes')",
+          [createHash("sha256").update(plaintext).digest("hex"), userId, tenantId]
         );
-        return r.rows[0].token as string;
+        return plaintext;
       });
 
       const anon = await playwrightRequest.newContext({ baseURL, storageState: undefined });
@@ -176,8 +180,13 @@ test.describe("Session revocation", () => {
       });
       // Read the body before disposing the context — disposal invalidates the response object.
       const ok = res.ok();
+      const status = res.status();
       const body = await res.text();
       await anon.dispose();
+      // /api/auth/reset-password allows 10 attempts per 15 minutes per IP. Re-running this spec a
+      // few times in a row hits that, and a rate-limited run used to report as a failed assertion
+      // about session revocation — a red result that says nothing about the behaviour under test.
+      test.skip(status === 429, "reset-confirm rate limit reached — re-run once the window clears");
       expect(ok, body).toBeTruthy();
 
       const after = await ctx.get(PROBE);
