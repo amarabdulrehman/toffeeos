@@ -113,6 +113,7 @@ model Subscription {
   updatedAt               DateTime           @updatedAt
 
   payments SubscriptionPayment[]
+  @@index([planId])
 }
 
 /// Manual billing ledger. The platform admin collects payment out-of-band (bank transfer, cash,
@@ -152,6 +153,7 @@ model SubscriptionPayment {
 
   @@index([tenantId, periodEnd])
   @@index([tenantId, createdAt])
+  @@index([subscriptionId])
 }
 
 model PlatformUser {
@@ -433,6 +435,8 @@ model Membership {
 
   @@unique([userId, branchId])
   @@index([tenantId, branchId])
+  /// Listing staff by role, and the check that a role is unused before it can be deleted.
+  @@index([tenantId, roleId])
 }
 
 enum PayType {
@@ -456,6 +460,8 @@ model Invite {
   createdAt  DateTime  @default(now())
 
   @@index([tenantId])
+  @@index([tenantId, branchId])
+  @@index([tenantId, roleId])
 }
 
 /// PIN-based clock-in / quick switch at the POS. pinHash uses the same bcrypt hashing as
@@ -731,6 +737,8 @@ model StockMovement {
   @@index([tenantId, branchId, createdAt])
   @@index([itemId])
   @@index([transferGroupId])
+  /// Movement history per stock location.
+  @@index([tenantId, locationId])
 }
 
 enum LowStockAlertStatus {
@@ -1019,6 +1027,11 @@ model Order {
   @@index([tenantId, branchId, createdAt])
   @@index([tenantId, branchId, status])
   @@index([tenantId, assignedRiderId])
+  /// The POS resumes an open order by table on every dine-in sitting; unindexed this scanned Order.
+  @@index([tenantId, tableId])
+  /// Customer order history (CRM) and the staff-performance report.
+  @@index([tenantId, customerId])
+  @@index([tenantId, createdById])
 }
 
 /// Records every client-generated actionId a mutating order action (send-to-kitchen, pay, void)
