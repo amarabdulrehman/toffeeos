@@ -1,4 +1,5 @@
 import { test, expect, request as playwrightRequest } from "@playwright/test";
+import { withDb } from "./fixtures/platform-admin";
 import { authFile, uniqueSuffix } from "./fixtures/test-data";
 
 /**
@@ -22,11 +23,15 @@ test.use({ storageState: authFile("owner") });
 test.describe("Tenant isolation", () => {
   let otherOrderId: string;
   let otherTaxRuleId: string;
+  /** The slug of the brand-new tenant this spec provisions — reused to check what signup gave it,
+   * since /api/signup is capped at 3 per hour per IP and this spec already pays for one. */
+  let freshTenantSlug: string;
 
   test.beforeAll(async ({ baseURL }) => {
     const suffix = uniqueSuffix();
     const anon = await playwrightRequest.newContext({ baseURL });
 
+    freshTenantSlug = `isolation-test-${suffix}`;
     const signup = await anon.post("/api/signup", {
       data: {
         restaurantName: `Isolation Test Diner ${suffix}`,
@@ -87,6 +92,41 @@ test.describe("Tenant isolation", () => {
     otherTaxRuleId = rules[0].id;
 
     await anon.dispose();
+  });
+
+  test("a brand-new tenant is provisioned with a stock location, or inventory silently does nothing", async () => {
+    // Recipe depletion resolves a stock location at payment time and, finding none, returns an
+    // empty result: no deduction, no error, no log (src/server/recipes.ts). An owner could add
+    // items, write recipes, sell all week, and never see stock move — with nothing saying why.
+    // The demo tenant had exactly this, zero StockLocation rows, which is how it was found.
+    //
+    // Checked against the database rather than /api/inventory/locations: that route is gated on
+    // the inventory module, which a default-tier signup does not have, so the API would answer
+    // "feature not enabled" for a tenant whose provisioning is perfectly fine. The row has to
+    // exist from day one either way — a tenant upgraded onto the module later does not go back
+    // through signup.
+    const row = await withDb(async (c) => {
+      const tenant = await c.query('SELECT id FROM "Tenant" WHERE slug = $1', [freshTenantSlug]);
+      const tenantId = tenant.rows[0]?.id;
+      expect(tenantId, "the signed-up tenant should exist").toBeTruthy();
+      const res = await c.query(
+        `SELECT l.id, l.name, bs."defaultStockLocationId"
+           FROM "StockLocation" l
+           JOIN "BranchSettings" bs ON bs."branchId" = l."branchId"
+          WHERE l."tenantId" = $1`,
+        [tenantId]
+      );
+      return res.rows[0];
+    });
+
+    expect(
+      row,
+      "signup must provision a stock location — without one, recipe depletion is a silent no-op"
+    ).toBeTruthy();
+
+    // And it must be the branch default, so the resolver takes it directly rather than falling
+    // back to "oldest active location at this branch".
+    expect(row.defaultStockLocationId, "the new location should be the branch's default").toBe(row.id);
   });
 
   test("cannot read or void another tenant's order via a real, valid order id", async ({ request }) => {

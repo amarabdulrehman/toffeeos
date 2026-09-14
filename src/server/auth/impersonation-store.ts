@@ -28,7 +28,20 @@ export async function consumeImpersonationToken(
 ): Promise<{ tenantId: string; targetUserId: string; platformUserId: string; platformUserEmail: string } | null> {
   const grant = await platformDb.impersonationToken.findUnique({ where: { token } });
   if (!grant) return null;
-  await platformDb.impersonationToken.delete({ where: { token } }).catch(() => {});
+
+  /**
+   * Claim by deleting, and let the delete decide who won.
+   *
+   * "Single-use" used to be a read followed by a delete whose failure was swallowed
+   * (`.catch(() => {})`). Two requests arriving together both read the row before either deleted
+   * it, so one token could open two impersonated sessions; and if the delete failed, the token
+   * stayed in the table and the caller carried on regardless. deleteMany reports how many rows it
+   * actually removed, so exactly one caller can see 1 — and a delete that removes nothing now
+   * fails closed instead of being ignored.
+   */
+  const claimed = await platformDb.impersonationToken.deleteMany({ where: { token } });
+  if (claimed.count !== 1) return null;
+
   if (Date.now() > grant.expiresAt.getTime()) return null;
   const { tenantId, targetUserId, platformUserId, platformUserEmail } = grant;
   return { tenantId, targetUserId, platformUserId, platformUserEmail };

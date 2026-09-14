@@ -111,6 +111,28 @@ async function provisionTenant(
       ],
     });
 
+    /**
+     * A stock location, because without one inventory silently does nothing.
+     *
+     * Recipe depletion runs at payment and resolves a location first
+     * (src/server/recipes.ts, resolveConsumptionLocation). With no location it returns null and
+     * deductForOrder returns an empty array — no deduction, no error, no log. A new owner could
+     * add inventory items, write recipes, sell all week, and find stock had never moved, with
+     * nothing anywhere saying why. Low-stock alerts never fire either, for the same reason.
+     *
+     * Every other day-one default is provisioned here — tax rules, expense categories, roles — and
+     * this belongs with them. It is set as the branch's default so the resolver takes the first
+     * branch rather than the fallback lookup. Renaming it, or adding more, is ordinary tenant
+     * configuration afterward.
+     */
+    const stockLocation = await tx.stockLocation.create({
+      data: { tenantId, branchId, name: "Main Store" },
+    });
+    await tx.branchSettings.update({
+      where: { branchId },
+      data: { defaultStockLocationId: stockLocation.id },
+    });
+
     // Expense categories are tenant-wide (not per-branch), so unlike the tax rules above these are
     // seeded once regardless of how many branches the tenant later adds.
     await tx.expenseCategory.createMany({ data: defaultExpenseCategoryRows(tenantId) });
