@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { apportion, applyRate, formatPkr, paymentStanding, roundTotal, roundHalfUp } from "@/lib/money";
+import {
+  apportion,
+  applyRate,
+  formatPkr,
+  paisaToRupees,
+  paymentStanding,
+  roundHalfUp,
+  roundTotal,
+  rupeesToPaisa,
+  sumPaisa,
+} from "@/lib/money";
 
 describe("roundHalfUp", () => {
   it("rounds .5 up, not banker's rounding", () => {
@@ -124,5 +134,78 @@ describe("paymentStanding — what the receipt stamps on a bill", () => {
   it("refuses non-integer paisa rather than guessing", () => {
     expect(() => paymentStanding(404_800.5, 0)).toThrow();
     expect(() => paymentStanding(404_800, 1.5)).toThrow();
+  });
+});
+
+describe("apportion — the invariant that must never break", () => {
+  /**
+   * Splitting a bill across tenders is where money goes missing a paisa at a time. The parts must
+   * sum to exactly the whole, for every input, or the tax apportioned across a split payment
+   * silently stops matching the tax charged.
+   *
+   * Exhaustive over a wide spread rather than a handful of hand-picked cases: the failures here
+   * are arithmetic edge cases nobody thinks to write down — a total that does not divide, a weight
+   * of zero among non-zero ones, one tender covering almost everything.
+   */
+  const TOTALS = [0, 1, 2, 3, 7, 99, 100, 101, 333, 1_000, 4_048, 100_000, 999_999, 1_234_567];
+  const WEIGHTS: number[][] = [
+    [1],
+    [1, 1],
+    [1, 2],
+    [1, 1, 1],
+    [1, 2, 3],
+    [0, 1],
+    [1, 0],
+    [0, 0, 1],
+    [999, 1],
+    [1, 999],
+    [7, 11, 13],
+    [1, 1, 1, 1, 1, 1, 1],
+    [50, 30, 20],
+    [0.5, 0.25, 0.25],
+  ];
+
+  it("always sums to the total, for every combination", () => {
+    const failures: string[] = [];
+    for (const total of TOTALS) {
+      for (const weights of WEIGHTS) {
+        const parts = apportion(total, weights);
+        const sum = parts.reduce((a, b) => a + b, 0);
+        if (sum !== total) failures.push(`total=${total} weights=[${weights}] -> [${parts}] sums to ${sum}`);
+        if (parts.some((p) => !Number.isInteger(p))) failures.push(`total=${total} weights=[${weights}] -> non-integer paisa`);
+        if (parts.some((p) => p < 0)) failures.push(`total=${total} weights=[${weights}] -> negative part`);
+        if (parts.length !== weights.length) failures.push(`total=${total} weights=[${weights}] -> wrong part count`);
+      }
+    }
+    expect(failures, failures.join("\n")).toEqual([]);
+  });
+
+  it("gives the larger share to the larger weight", () => {
+    const [small, large] = apportion(1000, [1, 9]);
+    expect(large).toBeGreaterThan(small);
+    expect(small + large).toBe(1000);
+  });
+
+  it("refuses negative weights rather than inventing a split", () => {
+    expect(() => apportion(1000, [1, -1])).toThrow();
+  });
+
+  it("keeps the whole when every weight is zero", () => {
+    // Nothing to weight by, but the money still has to go somewhere and still has to add up.
+    const parts = apportion(500, [0, 0, 0]);
+    expect(parts.reduce((a, b) => a + b, 0)).toBe(500);
+  });
+});
+
+describe("paisa conversion round-trips", () => {
+  it("survives a round trip at every scale a restaurant bill reaches", () => {
+    for (const rupees of [0, 1, 7, 60, 450, 1_400, 12_345, 999_999]) {
+      expect(paisaToRupees(rupeesToPaisa(rupees))).toBe(rupees);
+    }
+  });
+
+  it("sumPaisa refuses a non-integer rather than quietly producing a fraction", () => {
+    expect(sumPaisa([100, 200, 300])).toBe(600);
+    expect(() => sumPaisa([100, 0.5])).toThrow();
   });
 });

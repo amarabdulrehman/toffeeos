@@ -85,15 +85,35 @@ export async function recipeCostReport(tenantId: string): Promise<ItemCosting[]>
     include: { recipeLines: { include: { inventoryItem: true } } },
   });
 
-  // Batch-fetch the latest GRN per ingredient actually used in a recipe, instead of N+1 queries.
+  /**
+   * One query for every ingredient's latest costed delivery, then reduced in memory.
+   *
+   * This previously called currentUnitCostPaisa() per ingredient inside a Promise.all, described
+   * in the comment as batching. It was not: it was N queries fired at once rather than in
+   * sequence, which is faster but is still one round trip per ingredient. A tenant with a hundred
+   * ingredients in their recipes fired a hundred concurrent queries at a transaction-mode pooler
+   * with a bounded connection count, so the cost of an owner opening this report landed on every
+   * other request in flight.
+   *
+   * Ordered newest-first and taken once per item, so the first row seen for an ingredient is its
+   * most recent costed GRN — the same rule currentUnitCostPaisa applies for a single item.
+   */
   const ingredientIds = [...new Set(items.flatMap((i) => i.recipeLines.map((l) => l.inventoryItemId)))];
   const costByIngredient = new Map<string, number>();
-  await Promise.all(
-    ingredientIds.map(async (id) => {
-      const cost = await currentUnitCostPaisa(tenantId, id);
-      if (cost !== null) costByIngredient.set(id, cost);
-    })
-  );
+
+  if (ingredientIds.length > 0) {
+    const movements = await db.stockMovement.findMany({
+      where: { itemId: { in: ingredientIds }, type: "GRN", costPaisa: { not: null } },
+      orderBy: { createdAt: "desc" },
+      select: { itemId: true, costPaisa: true, quantityDelta: true },
+    });
+
+    for (const m of movements) {
+      if (costByIngredient.has(m.itemId)) continue; // newest wins; the rest are history
+      if (!m.costPaisa || m.quantityDelta === 0) continue;
+      costByIngredient.set(m.itemId, m.costPaisa / m.quantityDelta);
+    }
+  }
 
   const results: ItemCosting[] = items.map((item) => {
     if (item.recipeLines.length === 0) {

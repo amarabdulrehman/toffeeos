@@ -105,7 +105,17 @@ export function formatPkr(paisa: Paisa, opts: { showPaisa?: boolean; locale?: st
   return `Rs ${formatted}`;
 }
 
+/**
+ * Adds paisa, and refuses anything that is not paisa.
+ *
+ * The only function in this file that did not check its inputs, while applyRate, roundTotal and
+ * apportion all do — and it is the one that produces the subtotal and the tax total in the pricing
+ * engine. Every current caller passes integers, so this changes no behaviour today; it means a
+ * future caller that passes a fraction fails at the point of the mistake instead of producing a
+ * subtotal ending in .0000000004 that survives all the way to a receipt.
+ */
 export function sumPaisa(amounts: Paisa[]): Paisa {
+  for (const a of amounts) assertInt(a, "sumPaisa amount");
   return amounts.reduce((a, b) => a + b, 0);
 }
 
