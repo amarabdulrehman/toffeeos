@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest } from "@playwright/test";
-import { authFile } from "./fixtures/test-data";
+import { authFile, uniqueSuffix } from "./fixtures/test-data";
 
 /**
  * Branch isolation on HR *writes*.
@@ -67,9 +67,41 @@ test.describe("Branch isolation on HR writes", () => {
     // The owner can see every branch's staff; find one who works somewhere else.
     const owner = await playwrightRequest.newContext({ baseURL, storageState: authFile("owner") });
     const all = (await (await owner.get("/api/hr/pay-profiles")).json()) as { profiles: PayProfile[] };
-    await owner.dispose();
-    const foreign = all.profiles.find((p) => p.branchName !== me!.branchName);
-    test.skip(!foreign, "demo tenant has no staff at a second branch to test against");
+    let foreign = all.profiles.find((p) => p.branchName !== me!.branchName);
+
+    // This used to `test.skip` when it found nobody. The seed creates the second branch and never
+    // staffs it, so the condition was always true and this test — the one covering cross-branch
+    // *payroll* writes — never ran a single assertion in any run. A guard that silently excuses
+    // itself is worse than no guard: it reports green. So hire someone at the other branch instead.
+    let hiredMembershipId: string | undefined;
+    if (!foreign) {
+      const { roles, branches } = (await (await owner.get("/api/staff")).json()) as {
+        roles: { id: string; key: string }[];
+        branches: { id: string; name: string }[];
+      };
+      const otherBranch = branches.find((b) => b.name !== me!.branchName);
+      expect(otherBranch, "the demo tenant needs a second active branch for this test").toBeTruthy();
+      const role = roles.find((r) => r.key === "waiter") ?? roles[0];
+
+      const email = `e2e-crossbranch-${uniqueSuffix()}@example.com`;
+      const invite = await owner.post("/api/staff/invites", {
+        data: { email, roleId: role.id, branchId: otherBranch!.id },
+      });
+      expect(invite.ok(), await invite.text()).toBeTruthy();
+      const { token } = await invite.json();
+
+      const anon = await playwrightRequest.newContext({ baseURL });
+      const accepted = await anon.post(`/api/invites/${token}/accept`, {
+        data: { name: "E2E Cross Branch Staff", password: "CrossBranchPassw0rd!" },
+      });
+      expect(accepted.ok(), await accepted.text()).toBeTruthy();
+      await anon.dispose();
+
+      const after = (await (await owner.get("/api/hr/pay-profiles")).json()) as { profiles: PayProfile[] };
+      foreign = after.profiles.find((p) => p.branchName !== me!.branchName);
+      hiredMembershipId = foreign?.membershipId;
+    }
+    expect(foreign, "a staff member at another branch is the whole point of this test").toBeTruthy();
 
     const payProfile = await request.patch("/api/hr/pay-profiles", {
       data: { membershipId: foreign!.membershipId, payType: "MONTHLY", monthlySalaryPaisa: 100 },
@@ -87,6 +119,13 @@ test.describe("Branch isolation on HR writes", () => {
       },
     });
     expect(disburse.status(), "paying another branch's staff must be refused").toBe(403);
+
+    // Deactivate rather than delete: the membership is what order and audit history points at, and
+    // /api/staff/members has no DELETE for that reason.
+    if (hiredMembershipId) {
+      await owner.patch(`/api/staff/members/${hiredMembershipId}`, { data: { isActive: false } });
+    }
+    await owner.dispose();
   });
 
   test("a branch manager can still act on their own branch", async ({ request }) => {
