@@ -67,8 +67,24 @@ test.describe("POS payment — cash/card tax switching never overcharges", () =>
     const dialog = page.getByRole("dialog", { name: "Take payment" });
     await expect(dialog).toBeVisible({ timeout: 30_000 });
 
+    /**
+     * Wait for the figures, not for a clock.
+     *
+     * The dialog appears before it knows what to charge: it opens, then asks the server for the
+     * authoritative total, and the tax line and tendered amount do not exist until that answers.
+     * Raising the timeout on each assertion in turn — which is what the previous fix did, and it
+     * only moved the failure one line down — makes the test slower without making it certain.
+     * Waiting for the response itself is both.
+     */
+    await page
+      .waitForResponse((r) => r.url().includes("/pay-preview") && r.status() === 200, { timeout: 30_000 })
+      .catch(() => {
+        // Already answered before this listener attached — the assertions below still hold, and
+        // failing here would report a race in the test as a defect in the product.
+      });
+
     // Cash first — Punjab PRA's cash rate is 16%. 480 * 1.16 = 556.8, rounded to 557.
-    await expect(dialog.getByText(/incl\..*16%/)).toBeVisible();
+    await expect(dialog.getByText(/incl\..*16%/)).toBeVisible({ timeout: 15_000 });
     const cashAmountInput = dialog.locator('input[type="number"]').first();
     await expect(cashAmountInput).toHaveValue("557.00");
 
@@ -76,7 +92,7 @@ test.describe("POS payment — cash/card tax switching never overcharges", () =>
     await dialog.locator("button", { hasText: "Cash" }).click();
     await page.getByRole("option", { name: "Card" }).click();
 
-    await expect(dialog.getByText(/incl\..*8%/)).toBeVisible();
+    await expect(dialog.getByText(/incl\..*8%/)).toBeVisible({ timeout: 15_000 });
     // This is the exact assertion that would have caught the real bug: the input previously stayed
     // at "557.00" (the cash amount) instead of following the card rate down to "518.00".
     await expect(cashAmountInput).toHaveValue("518.00");
