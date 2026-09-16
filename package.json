@@ -23,6 +23,7 @@
     "db:backfill-finance": "tsx prisma/backfill-finance-module.ts",
     "audit:payments": "cross-env NODE_OPTIONS=--conditions=react-server tsx prisma/audit-payments.ts",
     "db:seed-demo-costs": "tsx prisma/seed-demo-costs.ts",
+    "seed:spill": "cross-env NODE_OPTIONS=--conditions=react-server tsx prisma/seed-spill.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
