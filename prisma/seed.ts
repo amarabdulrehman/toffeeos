@@ -141,8 +141,13 @@ const MENU: CategorySeed[] = [
 ];
 
 async function seedMenu(db: PrismaClient, tenantId: string, branchIds: string[]) {
-  for (const category of MENU) {
-    const cat = await db.category.create({ data: { tenantId, name: category.name } });
+  for (const [index, category] of MENU.entries()) {
+    // sortOrder matters, and leaving it at its default of 0 for every category was a real bug: the
+    // menu endpoints order on that column, so with every row tied Postgres was free to return them
+    // in whatever order suited it. The POS tabs came back insertion-ordered most of the time and
+    // then, once the table grew, stopped — a café would see its menu rearrange itself between page
+    // loads. MENU is written in the order a menu should read, so record that.
+    const cat = await db.category.create({ data: { tenantId, name: category.name, sortOrder: index } });
     for (const item of category.items) {
       const menuItem = await db.menuItem.create({
         data: {

@@ -8,13 +8,17 @@ import { defineHandler } from "@/server/handler";
 export const GET = defineHandler({ permission: "pos.access" }, async ({ session, db }) => {
   const categories = await db.category.findMany({
     where: { isActive: true },
-    orderBy: { sortOrder: "asc" },
+    // Tie-broken by name, and not for tidiness. Every seeded category carries sortOrder 0, so
+    // ordering on that column alone left Postgres free to return them in any order it liked — the
+    // POS menu tabs could come back in a different order on every load, and whichever category
+    // landed first is the one the grid opens on. A café would see its menu rearrange itself.
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     include: {
       items: {
         where: { isActive: true },
         orderBy: { name: "asc" },
         include: {
-          variants: { orderBy: { sortOrder: "asc" } },
+          variants: { orderBy: [{ sortOrder: "asc" }, { name: "asc" }] },
           modifierGroups: { include: { group: { include: { modifiers: true } } } },
           branchMenuItems: { where: { branchId: session.branchId } },
         },

@@ -7,7 +7,7 @@ import { defineHandler } from "@/server/handler";
 export const GET = defineHandler({ permission: "menu.view" }, async ({ db }) => {
   const categories = await db.category.findMany({
     where: { isActive: true },
-    orderBy: { sortOrder: "asc" },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     select: { id: true, name: true },
   });
   return { categories };

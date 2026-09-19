@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { authFile, SEED_MENU_ITEM } from "./fixtures/test-data";
+import { authFile, SEED_MENU_CATEGORY, SEED_MENU_ITEM } from "./fixtures/test-data";
 import { getAvailableTable } from "./fixtures/api";
 
 /**
@@ -46,6 +46,7 @@ test.describe("POS payment — cash/card tax switching never overcharges", () =>
     // Dine-in, pick the table, add one item.
     await page.getByRole("button", { name: "Select a table" }).click();
     await page.getByRole("dialog").getByText(table.label, { exact: true }).click();
+    await page.getByRole("button", { name: SEED_MENU_CATEGORY, exact: true }).first().click();
     await page.getByRole("button", { name: SEED_MENU_ITEM.name, exact: false }).first().click();
 
     await expect(page.getByText("Subtotal")).toBeVisible();
@@ -130,6 +131,7 @@ test.describe("POS payment — cash/card tax switching never overcharges", () =>
 
     await page.getByRole("button", { name: "Select a table" }).click();
     await page.getByRole("dialog").getByText(table.label, { exact: true }).click();
+    await page.getByRole("button", { name: SEED_MENU_CATEGORY, exact: true }).first().click();
     await page.getByRole("button", { name: SEED_MENU_ITEM.name, exact: false }).first().click();
 
     const note = `No sugar ${Math.random().toString(36).slice(2, 7)}`;

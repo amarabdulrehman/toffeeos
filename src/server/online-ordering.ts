@@ -42,13 +42,14 @@ export async function getPublicMenu(tenantId: string, branchId: string) {
   const db = tenantDb(tenantId);
   const categories = await db.category.findMany({
     where: { isActive: true },
-    orderBy: { sortOrder: "asc" },
+    // Same tie-break as the POS menu: a storefront whose sections shuffle between visits looks broken.
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     include: {
       items: {
         where: { isActive: true },
         orderBy: { name: "asc" },
         include: {
-          variants: { orderBy: { sortOrder: "asc" } },
+          variants: { orderBy: [{ sortOrder: "asc" }, { name: "asc" }] },
           modifierGroups: { include: { group: { include: { modifiers: true } } } },
           branchMenuItems: { where: { branchId } },
         },

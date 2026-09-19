@@ -7,7 +7,7 @@ import { createTable } from "@/server/tables";
 export const GET = defineHandler({ permission: "tables.view" }, async ({ session, db }) => {
   const floors = await db.floor.findMany({
     where: { branchId: session.branchId },
-    orderBy: { sortOrder: "asc" },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     include: { tables: { orderBy: { label: "asc" } } },
   });
   return { floors };

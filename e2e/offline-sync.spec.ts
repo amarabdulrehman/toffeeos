@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { authFile, SEED_MENU_ITEM_2 } from "./fixtures/test-data";
+import { authFile, SEED_MENU_CATEGORY, SEED_MENU_ITEM_2 } from "./fixtures/test-data";
 import { getAvailableTable, getOrder } from "./fixtures/api";
 
 /**
@@ -50,6 +50,7 @@ test("an order punched and sent to kitchen while offline queues locally, then sy
   // Select the table and add an item while genuinely online — this is also what populates the
   // tables cache the fix above relies on, matching how a real shift actually starts.
   await selectTable(page, table.label);
+  await page.getByRole("button", { name: SEED_MENU_CATEGORY, exact: true }).first().click();
   await page.getByRole("button", { name: SEED_MENU_ITEM_2.name, exact: false }).first().click();
   await expect(page.getByText("Subtotal")).toBeVisible();
 
@@ -97,6 +98,7 @@ test("paying an order while offline syncs with the exact charged amount, no drif
   // Create and send the order online first so its total is known, then go offline only for the
   // payment step itself.
   await selectTable(page, table.label);
+  await page.getByRole("button", { name: SEED_MENU_CATEGORY, exact: true }).first().click();
   await page.getByRole("button", { name: SEED_MENU_ITEM_2.name, exact: false }).first().click();
 
   const [sendResponse] = await Promise.all([
@@ -146,6 +148,7 @@ test("adding items to an already-sent order while offline fails softly, no crash
   await expect(page.getByText("Online — all orders synced")).toBeVisible({ timeout: 15_000 });
 
   await selectTable(page, table.label);
+  await page.getByRole("button", { name: SEED_MENU_CATEGORY, exact: true }).first().click();
   await page.getByRole("button", { name: SEED_MENU_ITEM_2.name, exact: false }).first().click();
   // Wait for the actual send-to-kitchen response, not just "all orders synced" — that text can
   // already be true before this specific request even lands, which raced the table's status
@@ -157,8 +160,26 @@ test("adding items to an already-sent order while offline fails softly, no crash
   ]);
 
   // Resume the order we just sent by picking its table again (also while online, caching it).
+  //
+  // Confirm the table actually reads as occupied first. selectTable already waits for the picker's
+  // own /api/tables response, but under a full-suite run that can resolve against an earlier
+  // in-flight refresh, and then the dialog clicks a table it still believes is AVAILABLE — which
+  // starts a fresh order instead of resuming, and surfaces here as "Add items" never appearing.
+  // Waiting on committed server state first means any refresh the dialog makes returns the truth.
+  await expect
+    .poll(
+      async () => {
+        const { floors } = await (await request.get("/api/tables")).json();
+        return floors
+          .flatMap((f: { tables: { id: string; status: string }[] }) => f.tables)
+          .find((t: { id: string }) => t.id === table.id)?.status;
+      },
+      { timeout: 20_000 }
+    )
+    .not.toBe("AVAILABLE");
+
   await selectTable(page, table.label);
-  await expect(page.getByText("Add items")).toBeVisible();
+  await expect(page.getByText("Add items")).toBeVisible({ timeout: 15_000 });
 
   await page.context().setOffline(true);
   await expect(page.getByText("You're offline")).toBeVisible();
@@ -170,6 +191,7 @@ test("adding items to an already-sent order while offline fails softly, no crash
   // documented, deliberate limitation (addLinesToOrder isn't one of the offline queue's three
   // action types) only bites on submit. This must degrade to a clear message, never a silent
   // failure or a crash.
+  await page.getByRole("button", { name: SEED_MENU_CATEGORY, exact: true }).first().click();
   await page.getByRole("button", { name: SEED_MENU_ITEM_2.name, exact: false }).first().click();
   await page.getByRole("button", { name: "Send to Kitchen" }).click();
   await expect(page.getByText(/needs a connection/i)).toBeVisible();

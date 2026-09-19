@@ -44,7 +44,7 @@ export async function listVariants(tenantId: string, menuItemId: string): Promis
   const item = await requireMenuItem(tenantId, menuItemId);
   const variants = await tenantDb(tenantId).itemVariant.findMany({
     where: { menuItemId },
-    orderBy: { sortOrder: "asc" },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
   return variants.map((v) => ({
     id: v.id,
@@ -152,7 +152,9 @@ export async function removeVariant(tenantId: string, variantId: string): Promis
   if (variant.isDefault) {
     const remaining = await db.itemVariant.findMany({
       where: { menuItemId: variant.menuItemId },
-      orderBy: { sortOrder: "asc" },
+      // Tie-broken, because the first row here becomes the new default size. An ambiguous order
+      // would make which size that is depend on the query plan.
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
     if (remaining.length > 0) {
       await db.itemVariant.update({ where: { id: remaining[0].id }, data: { isDefault: true } });
@@ -176,7 +178,7 @@ export async function listModifierGroups(tenantId: string): Promise<ModifierGrou
   const db = tenantDb(tenantId);
   const groups = await db.modifierGroup.findMany({
     include: {
-      modifiers: { orderBy: { sortOrder: "asc" } },
+      modifiers: { orderBy: [{ sortOrder: "asc" }, { name: "asc" }] },
       _count: { select: { menuItems: true } },
     },
     orderBy: { name: "asc" },

@@ -53,6 +53,17 @@ export function authFile(user: UserKey): string {
 }
 
 /** A menu item that's part of the base seed and unlikely to ever be renamed/removed casually. */
+/**
+ * The category both of these live in.
+ *
+ * Worth naming rather than assuming. The POS grid shows one category at a time and opens on the
+ * first one, and specs used to tap a seeded item straight after loading /pos — which only worked
+ * while that first category happened to be this one. It stopped being reliable the moment the
+ * menu grew, because the endpoint ordered on a sortOrder every seeded category shared. The
+ * ordering is deterministic now, but a spec that states which tab it wants is correct regardless
+ * of what the café's menu order turns out to be.
+ */
+export const SEED_MENU_CATEGORY = "Starters";
 export const SEED_MENU_ITEM = { name: "Beef Chapli Kebab", pricePaisa: 48_000 };
 export const SEED_MENU_ITEM_2 = { name: "Dahi Bhalla", pricePaisa: 25_000 };
 

@@ -31,7 +31,7 @@ goes down completely rather than partially.
 While you are there: the password currently in use has been typed into a chat window and a shell
 history, so it should be rotated regardless.
 
-### Three migrations are pending on production
+### Three migrations are pending on production — and the next push now applies them
 
 ```
 20260914211549_index_unindexed_foreign_keys
@@ -39,15 +39,35 @@ history, so it should be rotated regardless.
 20260919183131_add_refunds
 ```
 
-Two consequences, and the second is the dangerous one:
+This section said the opposite a week ago, and the correction matters more than the original
+warning did. The build script now reads:
 
-- The discount ceiling and refunds are built and tested but **dormant**. They do not exist for a
-  client until the migration runs.
-- **The next push to `main` will break production again.** Production is currently serving an older
-  build that matches the old schema. The code on `main` expects the new columns. A push rebuilds
-  from `main`, and the site returns to the state it was in tonight.
+```
+prisma generate && prisma migrate deploy && next build
+```
 
-So: apply the migrations before the next deploy, not after.
+Vercel already holds `DIRECT_URL`, so the deployment applies its own migrations. That inverts the
+risk. Previously, pushing code that expected columns the database did not have broke signup and
+every order path — which is exactly what the production incident was. Now the schema moves with the
+code that needs it, in the same step, and cannot be forgotten.
+
+The failure mode is also the right way round: if a migration fails, the build fails, and Vercel
+keeps serving the previous deployment. A broken migration costs you a red build, not a dead till.
+
+So the practical position today:
+
+- The discount ceiling and refunds are built and tested but **dormant** on production. They do not
+  exist for a client until the migration runs.
+- **The next push to `main` is what runs it.** Production is serving a build from before all of
+  this; pushing rebuilds from `main`, applies the three migrations, and brings the two back into
+  step. Pushing is the fix, not the hazard.
+
+Nothing here has been pushed. Verify the build once on Vercel rather than assuming it, and watch
+the deployment log for `prisma migrate deploy` reporting three applied migrations.
+
+If you ever need to apply them by hand instead — a rollback, or a database the build cannot reach —
+use the **session pooler** on port 5432. The direct host is IPv6-only now and will not resolve from
+most connections; the transaction pooler on 6543 cannot hold the session lock a migration needs.
 
 ```powershell
 $env:DIRECT_URL = "postgresql://postgres.<project-ref>:<password>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
@@ -55,9 +75,6 @@ $env:DATABASE_URL = $env:DIRECT_URL
 npx prisma migrate status   # must say 3 pending
 npx prisma migrate deploy
 ```
-
-Use the **session pooler** on port 5432. The direct host is IPv6-only now and will not resolve from
-most connections; the transaction pooler on 6543 cannot hold the session a migration lock needs.
 
 ---
 
@@ -97,6 +114,22 @@ It defaults to 100%, which means no limit — deliberately, so that deploying it
 an existing branch. But a café left at the default has no cap at all, and the roles screen implies
 otherwise. Set it during onboarding, per branch.
 
+### The demo tenant's menu has test items on it
+
+The POS grid for the demo tenant carries around a dozen categories named `E2E ...`, each holding
+one probe item. They come from the end-to-end tests: any spec that needs an add-on group has to
+build its own item, because attaching one to a seeded item would turn every other spec's single tap
+into a dialog.
+
+The teardown clears these, but only the ones nothing was ever ordered from. `OrderLine.menuItemId`
+is NOT NULL, so an item a test actually sold cannot be deleted without deleting the order too, and
+deleting order history to tidy up a menu is the wrong trade to make automatically.
+
+It is cosmetic, and it is also the first thing a café sees if you demo on that tenant. Two ways
+out: clear them by hand before a demo, or give those specs a single fixed probe item each instead
+of a freshly suffixed one per run, which stops the count growing at all. The second is the real
+fix and is maybe an hour.
+
 ---
 
 ## 3. What a café will run into in the first month
@@ -121,7 +154,12 @@ owner can toggle twenty-nine switches that change no behaviour — "Reprint KOT"
 
 I went through all twenty-nine. Every one corresponds to a feature that was scoped and never built:
 there is no line-void, no no-sale drawer open, no tax-exempt flag, no table merge, no branch price
-override, no purchase orders. So the risk is an owner believing a capability is controlled when the
+override, no purchase orders.
+
+Worth singling out one, because a café is likely to ask and the schema would suggest otherwise:
+**allergens are not tracked.** `MenuItem.allergens` exists, and both menu endpoints return it, but
+nothing writes it and no screen shows it. It is always empty. Do not tell a client the system
+records allergens. So the risk is an owner believing a capability is controlled when the
 capability does not exist — confusing, not dangerous. Nothing on that list leaves a working feature
 ungoverned.
 
@@ -138,6 +176,18 @@ itself on the unenforced list.
 Two came off that list this week: the discount ceiling and refunds both gate something real now. A
 test fails if the number grows again, so the decision gets made when a permission is written rather
 than when a client finds it.
+
+### Refund figures: two of the three fixes are untested
+
+Adding refunds left three screens still counting money that had been handed back — the P&L, staff
+performance, and customer lifetime spend. All three are fixed. Only the P&L is covered end to end
+and verified by breaking it again; the other two are one-line subtractions on the same pattern,
+reasoned but not separately tested.
+
+One more is a decision rather than a defect: the daily summary message quotes the day's **gross**
+takings, so a day with refunds in it reads high. The Sales tab shows both gross and net. Whether
+that message should say net is a call about what an owner wants to read at closing time, so it has
+been left as it was rather than changed quietly.
 
 ### Menu setup imports, but does not edit
 
