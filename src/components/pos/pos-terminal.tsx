@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ProductGrid } from "./product-grid";
 import { CartPanel } from "./cart-panel";
 import { OptionsDialog } from "./options-dialog";
+import { RefundDialog } from "./refund-dialog";
 import { PaymentDialog } from "./payment-dialog";
 import { ReceiptDialog } from "./receipt-dialog";
 import { OrderQueuePanel } from "./order-queue-panel";
@@ -51,6 +52,7 @@ export function PosTerminal({
   canVoid,
   canCancel,
   canReprintReceipt,
+  canRefund,
 }: {
   tenantId: string;
   branchId: string;
@@ -65,6 +67,7 @@ export function PosTerminal({
   canVoid: boolean;
   canCancel: boolean;
   canReprintReceipt: boolean;
+  canRefund: boolean;
 }) {
   const sync = useSync();
   const [categories, setCategories] = useState<MenuCategoryDto[]>([]);
@@ -80,6 +83,7 @@ export function PosTerminal({
   const [addingItemsToOrder, setAddingItemsToOrder] = useState(false);
   const [totals, setTotals] = useState<PreviewTotals | null>(null);
   const [optionsItem, setOptionsItem] = useState<MenuItemDto | null>(null);
+  const [refundingOrder, setRefundingOrder] = useState<OrderDto | null>(null);
   const [sending, setSending] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [queue, setQueue] = useState<OrderDto[]>([]);
@@ -593,6 +597,8 @@ export function PosTerminal({
             onCancel={(o) => setCancellingOrder(o)}
             canCancel={canCancel}
             onReprintReceipt={canReprintReceipt ? (o) => openReceiptFor(o.id) : undefined}
+            canRefund={canRefund}
+            onRefund={(o) => setRefundingOrder(o)}
             onClose={() => setShowQueue(false)}
           />
         ) : (
@@ -634,6 +640,15 @@ export function PosTerminal({
           onResumeOrder={(t, order) => {
             setResumed({ table: t, order });
             setTablesOpen(false);
+          }}
+        />
+
+        <RefundDialog
+          order={refundingOrder}
+          onClose={() => setRefundingOrder(null)}
+          onRefunded={() => {
+            // Reload the queue so the card reflects the refund without a manual refresh.
+            void loadQueue();
           }}
         />
 

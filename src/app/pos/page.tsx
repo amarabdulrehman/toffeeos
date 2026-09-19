@@ -66,6 +66,7 @@ export default async function PosPage() {
       canTakePayment={user.permissions.includes("pos.payment.take")}
       canApplyDiscount={user.permissions.includes("pos.discount.applyOrder")}
       canVoid={user.permissions.includes("pos.order.void")}
+      canRefund={user.permissions.includes("pos.payment.refund")}
       canCancel={user.permissions.includes("orders.cancel")}
       canReprintReceipt={user.permissions.includes("pos.receipt.reprint")}
     />

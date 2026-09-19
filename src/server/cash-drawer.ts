@@ -27,6 +27,8 @@ export interface CashDrawerDayView {
   openedAt: string | null;
   cashSalesPaisa: number;
   cashExpensesPaisa: number;
+  /** Cash handed back to customers today. Out of the drawer, exactly like a cash expense. */
+  cashRefundsPaisa: number;
   /** opening + cash in - cash out. Null until the day is opened, since there is no float to add to. */
   expectedClosingPaisa: number | null;
   closingCountedPaisa: number | null;
@@ -63,7 +65,7 @@ async function cashMovement(tenantId: string, branchId: string, day: string, tim
   const db = tenantDb(tenantId);
   const { from, to } = businessDayRange(day, timezone);
 
-  const [payments, expenses] = await Promise.all([
+  const [payments, expenses, refunds] = await Promise.all([
     // Joined through the order so a cancelled order's takings don't count as cash on hand. Dated by
     // paidAt (when the money arrived), never createdAt, matching paidOrdersWhere in reports.ts.
     db.payment.findMany({
@@ -78,11 +80,20 @@ async function cashMovement(tenantId: string, branchId: string, day: string, tim
       where: { branchId, method: "CASH", status: "APPROVED", spentAt: { gte: from, lte: to } },
       select: { amountPaisa: true },
     }),
+    // Cash handed back comes out of the drawer exactly like a cash expense does. Dated by when the
+    // refund happened, not by when the order was paid: refunding yesterday's lunch takes money out
+    // of today's till, and a drawer that counted it against yesterday would show short today and
+    // over yesterday, with nothing to explain either.
+    db.refund.findMany({
+      where: { method: "CASH", createdAt: { gte: from, lte: to }, order: { branchId } },
+      select: { amountPaisa: true },
+    }),
   ]);
 
   return {
     cashSalesPaisa: payments.reduce((a, p) => a + p.amountPaisa, 0),
     cashExpensesPaisa: expenses.reduce((a, e) => a + e.amountPaisa, 0),
+    cashRefundsPaisa: refunds.reduce((a, r) => a + r.amountPaisa, 0),
   };
 }
 
@@ -104,7 +115,9 @@ export async function getDrawerDay(tenantId: string, branchId: string, day?: str
 
   const names = await resolveNames(tenantId, [row?.openedById, row?.closedById, row?.correctedById]);
   const expectedClosingPaisa =
-    row == null ? null : row.openingBalancePaisa + movement.cashSalesPaisa - movement.cashExpensesPaisa;
+    row == null
+      ? null
+      : row.openingBalancePaisa + movement.cashSalesPaisa - movement.cashExpensesPaisa - movement.cashRefundsPaisa;
 
   return {
     id: row?.id ?? null,

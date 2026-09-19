@@ -124,6 +124,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "OrderLineModifier",
   "OrderDiscount",
   "Payment",
+  "Refund",
   "OrderEvent",
   "Subscription",
   "AuditLog",

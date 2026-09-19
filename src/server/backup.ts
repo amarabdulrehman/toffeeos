@@ -67,6 +67,7 @@ const ALL_MODELS = [
   "WhatsAppTemplate",
   "WhatsAppMessageLog",
   "Order",
+  "Refund",
   "SyncActionLog",
   "SyncConflict",
   "OrderLine",

@@ -25,6 +25,7 @@ interface DrawerDay {
   openedAt: string | null;
   cashSalesPaisa: number;
   cashExpensesPaisa: number;
+  cashRefundsPaisa: number;
   expectedClosingPaisa: number | null;
   closingCountedPaisa: number | null;
   closedByName: string | null;
@@ -234,6 +235,14 @@ export function CashDrawerView({ canClose, canCorrect }: { canClose: boolean; ca
               label="Cash expenses"
               value={today.cashExpensesPaisa > 0 ? `-${formatPkr(today.cashExpensesPaisa, { showPaisa: true })}` : "—"}
               hint="paid from the till"
+            />
+            {/* Shown as its own figure rather than folded into expenses: a manager counting a short
+                drawer needs to see refunds separately, because that is the number they can go and
+                check against the orders. */}
+            <Figure
+              label="Cash refunds"
+              value={today.cashRefundsPaisa > 0 ? `-${formatPkr(today.cashRefundsPaisa, { showPaisa: true })}` : "—"}
+              hint="given back to customers"
             />
             <Figure
               label="Expected in drawer"

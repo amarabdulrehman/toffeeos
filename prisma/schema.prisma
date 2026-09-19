@@ -70,6 +70,7 @@ model Tenant {
   auditLogs            AuditLog[]
   orders               Order[]
   inventoryItems       InventoryItem[]
+  refunds Refund[]
 }
 
 enum SubscriptionStatus {
@@ -396,6 +397,7 @@ model User {
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
   @@index([tenantId])
+  refundsIssued Refund[] @relation("RefundedBy")
 }
 
 /// Roles are per-tenant so owners can define their own; the 7 standard roles from the brief
@@ -1006,6 +1008,11 @@ model Order {
   roundingAdjustmentPaisa Int @default(0)
   totalPaisa              Int @default(0)
   paidPaisa               Int @default(0)
+  /// Money handed back to the customer against this order. Kept alongside paidPaisa rather than
+  /// deducted from it: what was taken and what was returned are different facts, and a report that
+  /// cannot tell "sold Rs 900" from "sold Rs 1,000 and refunded Rs 100" cannot explain itself to
+  /// an owner. Net revenue is totalPaisa - refundedPaisa.
+  refundedPaisa           Int @default(0)
 
   fiscalInvoiceNumber String?
   fiscalPushedAt      DateTime?
@@ -1029,6 +1036,7 @@ model Order {
   lines     OrderLine[]
   discounts OrderDiscount[]
   payments  Payment[]
+  refunds   Refund[]
   events    OrderEvent[]
 
   @@unique([tenantId, idempotencyKey])
@@ -1161,6 +1169,33 @@ model Payment {
 
   @@index([orderId])
   @@index([tenantId])
+}
+
+/// Money returned to a customer. Append-only: a refund is never edited or deleted, because the
+/// cash drawer, the day's takings and the customer's receipt all have to agree afterwards about
+/// what happened and when.
+///
+/// Deliberately NOT modelled as a negative Payment. Payment rows feed the cash drawer, the
+/// transactions report and paymentStanding, all of which assume a positive amount; a negative row
+/// would quietly change the meaning of every sum over that table. A separate model makes each
+/// place that cares subtract refunds explicitly, which is the point.
+model Refund {
+  id          String        @id @default(uuid())
+  tenant      Tenant        @relation(fields: [tenantId], references: [id])
+  tenantId    String
+  order       Order         @relation(fields: [orderId], references: [id])
+  orderId     String
+  amountPaisa Int
+  /// How the money went back. Usually the way it came in, but not always — a card sale refunded in
+  /// cash is a real thing, and the drawer needs to know which it was.
+  method      PaymentMethod
+  reason      String
+  refundedBy  User?         @relation("RefundedBy", fields: [refundedById], references: [id])
+  refundedById String?
+  createdAt   DateTime      @default(now())
+
+  @@index([orderId])
+  @@index([tenantId, createdAt])
 }
 
 model OrderEvent {

@@ -134,7 +134,7 @@ export async function salesReport(tenantId: string, branchIds: string[], range: 
     }),
     db.order.aggregate({
       where: { branchId: { in: branchIds }, status: "PAID", paidAt: { gte: previous.from, lt: previous.to } },
-      _sum: { totalPaisa: true },
+      _sum: { totalPaisa: true, refundedPaisa: true },
       _count: { _all: true },
     }),
     db.menuItem.findMany({ select: { id: true, categoryId: true } }),
@@ -144,23 +144,38 @@ export async function salesReport(tenantId: string, branchIds: string[], range: 
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
 
   let totalPaisa = 0;
-  const byDay = new Map<string, { orders: number; totalPaisa: number }>();
-  const byBranch = new Map<string, { branchName: string; orders: number; totalPaisa: number }>();
+  /**
+   * Refunds are netted against the order they belong to, so they land on the day of the *sale*
+   * rather than the day the money went back. That is what "net sales for a period" normally means,
+   * and it is the only way a day's figure equals what that day's trading was actually worth.
+   *
+   * It does mean refunding last Tuesday's lunch restates last Tuesday. The cash drawer deliberately
+   * does the opposite — it dates a refund by when the cash left the till, because that is when the
+   * drawer was actually lighter. Both are right for their own question, and they will disagree on
+   * any day a refund crosses a date boundary; that is expected, not a bug.
+   */
+  let refundedPaisa = 0;
+  const byDay = new Map<string, { orders: number; totalPaisa: number; refundedPaisa: number }>();
+  const byBranch = new Map<string, { branchName: string; orders: number; totalPaisa: number; refundedPaisa: number }>();
   const byCategory = new Map<string, { orders: number; revenuePaisa: number }>();
   const byPaymentMethod = new Map<string, number>();
 
   for (const o of orders) {
     totalPaisa += o.totalPaisa;
+    refundedPaisa += o.refundedPaisa;
 
     const day = (o.paidAt ?? o.createdAt).toISOString().slice(0, 10);
-    const dayEntry = byDay.get(day) ?? { orders: 0, totalPaisa: 0 };
+    const dayEntry = byDay.get(day) ?? { orders: 0, totalPaisa: 0, refundedPaisa: 0 };
     dayEntry.orders += 1;
     dayEntry.totalPaisa += o.totalPaisa;
+    dayEntry.refundedPaisa += o.refundedPaisa;
     byDay.set(day, dayEntry);
 
-    const branchEntry = byBranch.get(o.branchId) ?? { branchName: o.branch.name, orders: 0, totalPaisa: 0 };
+    const branchEntry =
+      byBranch.get(o.branchId) ?? { branchName: o.branch.name, orders: 0, totalPaisa: 0, refundedPaisa: 0 };
     branchEntry.orders += 1;
     branchEntry.totalPaisa += o.totalPaisa;
+    branchEntry.refundedPaisa += o.refundedPaisa;
     byBranch.set(o.branchId, branchEntry);
 
     for (const line of o.lines) {
@@ -177,19 +192,27 @@ export async function salesReport(tenantId: string, branchIds: string[], range: 
     }
   }
 
-  const prevTotalPaisa = prevAgg._sum.totalPaisa ?? 0;
-  const changePct = prevTotalPaisa > 0 ? ((totalPaisa - prevTotalPaisa) / prevTotalPaisa) * 100 : null;
+  // Net against net. Comparing this period's takings after refunds to last period's before them
+  // would report growth that is only a change in how much was given back.
+  const netPaisa = totalPaisa - refundedPaisa;
+  const prevNetPaisa = (prevAgg._sum.totalPaisa ?? 0) - (prevAgg._sum.refundedPaisa ?? 0);
+  const changePct = prevNetPaisa > 0 ? ((netPaisa - prevNetPaisa) / prevNetPaisa) * 100 : null;
 
   return {
     orderCount: orders.length,
     totalPaisa,
+    refundedPaisa,
+    /** What the business actually kept: gross takings less everything handed back. */
+    netPaisa,
     byDay: [...byDay.entries()].map(([day, v]) => ({ day, ...v })).sort((a, b) => a.day.localeCompare(b.day)),
     byBranch: [...byBranch.entries()].map(([branchId, v]) => ({ branchId, ...v })),
     byCategory: [...byCategory.entries()]
       .map(([category, v]) => ({ category, ...v }))
       .sort((a, b) => b.revenuePaisa - a.revenuePaisa),
     byPaymentMethod: [...byPaymentMethod.entries()].map(([method, amountPaisa]) => ({ method, amountPaisa })),
-    previousPeriod: { orderCount: prevAgg._count._all, totalPaisa: prevTotalPaisa, changePct },
+    // Reported as the net figure, matching changePct — two numbers on the same card that were
+    // measured differently is how a comparison starts lying.
+    previousPeriod: { orderCount: prevAgg._count._all, totalPaisa: prevNetPaisa, changePct },
   };
 }
 

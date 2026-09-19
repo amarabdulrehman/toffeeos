@@ -22,6 +22,8 @@ export function OrderQueuePanel({
   onCancel,
   canCancel,
   onReprintReceipt,
+  canRefund,
+  onRefund,
   onClose,
 }: {
   orders: OrderDto[];
@@ -38,6 +40,9 @@ export function OrderQueuePanel({
    * take-payment permission, since re-printing an already-paid order's receipt is its own
    * auditable action, not just a side effect of paying. */
   onReprintReceipt?: (order: OrderDto) => void;
+  /** pos.payment.refund. Absent for a cashier whose role does not grant it. */
+  canRefund?: boolean;
+  onRefund?: (order: OrderDto) => void;
   onClose: () => void;
 }) {
   return (
@@ -94,12 +99,21 @@ export function OrderQueuePanel({
                 )}
               </div>
             )}
-            {o.status === "PAID" && onReprintReceipt && (
-              <div className="mt-3">
-                <Button variant="outline" className="w-full" onClick={() => onReprintReceipt(o)}>
-                  <Printer className="size-4" />
-                  Reprint receipt
-                </Button>
+            {o.status === "PAID" && (
+              <div className="mt-3 flex gap-2">
+                {onReprintReceipt && (
+                  <Button variant="outline" className="flex-1" onClick={() => onReprintReceipt(o)}>
+                    <Printer className="size-4" />
+                    Reprint receipt
+                  </Button>
+                )}
+                {/* Only shown to staff whose role grants it. Paid is the only status a refund makes
+                    sense on: an unpaid order is corrected by voiding, which is different money. */}
+                {canRefund && onRefund && (
+                  <Button variant="outline" className="text-destructive" onClick={() => onRefund(o)}>
+                    Refund
+                  </Button>
+                )}
               </div>
             )}
           </div>

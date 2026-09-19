@@ -22,6 +22,9 @@
 export const TENANT_OWNED_TABLES = [
   "OrderEvent",
   "Payment",
+  // Children of Order, so before it and after nothing. Deleting a tenant with refunds on record
+  // would otherwise fail on the foreign key, or leave rows pointing at an order that is gone.
+  "Refund",
   "OrderDiscount",
   "OrderLineModifier",
   "OrderLine",
