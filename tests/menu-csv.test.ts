@@ -174,6 +174,24 @@ A,Two,,1,299`);
     expect(errors).toHaveLength(1);
   });
 
+  it("refuses a file too large to import in one request", () => {
+    // Each item and each of its sizes is a separate write, so a few hundred items is already a few
+    // hundred round trips. Past that the request is killed mid-write — recoverable, since re-running
+    // skips what landed, but "it timed out, and it did work, run it again" is a terrible thing to
+    // have to explain. Refusing up front with a real number is kinder.
+    const rows = Array.from({ length: 401 }, (_, i) => `Cat,Item ${i},,100,`);
+    const { errors } = parseMenuCsv([header, ...rows].join("\n"));
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toMatch(/more than one import can create/i);
+  });
+
+  it("allows a menu right up to the limit", () => {
+    const rows = Array.from({ length: 400 }, (_, i) => `Cat,Item ${i},,100,`);
+    const { errors, items } = parseMenuCsv([header, ...rows].join("\n"));
+    expect(errors).toEqual([]);
+    expect(items).toHaveLength(400);
+  });
+
   it("ignores blank lines", () => {
     const { items, errors } = parseMenuCsv(`${header}\n\nFries,Plain,,549,\n\n`);
     expect(errors).toEqual([]);

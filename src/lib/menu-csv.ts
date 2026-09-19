@@ -54,6 +54,16 @@ const MAX_NAME = 120;
 const MAX_DESCRIPTION = 500;
 /** Rs 100,000 a plate. Anything above this is a typo — a missing decimal, or paisa entered as rupees. */
 const MAX_PRICE_RUPEES = 100_000;
+/**
+ * Most items one import may create.
+ *
+ * Not an arbitrary tidiness limit — the import writes each item and each of its sizes as its own
+ * round trip, and a serverless request has a wall clock. Somewhere past a few hundred items the
+ * request is killed mid-write, and while re-running finishes the job, "it timed out but it did work,
+ * run it again" is a terrible thing to have to explain. Refusing up front with a real number is
+ * kinder. A café menu is nowhere near this; a supplier catalogue pasted in by mistake is.
+ */
+const MAX_ITEMS = 400;
 
 /**
  * Splits CSV text into rows of fields, handling the three things spreadsheets actually do:
@@ -257,5 +267,15 @@ export function parseMenuCsv(text: string): ParsedMenu {
     if (!existing.description && description) existing.description = description;
   }
 
-  return { items: [...byKey.values()], errors, categories };
+  const items = [...byKey.values()];
+  if (items.length > MAX_ITEMS) {
+    errors.push({
+      line: 1,
+      message:
+        `This file describes ${items.length} items, which is more than one import can create ` +
+        `(${MAX_ITEMS}). Split it into a few smaller files and import them one after another.`,
+    });
+  }
+
+  return { items, errors, categories };
 }

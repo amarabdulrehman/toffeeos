@@ -2,6 +2,11 @@ import { z } from "zod";
 import { defineHandler } from "@/server/handler";
 import { applyMenuImport, previewMenuImport } from "@/server/menu-import";
 
+// Each item and each of its sizes is its own write, so a full menu is a few hundred round trips.
+// Comfortably inside a minute at any realistic size, but nowhere near the default ten seconds.
+// The parser refuses anything large enough to threaten even this.
+export const maxDuration = 60;
+
 // Roughly a 5,000-line menu. Large enough for any real café, small enough that a pasted novel is
 // refused before it reaches the parser.
 const MAX_CSV_BYTES = 512 * 1024;

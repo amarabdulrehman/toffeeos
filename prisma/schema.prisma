@@ -1196,6 +1196,9 @@ model Refund {
 
   @@index([orderId])
   @@index([tenantId, createdAt])
+  /// Who issued it. An unindexed foreign key makes every delete on the parent User scan this table,
+  /// and "what has this cashier refunded" is a question a suspicious owner will actually ask.
+  @@index([refundedById])
 }
 
 model OrderEvent {
