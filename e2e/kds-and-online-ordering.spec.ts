@@ -43,6 +43,59 @@ test.describe("KDS", () => {
       return orders.find((o: { id: string }) => o.id === order.id)?.status;
     }).toBe("READY");
   });
+
+  test("the board shows what was added to a line and what was written on it", async ({ page, baseURL }) => {
+    /**
+     * /api/kds/orders has always included `lines: { include: { modifiers: true } }`, and the board
+     * rendered the line name and nothing else. So a latte ordered with an extra shot reached the
+     * barista as "1x Latte" and they made a plain one — charged for, not delivered, and no error
+     * anywhere. The line's note ("no sugar") was equally invisible.
+     *
+     * Asserted on screen rather than on the endpoint, because the endpoint was already right. The
+     * whole defect lived in the rendering.
+     */
+    const ownerCtx = await playwrightRequest.newContext({ baseURL, storageState: authFile("owner") });
+    const suffix = Math.random().toString(36).slice(2, 8);
+
+    // Its own item: attaching a modifier group to a seeded one turns every other spec's single tap
+    // into a dialog.
+    const categoryId = (await (await ownerCtx.post("/api/menu", { data: { name: `E2E KDS Extras ${suffix}` } })).json()).id;
+    const itemName = `KDS Addon Probe ${suffix}`;
+    const itemBody = await (
+      await ownerCtx.post("/api/menu-items", { data: { categoryId, name: itemName, basePricePaisa: 50_000 } })
+    ).json();
+    const menuItemId = itemBody.item?.id ?? itemBody.id;
+    const groupId = (
+      await (await ownerCtx.post("/api/modifier-groups", { data: { name: `KDS Extras ${suffix}`, minSelect: 0, maxSelect: 1 } })).json()
+    ).group.id;
+    const modifierId = (
+      await (await ownerCtx.post(`/api/modifier-groups/${groupId}/modifiers`, {
+        data: { name: "Extra Shot", priceDeltaPaisa: 10_000 },
+      })).json()
+    ).modifier.id;
+    await ownerCtx.put(`/api/menu-items/${menuItemId}/modifier-groups`, { data: { groupIds: [groupId] } });
+
+    const createRes = await ownerCtx.post("/api/orders", {
+      data: {
+        type: "TAKEAWAY",
+        idempotencyKey: `kds-addon-e2e-${suffix}`,
+        lines: [{ menuItemId, quantity: 1, modifierIds: [modifierId], notes: "No sugar" }],
+      },
+    });
+    expect(createRes.ok(), await createRes.text()).toBeTruthy();
+    const { order } = await createRes.json();
+    const sent = await ownerCtx.post(`/api/orders/${order.id}/send-to-kitchen`, { data: {} });
+    expect(sent.ok(), await sent.text()).toBeTruthy();
+    await ownerCtx.dispose();
+
+    await page.goto("/kds");
+    await expect(page.getByText(`#${order.orderNumber}`)).toBeVisible({ timeout: 35_000 });
+    const card = page.locator("div.rounded-2xl", { has: page.getByText(`#${order.orderNumber}`, { exact: true }) });
+
+    await expect(card.getByText(itemName)).toBeVisible();
+    await expect(card.getByText("+ Extra Shot"), "the add-on changes what the kitchen makes").toBeVisible();
+    await expect(card.getByText("— No sugar"), "and so does the note").toBeVisible();
+  });
 });
 
 test.describe("Online ordering", () => {

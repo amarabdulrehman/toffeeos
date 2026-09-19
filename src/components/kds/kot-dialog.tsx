@@ -11,7 +11,13 @@ interface TicketOrder {
   source: "POS" | "ONLINE" | "QR";
   sentToKitchenAt: string | null;
   table: { label: string } | null;
-  lines: { id: string; nameSnapshot: string; quantity: number; notes: string | null }[];
+  lines: {
+    id: string;
+    nameSnapshot: string;
+    quantity: number;
+    notes: string | null;
+    modifiers?: { id: string; nameSnapshot: string }[];
+  }[];
 }
 
 export function KotDialog({

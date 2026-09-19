@@ -94,6 +94,11 @@ export async function queueCreateOrder(args: {
     lines: args.lines.map((l) => ({
       menuItemId: l.menuItemId,
       variantId: l.variantId,
+      // Add-ons travel with the line or the sync reprices it without them. The cashier charged for
+      // the extra shot from the local total, and the server would recompute a cheaper line on
+      // replay — a customer undercharged, a kitchen ticket missing what they asked for, and no
+      // error anywhere to say so. CreateOrderPayload has always had the field; nothing filled it.
+      modifierIds: l.modifierIds,
       quantity: l.quantity,
       discount: l.discount,
     })),

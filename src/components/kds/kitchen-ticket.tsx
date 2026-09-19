@@ -3,6 +3,8 @@ interface TicketLine {
   nameSnapshot: string;
   quantity: number;
   notes: string | null;
+  /** What was added to this line. The kitchen has to see these or it makes the wrong thing. */
+  modifiers?: { id: string; nameSnapshot: string }[];
 }
 
 interface TicketOrder {
@@ -42,6 +44,14 @@ export function KitchenTicket({ order, branchName }: { order: TicketOrder; branc
             <div className="font-bold">
               {l.quantity}× {l.nameSnapshot}
             </div>
+            {/* Add-ons before the note: they change what is made, where a note usually qualifies
+                it. Both were being sent to this component and only the note was ever printed, so a
+                latte ordered with an extra shot reached the barista as a plain latte. */}
+            {l.modifiers?.map((m) => (
+              <div key={m.id} className="pl-4 text-sm font-bold">
+                + {m.nameSnapshot}
+              </div>
+            ))}
             {l.notes && <div className="pl-4 text-sm italic">— {l.notes}</div>}
           </div>
         ))}

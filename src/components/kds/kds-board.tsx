@@ -19,6 +19,9 @@ interface KdsLine {
   quantity: number;
   kitchenReady: boolean;
   notes: string | null;
+  /** Already sent by /api/kds/orders, which includes them deliberately — and was rendered nowhere,
+   * so the screen showed "Latte" for a latte ordered with an extra shot. */
+  modifiers?: { id: string; nameSnapshot: string }[];
 }
 
 interface KdsOrder {
@@ -132,15 +135,25 @@ function OrderCard({
         {order.lines.map((line) => (
           <label
             key={line.id}
-            className="flex items-center gap-3 rounded-lg px-1.5 py-2 text-base transition-colors hover:bg-muted/60"
+            className="flex items-start gap-3 rounded-lg px-1.5 py-2 text-base transition-colors hover:bg-muted/60"
           >
             <Checkbox
               checked={line.kitchenReady}
               onCheckedChange={() => toggleLine(line.id)}
-              className="size-6 rounded-[6px] [&_svg]:size-4.5"
+              className="mt-0.5 size-6 rounded-[6px] [&_svg]:size-4.5"
             />
-            <span className={line.kitchenReady ? "text-muted-foreground/50 line-through" : "font-semibold"}>
-              {line.quantity}× {line.nameSnapshot}
+            <span className={`min-w-0 ${line.kitchenReady ? "text-muted-foreground/50 line-through" : ""}`}>
+              <span className={line.kitchenReady ? "" : "font-semibold"}>
+                {line.quantity}× {line.nameSnapshot}
+              </span>
+              {/* Indented under the item, in the order they affect what gets made: add-ons change
+                  the dish, a note usually qualifies it. */}
+              {line.modifiers?.map((m) => (
+                <span key={m.id} className="block pl-1 text-sm text-warning">
+                  + {m.nameSnapshot}
+                </span>
+              ))}
+              {line.notes && <span className="block pl-1 text-sm italic opacity-80">— {line.notes}</span>}
             </span>
           </label>
         ))}

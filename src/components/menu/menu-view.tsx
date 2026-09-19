@@ -107,7 +107,10 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 gap-2">
+        {/* Wraps and may shrink. Three buttons do not fit beside the title at 390px, and a
+            shrink-0 row with nowhere to go pushes the whole page sideways — which is exactly what
+            adding the third one did, caught by the responsive suite at 393 against 390. */}
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             Import menu
           </Button>

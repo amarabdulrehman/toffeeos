@@ -177,3 +177,94 @@ test("adding items to an already-sent order while offline fails softly, no crash
 
   await page.context().setOffline(false);
 });
+
+test("an add-on chosen offline survives the sync, at the price the cashier charged", async ({ page, request }) => {
+  test.setTimeout(150_000);
+  /**
+   * The bug this exists for: CreateOrderPayload declared modifierIds from the day the offline queue
+   * was written, and queueCreateOrder never filled it in. An order punched during an outage with an
+   * extra shot on it therefore replayed without the extra shot — the cashier had charged for it
+   * from the local total, the server recomputed a cheaper line, and nothing anywhere reported a
+   * difference. A customer undercharged and a kitchen ticket missing what they ordered, silently.
+   *
+   * Needs its own item rather than a seeded one: attaching an add-on group to a shared menu item
+   * would make every other spec's single tap open a size-and-add-ons dialog instead of adding a
+   * line.
+   */
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const categoryRes = await request.post("/api/menu", { data: { name: `E2E Offline Add-ons ${suffix}` } });
+  expect(categoryRes.ok(), await categoryRes.text()).toBeTruthy();
+  const categoryBody = await categoryRes.json();
+  const categoryId = categoryBody.id ?? categoryBody.category?.id;
+
+  const itemName = `Offline Addon Probe ${suffix}`;
+  const itemRes = await request.post("/api/menu-items", {
+    data: { categoryId, name: itemName, basePricePaisa: 50_000 },
+  });
+  expect(itemRes.ok(), await itemRes.text()).toBeTruthy();
+  const itemBody = await itemRes.json();
+  const menuItemId = itemBody.item?.id ?? itemBody.id;
+
+  const groupRes = await request.post("/api/modifier-groups", {
+    data: { name: `Offline Extras ${suffix}`, minSelect: 0, maxSelect: 1 },
+  });
+  expect(groupRes.ok(), await groupRes.text()).toBeTruthy();
+  const groupId = (await groupRes.json()).group.id;
+  await request.post(`/api/modifier-groups/${groupId}/modifiers`, {
+    data: { name: "Extra Shot", priceDeltaPaisa: 10_000 },
+  });
+  await request.put(`/api/menu-items/${menuItemId}/modifier-groups`, { data: { groupIds: [groupId] } });
+
+  const table = await getAvailableTable(request);
+
+  await page.goto("/pos");
+  await expect(page.getByText("Online — all orders synced")).toBeVisible({ timeout: 15_000 });
+  await selectTable(page, table.label);
+
+  // Offline before the item is even chosen, so the whole interaction — dialog included — happens
+  // with the network genuinely cut.
+  await page.context().setOffline(true);
+  await expect(page.getByText("You're offline")).toBeVisible();
+
+  // The grid shows one category at a time, so the pill has to be picked before the item exists on
+  // screen. Both were cached while online, so this works with the network cut.
+  await page.getByRole("button", { name: `E2E Offline Add-ons ${suffix}`, exact: false }).first().click();
+  await page.getByRole("button", { name: itemName, exact: false }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: /Extra Shot/ }).click();
+  await dialog.getByRole("button", { name: "Add to order" }).click();
+
+  // Rs 500 + Rs 100. If the local total does not already include the add-on, the rest of this test
+  // proves nothing about the sync.
+  // Appears on both the cart line and the subtotal, which is itself the point — the local price
+  // already carries the add-on before anything is queued.
+  await expect(page.getByText("Rs 600").first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Send to Kitchen" }).click();
+  await expect(page.getByText(/unsynced/)).toBeVisible();
+
+  await page.context().setOffline(false);
+  await expect(page.getByText("Online — all orders synced")).toBeVisible({ timeout: 30_000 });
+
+  // The server's own copy, after replay — not the browser's optimistic one.
+  const orders = await (await request.get("/api/orders")).json();
+  const synced = (orders.orders as { id: string; lines: { nameSnapshot: string; unitPricePaisa: number }[]; tableId: string }[])
+    .find((o) => o.tableId === table.id && o.lines.some((l) => l.nameSnapshot.includes(itemName)));
+  expect(synced, "the offline order should have reached the server").toBeTruthy();
+
+  const line = synced!.lines.find((l) => l.nameSnapshot.includes(itemName))!;
+  expect(line.unitPricePaisa, "the add-on must survive the replay, or the customer is undercharged").toBe(60_000);
+
+  // Then the other half of the same bug: the money being right is no use if the barista makes a
+  // plain one. Asserted through the endpoint the kitchen screen actually reads, rather than the
+  // line's name — a modifier is its own row, and the line is still called "Latte".
+  const kds = await (await request.get("/api/kds/orders")).json();
+  const kdsLine = (kds.orders as { id: string; lines: { nameSnapshot: string; modifiers: { nameSnapshot: string }[] }[] }[])
+    .find((o) => o.id === synced!.id)
+    ?.lines.find((l) => l.nameSnapshot.includes(itemName));
+  expect(kdsLine, "the order should be on the kitchen board").toBeTruthy();
+  expect(
+    kdsLine!.modifiers.map((m) => m.nameSnapshot),
+    "and the kitchen must be told what was added to it"
+  ).toContain("Extra Shot");
+});
