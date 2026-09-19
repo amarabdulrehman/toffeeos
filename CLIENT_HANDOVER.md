@@ -21,19 +21,23 @@ five-minute job and it has to happen before money changes hands.
 I have no production database credentials — Vercel marks them sensitive, so `vercel env pull`
 returns placeholders rather than values. Everything below therefore has to be run by you.
 
-### a. Apply the database migration
+### a. Apply the database migrations
 
-Nine foreign keys have no index, including `Order.tableId`, which the POS reads on every dine-in
-sitting. `git push` does **not** apply migrations — the build runs `prisma generate && next build`,
-not `migrate deploy`.
+**Two** are pending. `git push` does **not** apply them — the build runs
+`prisma generate && next build`, not `migrate deploy`.
+
+- `20260914211549_index_unindexed_foreign_keys` — nine foreign keys with no index, including
+  `Order.tableId`, which the POS reads on every dine-in sitting.
+- `20260919174041_add_max_discount_cap` — the discount ceiling. **The cap cannot work until this
+  runs**, and until then every branch is uncapped.
 
 ```bash
-DIRECT_URL='<prod>' DATABASE_URL='<prod>' npx prisma migrate status   # expect 1 pending
+DIRECT_URL='<prod>' DATABASE_URL='<prod>' npx prisma migrate status   # expect 2 pending
 DIRECT_URL='<prod>' DATABASE_URL='<prod>' npx prisma migrate deploy
 ```
 
-If `status` lists more than `20260914211549_index_unindexed_foreign_keys`, stop and show me —
-production would be further behind than I believe.
+If `status` lists more than those two, stop and show me — production would be further behind than
+I believe.
 
 ### b. Create Spill on production
 
@@ -81,20 +85,24 @@ day's reports will disagree with the till.
 
 For a café doing real covers this is the first thing they will ask for. Budget it.
 
-### A cashier can zero any bill
+### A cashier can zero any bill — until you set the cap
 
-The roles screen offers **"Exceed maximum discount"**. Denying it looks like a cap on how much your
-staff can take off a bill. It caps nothing — there is no maximum-discount setting anywhere for it
-to check against, so the permission gates no code at all.
+This one is now built, but **it is off until you turn it on**, so it still needs you.
 
-I tested this rather than assuming: signed in as the seeded cashier, who does *not* hold that
-permission, I put through a Rs 1,000 order with a 100% discount. The server accepted it and wrote a
-**Rs 0** order.
+The problem it fixes: "Exceed maximum discount" sat in the roles screen gating nothing, because no
+stored maximum existed for it to check against. Signed in as the seeded cashier, who does *not*
+hold that permission, I put a Rs 1,000 order through at 100% off and the server wrote a **Rs 0**
+order.
 
-This is the classic restaurant theft control, and the UI actively implies you have it. I did not
-invent a cap because where the limit sits — per role, per branch, rupees or percent, who may exceed
-it — is a business decision, and it needs a settings field, a check, and a migration. Say the word
-and it is a short job, but it is not one to do unattended the night before a handover.
+Branches → Order settings now has **"Largest discount staff may apply (%)"**. Staff whose role
+grants "Exceed maximum discount" are not bound by it; everyone else is, and a rupee discount is
+measured as a percentage of the same bill so the cap cannot be dodged by switching the discount
+type.
+
+**It defaults to 100%, which means no limit.** That default is deliberate — anything lower would
+have silently started refusing discounts every existing branch allows the moment it deployed. So
+after the migration runs, set it for Spill. Twenty percent is a common starting point; the number
+is theirs to choose.
 
 ### WhatsApp says messages were sent that nothing sends
 
@@ -102,10 +110,11 @@ No WhatsApp provider is wired up. The adapter is a stub and every message is rec
 Making it honest flips every message in every log from SENT to FAILED at once — true, and visible
 to Spill. Your call, but do not let them discover it during a promotion.
 
-### 31 of 94 permissions gate nothing
+### 30 of 94 permissions gate nothing
 
 The roles screen renders straight from the registry, so an owner can toggle 31 switches that change
-no behaviour — "Issue a refund", "Reprint KOT", "Exceed maximum discount" among them. Most
+no behaviour — "Issue a refund" and "Reprint KOT" among them ("Exceed maximum discount" came off
+this list tonight). Most
 correspond to features that do not exist yet. A test now fails if the number grows, so the decision
 gets made when a permission is written rather than when a client finds out.
 
@@ -143,7 +152,7 @@ Worth ten minutes with a different network before you decide it is nothing.
 
 Verified tonight against the complete code:
 
-- **129 end-to-end tests and 127 unit tests, all passing**, with a clean production build.
+- **134 end-to-end tests and 137 unit tests, all passing**, with a clean production build.
 - **Offline** — orders punched during an outage queue locally and sync once, with the exact charged
   amount, no drift.
 - **Money** — Punjab PRA split rates (16% cash, 8% card), integer paisa throughout, single rounding,
