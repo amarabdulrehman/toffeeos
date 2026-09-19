@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatPkr } from "@/lib/money";
 import { ItemOptionsDialog, ModifierGroupsDialog } from "./menu-options-dialogs";
+import { MenuImportDialog } from "./menu-import-dialog";
 
 interface MenuItemRow {
   id: string;
@@ -46,6 +47,7 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [optionsItem, setOptionsItem] = useState<MenuItemRow | null>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const loadCategories = useCallback(async () => {
     const r = await fetch("/api/menu/categories");
@@ -106,6 +108,9 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
           </div>
         </div>
         <div className="flex shrink-0 gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            Import menu
+          </Button>
           <Button variant="outline" onClick={() => setGroupsOpen(true)}>
             Add-on groups
           </Button>
@@ -219,6 +224,15 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
       <ItemOptionsDialog item={optionsItem} onClose={() => setOptionsItem(null)} />
 
       <ModifierGroupsDialog open={groupsOpen} onClose={() => setGroupsOpen(false)} />
+
+      <MenuImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => {
+          load();
+          loadCategories();
+        }}
+      />
 
       <AddItemDialog
         open={addItemOpen}

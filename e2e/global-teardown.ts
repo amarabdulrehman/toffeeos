@@ -110,6 +110,36 @@ async function purgeTestRecurringTemplates() {
 }
 
 /**
+ * menu-import.spec.ts needs a category name nothing else has used, because half of what it asserts
+ * is "this created a category" and "this reused the existing one". So it makes a fresh one per run,
+ * and menu items have no delete endpoint — without this, every run leaves another junk category on
+ * the demo menu, which is the menu shown to clients during a demo.
+ *
+ * Narrow on purpose: only categories whose name starts with the spec's own prefix, and only their
+ * items. OrderLine references menuItemId as a plain column rather than a foreign key and snapshots
+ * its own name and price, so sold history is unaffected by removing the item it came from.
+ */
+async function purgeImportSpecMenu() {
+  if (!process.env.DIRECT_URL) return;
+  const c = new Client({ connectionString: process.env.DIRECT_URL });
+  const cats = `SELECT id FROM "Category" WHERE name LIKE 'Import %' OR name = 'Demo Shots'`;
+  const items = `SELECT id FROM "MenuItem" WHERE "categoryId" IN (${cats})`;
+  try {
+    await c.connect();
+    // Children of MenuItem that hold real foreign keys, before the items themselves.
+    for (const table of ["ItemVariant", "MenuItemModifierGroup", "BranchMenuItem", "RecipeLine"]) {
+      await c.query(`DELETE FROM "${table}" WHERE "menuItemId" IN (${items})`);
+    }
+    await c.query(`DELETE FROM "MenuItem" WHERE "categoryId" IN (${cats})`);
+    await c.query(`DELETE FROM "Category" WHERE name LIKE 'Import %' OR name = 'Demo Shots'`);
+  } catch {
+    // Best-effort, like every other purge here.
+  } finally {
+    await c.end().catch(() => {});
+  }
+}
+
+/**
  * Runs once after the whole suite. Several specs deliberately leave orders SENT_TO_KITCHEN/READY
  * (that's the state under test) and tables OCCUPIED — without this, every run permanently eats a
  * few tables from the demo branch's fixed pool until none are AVAILABLE (see the overnight
@@ -177,6 +207,7 @@ export default async function globalTeardown(config: FullConfig) {
     // In the finally, not the try: several blocks above bail early with `return` when an endpoint
     // is unreachable, and this cleanup should still run in that case.
     await purgeTestRecurringTemplates();
+    await purgeImportSpecMenu();
     await purgeTestStaff();
     await purgeDeleteSpecLeftovers();
     await retireTestTenants();
