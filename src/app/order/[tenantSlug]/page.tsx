@@ -9,6 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatPkr } from "@/lib/money";
+// The same picker the till uses. A customer choosing an add-on and a cashier choosing one are the
+// same decision, and the group minimums the server enforces are already implemented here.
+import { OptionsDialog } from "@/components/pos/options-dialog";
+import type { MenuItemDto, MenuVariant } from "@/components/pos/types";
 
 interface Storefront {
   tenantId: string;
@@ -19,22 +23,9 @@ interface Storefront {
   branches: { id: string; name: string; address: string | null }[];
 }
 
-interface MenuVariant {
-  id: string;
-  name: string;
-  priceDeltaPaisa: number;
-  isDefault: boolean;
-}
-
-interface MenuItem {
-  id: string;
-  name: string;
-  description: string | null;
-  imageUrl: string | null;
-  basePricePaisa: number;
-  isAvailable: boolean;
-  variants: MenuVariant[];
-}
+/** The storefront menu endpoint returns exactly the shape the POS menu does, add-on groups and
+ * all — this page simply declared a subset of it and dropped the rest on the floor. */
+type MenuItem = MenuItemDto;
 
 interface MenuCategory {
   id: string;
@@ -47,6 +38,7 @@ interface CartLine {
   menuItemId: string;
   name: string;
   variantId?: string;
+  modifierIds?: string[];
   unitPricePaisa: number;
   quantity: number;
 }
@@ -68,6 +60,7 @@ function OnlineOrderContent() {
   const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [lines, setLines] = useState<CartLine[]>([]);
+  const [optionsItem, setOptionsItem] = useState<MenuItem | null>(null);
   const [fulfillment, setFulfillment] = useState<"PICKUP" | "DELIVERY">("PICKUP");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -116,12 +109,38 @@ function OnlineOrderContent() {
       .then((d) => setCategories(d.categories ?? []));
   }, [branchId, params.tenantSlug]);
 
-  function addLine(item: MenuItem, variant?: MenuVariant) {
-    const unitPricePaisa = item.basePricePaisa + (variant?.priceDeltaPaisa ?? 0);
+  function addLine(item: MenuItem, variant?: MenuVariant, modifierIds: string[] = []) {
+    const chosen = item.modifierGroups.flatMap((g) => g.modifiers).filter((m) => modifierIds.includes(m.id));
+    const unitPricePaisa =
+      item.basePricePaisa +
+      (variant?.priceDeltaPaisa ?? 0) +
+      chosen.reduce((sum, m) => sum + m.priceDeltaPaisa, 0);
+
+    // Same item, same size, same add-ons is the same line. Sorted so "cream then shot" and "shot
+    // then cream" are one line rather than two.
+    const signature = [...modifierIds].sort().join(",");
+
     setLines((prev) => {
-      const existing = prev.find((l) => l.menuItemId === item.id && l.variantId === variant?.id);
+      const existing = prev.find(
+        (l) =>
+          l.menuItemId === item.id &&
+          l.variantId === variant?.id &&
+          [...(l.modifierIds ?? [])].sort().join(",") === signature
+      );
       if (existing) return prev.map((l) => (l === existing ? { ...l, quantity: l.quantity + 1 } : l));
-      return [...prev, { key: crypto.randomUUID(), menuItemId: item.id, name: variant ? `${item.name} (${variant.name})` : item.name, variantId: variant?.id, unitPricePaisa, quantity: 1 }];
+      const suffix = [variant?.name, ...chosen.map((m) => m.name)].filter(Boolean).join(", ");
+      return [
+        ...prev,
+        {
+          key: crypto.randomUUID(),
+          menuItemId: item.id,
+          name: suffix ? `${item.name} (${suffix})` : item.name,
+          variantId: variant?.id,
+          modifierIds: modifierIds.length > 0 ? modifierIds : undefined,
+          unitPricePaisa,
+          quantity: 1,
+        },
+      ];
     });
   }
 
@@ -148,7 +167,7 @@ function OnlineOrderContent() {
             tableId: qrTableId,
             customerName: name.trim() || undefined,
             customerPhone: phone.trim() || undefined,
-            lines: lines.map((l) => ({ menuItemId: l.menuItemId, variantId: l.variantId, quantity: l.quantity })),
+            lines: lines.map((l) => ({ menuItemId: l.menuItemId, variantId: l.variantId, modifierIds: l.modifierIds, quantity: l.quantity })),
             idempotencyKey: idempotencyKey.current,
           }
         : {
@@ -157,7 +176,7 @@ function OnlineOrderContent() {
             customerPhone: phone,
             fulfillment,
             deliveryAddress: fulfillment === "DELIVERY" ? address : undefined,
-            lines: lines.map((l) => ({ menuItemId: l.menuItemId, variantId: l.variantId, quantity: l.quantity })),
+            lines: lines.map((l) => ({ menuItemId: l.menuItemId, variantId: l.variantId, modifierIds: l.modifierIds, quantity: l.quantity })),
             idempotencyKey: idempotencyKey.current,
           };
 
@@ -280,7 +299,8 @@ function OnlineOrderContent() {
               </h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 {cat.items.map((item) => {
-                  const cartLine = item.variants.length === 0 ? lines.find((l) => l.menuItemId === item.id) : undefined;
+                  const hasChoices = item.variants.length > 0 || item.modifierGroups.length > 0;
+                  const cartLine = hasChoices ? undefined : lines.find((l) => l.menuItemId === item.id);
                   return (
                     <Card
                       key={item.id}
@@ -309,7 +329,7 @@ function OnlineOrderContent() {
                             </span>
                             {!item.isAvailable ? (
                               <span className="text-xs font-medium text-destructive">Unavailable</span>
-                            ) : item.variants.length === 0 ? (
+                            ) : !hasChoices ? (
                               cartLine ? (
                                 <div className="flex items-center gap-1 rounded-full border bg-muted/40 p-0.5">
                                   <button
@@ -337,23 +357,19 @@ function OnlineOrderContent() {
                                 </Button>
                               )
                             ) : (
-                              <Select onValueChange={(v) => v && addLine(item, item.variants.find((va) => va.id === v))}>
-                                <SelectTrigger className="h-8 w-28">
-                                  {/* Select.Value shows the raw value (a variant UUID) once picked,
-                                   * without a render function — it never reads a SelectItem's
-                                   * children automatically. */}
-                                  <SelectValue placeholder="Add">
-                                    {(v: string | undefined) => (v ? item.variants.find((va) => va.id === v)?.name ?? v : "Add")}
-                                  </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {item.variants.map((v) => (
-                                    <SelectItem key={v.id} value={v.id}>
-                                      {v.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              // Anything with a size to pick or an add-on to offer goes through the
+                              // dialog. It used to be a size-only dropdown, so a café could put a
+                              // required add-on group on an item and no customer could satisfy it —
+                              // the server refuses the order for a choice the page never offered,
+                              // and the item simply cannot be bought online.
+                              <Button
+                                size="sm"
+                                className="transition-transform active:scale-95"
+                                style={{ backgroundColor: brandColor }}
+                                onClick={() => setOptionsItem(item)}
+                              >
+                                Choose
+                              </Button>
                             )}
                           </div>
                         </div>
@@ -467,6 +483,17 @@ function OnlineOrderContent() {
           <span className="font-heading text-base font-bold tabular-nums">{formatPkr(totalPaisa)}</span>
         </button>
       )}
+
+      <OptionsDialog
+        item={optionsItem}
+        onClose={() => setOptionsItem(null)}
+        onConfirm={({ variantId, modifierIds }) => {
+          if (optionsItem) {
+            addLine(optionsItem, optionsItem.variants.find((v) => v.id === variantId), modifierIds);
+          }
+          setOptionsItem(null);
+        }}
+      />
     </div>
   );
 }

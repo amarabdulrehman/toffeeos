@@ -142,4 +142,55 @@ test.describe("Online ordering", () => {
 
     await anon.dispose();
   });
+
+  test("an item with a required add-on can be ordered from the storefront", async ({ browser, request, baseURL }) => {
+    /**
+     * The storefront menu endpoint has always returned add-on groups, exactly as the POS menu does.
+     * The page declared a subset of that shape and dropped them, offering a size dropdown and
+     * nothing else.
+     *
+     * For an optional group that is lost revenue. For a *required* one it is a dead end: the server
+     * enforces minSelect for online orders through the same resolveLines the till uses, so it
+     * refuses the order for a choice the page never offered. The item cannot be bought online at
+     * all, and the customer has no way to comply.
+     */
+    const suffix = Math.random().toString(36).slice(2, 8);
+    const categoryId = (await (await request.post("/api/menu", { data: { name: `E2E Storefront ${suffix}` } })).json()).id;
+    const itemName = `Storefront Probe ${suffix}`;
+    const itemBody = await (
+      await request.post("/api/menu-items", { data: { categoryId, name: itemName, basePricePaisa: 50_000 } })
+    ).json();
+    const menuItemId = itemBody.item?.id ?? itemBody.id;
+
+    // Required: exactly one. This is the shape that was impossible to order.
+    const groupId = (
+      await (await request.post("/api/modifier-groups", {
+        data: { name: `Pick a milk ${suffix}`, minSelect: 1, maxSelect: 1 },
+      })).json()
+    ).group.id;
+    await request.post(`/api/modifier-groups/${groupId}/modifiers`, {
+      data: { name: "Oat milk", priceDeltaPaisa: 10_000 },
+    });
+    await request.put(`/api/menu-items/${menuItemId}/modifier-groups`, { data: { groupIds: [groupId] } });
+
+    // The storefront as a customer sees it: no session at all.
+    const anon = await browser.newContext({ baseURL });
+    const shop = await anon.newPage();
+    await shop.goto(`/order/${TENANT_SLUG}`);
+
+    await expect(shop.getByText(itemName)).toBeVisible({ timeout: 30_000 });
+    // The card element itself, not the inner text div a loose `div` filter lands on — the demo
+    // menu has other items with sizes, so every one of them now shows a Choose button too.
+    const card = shop.locator('[data-slot="card"]').filter({ hasText: itemName });
+    await card.getByRole("button", { name: "Choose" }).click();
+    const dialog = shop.getByRole("dialog");
+    await expect(dialog.getByText("Oat milk"), "the required add-on must be offered").toBeVisible();
+    await dialog.getByRole("button", { name: /Oat milk/ }).click();
+    await dialog.getByRole("button", { name: "Add to order" }).click();
+
+    // Rs 500 + Rs 100. If the cart does not carry the add-on, the server would refuse the order.
+    await expect(shop.getByText("Rs 600").first()).toBeVisible();
+
+    await anon.close();
+  });
 });
