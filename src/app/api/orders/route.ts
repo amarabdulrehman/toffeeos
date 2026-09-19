@@ -32,7 +32,10 @@ export const GET = defineHandler({ permission: "orders.view" }, async ({ session
     where: { branchId: session.branchId, status: { notIn: ["VOIDED", "CANCELLED"] } },
     orderBy: { createdAt: "desc" },
     take: 100,
-    include: { lines: true, table: true, payments: true },
+    // Line add-ons come along because the receipt has to explain its own prices: a latte with an
+    // extra shot is charged at Rs 600 against a menu board that says Rs 500, and a receipt that
+    // cannot say why is a dispute. Bounded by the take above, same join the kitchen board uses.
+    include: { lines: { include: { modifiers: true } }, table: true, payments: true },
   });
   return { orders };
 });

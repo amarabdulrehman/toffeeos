@@ -145,4 +145,65 @@ test.describe("POS payment — cash/card tax switching never overcharges", () =>
     );
     expect(order, "the note the cashier typed must reach the order, or the kitchen never learns of it").toBeTruthy();
   });
+
+  test("the receipt says what the extra money was for", async ({ page, request }) => {
+    /**
+     * /api/orders returned `lines: true` and nothing else, so the receipt had no way to know a
+     * line carried add-ons. A latte with an extra shot printed as "1x Latte  Rs 600" against a
+     * menu board that says Rs 500, with nothing on the slip to explain the difference. That is a
+     * dispute at the counter, and the answer "trust the till" is not one.
+     */
+    const suffix = Math.random().toString(36).slice(2, 8);
+    const categoryName = `E2E Receipt Extras ${suffix}`;
+    const categoryId = (await (await request.post("/api/menu", { data: { name: categoryName } })).json()).id;
+    const itemName = `Receipt Probe ${suffix}`;
+    const itemBody = await (
+      await request.post("/api/menu-items", { data: { categoryId, name: itemName, basePricePaisa: 50_000 } })
+    ).json();
+    const menuItemId = itemBody.item?.id ?? itemBody.id;
+    const groupId = (
+      await (await request.post("/api/modifier-groups", {
+        data: { name: `Receipt Extras ${suffix}`, minSelect: 0, maxSelect: 1 },
+      })).json()
+    ).group.id;
+    await request.post(`/api/modifier-groups/${groupId}/modifiers`, {
+      data: { name: "Extra Shot", priceDeltaPaisa: 10_000 },
+    });
+    await request.put(`/api/menu-items/${menuItemId}/modifier-groups`, { data: { groupIds: [groupId] } });
+
+    const table = await getAvailableTable(request);
+    await page.goto("/pos");
+    await expect(page.getByText("Online — all orders synced").first()).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("button", { name: "Select a table" }).click();
+    await page.getByRole("dialog").getByText(table.label, { exact: true }).click();
+
+    // The grid shows one category at a time, so the pill comes before the item exists on screen.
+    await page.getByRole("button", { name: categoryName, exact: false }).first().click();
+    await page.getByRole("button", { name: itemName, exact: false }).first().click();
+    const options = page.getByRole("dialog");
+    await options.getByRole("button", { name: /Extra Shot/ }).click();
+    await options.getByRole("button", { name: "Add to order" }).click();
+
+    await page.getByRole("button", { name: "Take Payment" }).click();
+    const payDialog = page.getByRole("dialog", { name: "Take payment" });
+    await expect(payDialog).toBeVisible({ timeout: 30_000 });
+    await page
+      .waitForResponse((r) => r.url().includes("/pay-preview") && r.status() === 200, { timeout: 30_000 })
+      .catch(() => {});
+
+    const confirmBtn = payDialog.getByRole("button", { name: "Confirm payment" });
+    await expect(confirmBtn).toBeEnabled({ timeout: 15_000 });
+    await Promise.all([
+      page.waitForResponse((r) => r.url().includes("/pay") && r.request().method() === "POST"),
+      confirmBtn.click(),
+    ]);
+
+    // The receipt opens by itself once payment lands.
+    const receipt = page.getByRole("dialog", { name: /Receipt/ });
+    await expect(receipt).toBeVisible({ timeout: 45_000 });
+    await expect(
+      receipt.getByText("+ Extra Shot"),
+      "the slip has to account for the difference between Rs 500 and Rs 600"
+    ).toBeVisible();
+  });
 });

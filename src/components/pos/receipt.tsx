@@ -85,11 +85,22 @@ export function Receipt({
       <div className="my-2 border-t border-dashed border-black" />
       <div className="space-y-0.5">
         {order.lines.map((l) => (
-          <div key={l.id} className="flex justify-between gap-2">
-            <span className="flex-1">
-              {l.quantity}× {l.nameSnapshot}
-            </span>
-            <span className="tabular-nums">{formatPkr(l.lineTotalPaisa, { showPaisa: true })}</span>
+          <div key={l.id}>
+            <div className="flex justify-between gap-2">
+              <span className="flex-1">
+                {l.quantity}× {l.nameSnapshot}
+              </span>
+              <span className="tabular-nums">{formatPkr(l.lineTotalPaisa, { showPaisa: true })}</span>
+            </div>
+            {/* What the extra money was for. The line total already includes these, so they are
+                listed rather than priced again — a second column of numbers that do not add up to
+                the total is worse than none. */}
+            {l.modifiers?.map((m) => (
+              <div key={m.id} className="pl-3 text-[0.9em]">
+                + {m.nameSnapshot}
+              </div>
+            ))}
+            {l.notes && <div className="pl-3 text-[0.9em] italic">— {l.notes}</div>}
           </div>
         ))}
       </div>

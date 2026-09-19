@@ -108,7 +108,15 @@ export interface OrderDto {
   /** POS (staff-entered), ONLINE (the public ordering site), or QR (table QR ordering). Absent on
    * locally-queued-but-not-yet-synced orders defaults to "POS" in the UI. */
   source?: "POS" | "ONLINE" | "QR";
-  lines: { id: string; nameSnapshot: string; quantity: number; lineTotalPaisa: number; kitchenReady: boolean }[];
+  lines: {
+    id: string;
+    nameSnapshot: string;
+    quantity: number;
+    lineTotalPaisa: number;
+    kitchenReady: boolean;
+    notes?: string | null;
+    modifiers?: { id: string; nameSnapshot: string; priceDeltaPaisa: number }[];
+  }[];
   /** The rest of these are already returned by GET /api/orders (no `select`, so every scalar
    * column comes back) — just never modeled on the client before there was a reason to read them.
    * Optional because the offline queue's buildLocalOrder (src/lib/offline/queue.ts) builds a

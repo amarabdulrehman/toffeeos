@@ -119,19 +119,40 @@ async function purgeTestRecurringTemplates() {
  * items. OrderLine references menuItemId as a plain column rather than a foreign key and snapshots
  * its own name and price, so sold history is unaffected by removing the item it came from.
  */
+/**
+ * Menu rows the specs create.
+ *
+ * Every spec that needs an add-on group has to build its own item: attaching one to a seeded item
+ * would turn every other spec's single tap into a dialog. Left alone that is a few new categories
+ * per run, accumulating in the tenant somebody demos to clients — so they go out with the import
+ * spec's, matched on the `E2E ` prefix they all share.
+ */
 async function purgeImportSpecMenu() {
   if (!process.env.DIRECT_URL) return;
   const c = new Client({ connectionString: process.env.DIRECT_URL });
-  const cats = `SELECT id FROM "Category" WHERE name LIKE 'Import %' OR name = 'Demo Shots'`;
-  const items = `SELECT id FROM "MenuItem" WHERE "categoryId" IN (${cats})`;
+
+  const catWhere = `name LIKE 'Import %' OR name LIKE 'E2E %' OR name = 'Demo Shots'`;
+  const cats = `SELECT id FROM "Category" WHERE ${catWhere}`;
+  // Only items nothing was ever ordered from. OrderLine.menuItemId is NOT NULL, so an item a spec
+  // actually sold has to stay — deleting it would mean deleting somebody's order history to tidy
+  // up a menu, which is the wrong trade in the tenant that gets demonstrated. A handful of probe
+  // items therefore survive in the POS grid; see HANDOVER.
+  const doomed = `SELECT id FROM "MenuItem" WHERE "categoryId" IN (${cats})
+                    AND id NOT IN (SELECT "menuItemId" FROM "OrderLine")`;
+
   try {
     await c.connect();
-    // Children of MenuItem that hold real foreign keys, before the items themselves.
+    // Children of MenuItem that hold real foreign keys, before the items themselves — and scoped
+    // to the same doomed set, or a surviving item would be stripped of its sizes and left broken.
     for (const table of ["ItemVariant", "MenuItemModifierGroup", "BranchMenuItem", "RecipeLine"]) {
-      await c.query(`DELETE FROM "${table}" WHERE "menuItemId" IN (${items})`);
+      await c.query(`DELETE FROM "${table}" WHERE "menuItemId" IN (${doomed})`);
     }
-    await c.query(`DELETE FROM "MenuItem" WHERE "categoryId" IN (${cats})`);
-    await c.query(`DELETE FROM "Category" WHERE name LIKE 'Import %' OR name = 'Demo Shots'`);
+    await c.query(`DELETE FROM "MenuItem" WHERE id IN (${doomed})`);
+    // Which leaves the categories that emptied out.
+    await c.query(
+      `DELETE FROM "Category" WHERE (${catWhere})
+         AND id NOT IN (SELECT "categoryId" FROM "MenuItem")`
+    );
   } catch {
     // Best-effort, like every other purge here.
   } finally {
