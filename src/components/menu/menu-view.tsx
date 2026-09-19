@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { BookOpen, ChefHat, Lock, X } from "lucide-react";
+import { BookOpen, ChefHat, Lock, SlidersHorizontal, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatPkr } from "@/lib/money";
+import { ItemOptionsDialog, ModifierGroupsDialog } from "./menu-options-dialogs";
 
 interface MenuItemRow {
   id: string;
@@ -43,6 +44,8 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
   const [editingItem, setEditingItem] = useState<MenuItemRow | null>(null);
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const [addItemOpen, setAddItemOpen] = useState(false);
+  const [optionsItem, setOptionsItem] = useState<MenuItemRow | null>(null);
+  const [groupsOpen, setGroupsOpen] = useState(false);
 
   const loadCategories = useCallback(async () => {
     const r = await fetch("/api/menu/categories");
@@ -86,8 +89,10 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
 
   return (
     <div className="p-8">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+      {/* Wraps rather than shrinks: at 390px the title and two buttons do not fit on one line, and a
+          shrink-0 button group with nowhere to go pushes the whole page sideways instead. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <BookOpen className="size-5" />
           </span>
@@ -100,9 +105,14 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
             </p>
           </div>
         </div>
-        <Button variant="outline" className="shrink-0" onClick={() => setAddCategoryOpen(true)}>
-          + Add category
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" onClick={() => setGroupsOpen(true)}>
+            Add-on groups
+          </Button>
+          <Button variant="outline" onClick={() => setAddCategoryOpen(true)}>
+            + Add category
+          </Button>
+        </div>
       </div>
 
       <Card className="mt-6 shadow-sm transition-shadow hover:shadow-md">
@@ -170,6 +180,10 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
                       <Button size="sm" variant="outline" onClick={() => toggleAvailability(item)}>
                         {item.isAvailable ? "Mark unavailable" : "Mark available"}
                       </Button>
+                      <Button size="sm" variant="outline" onClick={() => setOptionsItem(item)}>
+                        <SlidersHorizontal className="size-3.5" />
+                        Sizes &amp; add-ons
+                      </Button>
                       {recipeEnabled && (
                         <Button size="sm" variant="outline" onClick={() => setEditingItem(item)}>
                           <ChefHat className="size-3.5" />
@@ -201,6 +215,10 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
           loadCategories();
         }}
       />
+
+      <ItemOptionsDialog item={optionsItem} onClose={() => setOptionsItem(null)} />
+
+      <ModifierGroupsDialog open={groupsOpen} onClose={() => setGroupsOpen(false)} />
 
       <AddItemDialog
         open={addItemOpen}

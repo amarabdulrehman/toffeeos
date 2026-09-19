@@ -51,6 +51,9 @@ export interface CartLine {
   menuItemId: string;
   name: string;
   variantId?: string;
+  /** Chosen add-ons. Part of the line's identity, not just its price: a latte with an extra shot
+   * is a different line from a plain one, so the two must not merge in the cart. */
+  modifierIds?: string[];
   unitPricePaisa: number;
   quantity: number;
   discount?: Discount;

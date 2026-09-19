@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ProductGrid } from "./product-grid";
 import { CartPanel } from "./cart-panel";
-import { VariantDialog } from "./variant-dialog";
+import { OptionsDialog } from "./options-dialog";
 import { PaymentDialog } from "./payment-dialog";
 import { ReceiptDialog } from "./receipt-dialog";
 import { OrderQueuePanel } from "./order-queue-panel";
@@ -79,7 +79,7 @@ export function PosTerminal({
   const [resumed, setResumed] = useState<{ table: RestaurantTableDto; order: OrderDto } | null>(null);
   const [addingItemsToOrder, setAddingItemsToOrder] = useState(false);
   const [totals, setTotals] = useState<PreviewTotals | null>(null);
-  const [variantItem, setVariantItem] = useState<MenuItemDto | null>(null);
+  const [optionsItem, setOptionsItem] = useState<MenuItemDto | null>(null);
   const [sending, setSending] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [queue, setQueue] = useState<OrderDto[]>([]);
@@ -210,21 +210,38 @@ export function PosTerminal({
     };
   }, [lines, orderType, discount, localTotals]);
 
-  function addLine(item: MenuItemDto, variantId?: string) {
+  function addLine(item: MenuItemDto, variantId?: string, modifierIds: string[] = []) {
     const variant = variantId ? item.variants.find((v) => v.id === variantId) : undefined;
-    const unitPricePaisa = item.basePricePaisa + (variant?.priceDeltaPaisa ?? 0);
+    const chosen = item.modifierGroups.flatMap((g) => g.modifiers).filter((m) => modifierIds.includes(m.id));
+    const unitPricePaisa =
+      item.basePricePaisa +
+      (variant?.priceDeltaPaisa ?? 0) +
+      chosen.reduce((sum, m) => sum + m.priceDeltaPaisa, 0);
+
+    // Same item, same size, same add-ons is the same line; differing add-ons are not. Comparing a
+    // sorted key rather than the array keeps "espresso shot then cream" from becoming a second line
+    // to "cream then espresso shot".
+    const signature = [...modifierIds].sort().join(",");
+
     setLines((prev) => {
-      const existing = prev.find((l) => l.menuItemId === item.id && l.variantId === variantId);
+      const existing = prev.find(
+        (l) =>
+          l.menuItemId === item.id &&
+          l.variantId === variantId &&
+          [...(l.modifierIds ?? [])].sort().join(",") === signature
+      );
       if (existing) {
         return prev.map((l) => (l === existing ? { ...l, quantity: l.quantity + 1 } : l));
       }
+      const suffix = [variant?.name, ...chosen.map((m) => m.name)].filter(Boolean).join(", ");
       return [
         ...prev,
         {
           key: crypto.randomUUID(),
           menuItemId: item.id,
-          name: variant ? `${item.name} (${variant.name})` : item.name,
+          name: suffix ? `${item.name} (${suffix})` : item.name,
           variantId,
+          modifierIds: modifierIds.length > 0 ? modifierIds : undefined,
           unitPricePaisa,
           quantity: 1,
         },
@@ -233,8 +250,10 @@ export function PosTerminal({
   }
 
   function handleSelectItem(_categoryId: string, item: MenuItemDto) {
-    if (item.variants.length > 0) {
-      setVariantItem(item);
+    // Anything with a size to pick or an add-on to offer goes through the dialog; everything else
+    // stays a single tap.
+    if (item.variants.length > 0 || item.modifierGroups.length > 0) {
+      setOptionsItem(item);
     } else {
       addLine(item);
     }
@@ -286,6 +305,7 @@ export function PosTerminal({
         lines: lines.map((l) => ({
           menuItemId: l.menuItemId,
           variantId: l.variantId,
+          modifierIds: l.modifierIds,
           quantity: l.quantity,
           discount: l.discount,
         })),
@@ -374,6 +394,7 @@ export function PosTerminal({
           lines: lines.map((l) => ({
             menuItemId: l.menuItemId,
             variantId: l.variantId,
+            modifierIds: l.modifierIds,
             quantity: l.quantity,
             discount: l.discount,
           })),
@@ -616,12 +637,12 @@ export function PosTerminal({
           }}
         />
 
-        <VariantDialog
-          item={variantItem}
-          onClose={() => setVariantItem(null)}
-          onPick={(variantId) => {
-            if (variantItem) addLine(variantItem, variantId);
-            setVariantItem(null);
+        <OptionsDialog
+          item={optionsItem}
+          onClose={() => setOptionsItem(null)}
+          onConfirm={({ variantId, modifierIds }) => {
+            if (optionsItem) addLine(optionsItem, variantId, modifierIds);
+            setOptionsItem(null);
           }}
         />
 

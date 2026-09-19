@@ -184,17 +184,31 @@ async function resolveLines(
   const db = tenantDb(tenantId);
   const menuItemIds = [...new Set(lines.map((l) => l.menuItemId))];
 
-  const [menuItems, branchOverrides, variants, modifiers] = await Promise.all([
+  const [menuItems, branchOverrides, variants, offered] = await Promise.all([
     db.menuItem.findMany({ where: { id: { in: menuItemIds } } }),
     db.branchMenuItem.findMany({ where: { branchId, menuItemId: { in: menuItemIds } } }),
     db.itemVariant.findMany({ where: { menuItemId: { in: menuItemIds } } }),
-    db.modifier.findMany({}),
+    // Only the groups these items actually offer. This used to be `db.modifier.findMany({})` —
+    // every modifier in the tenant, with nothing checking that the one being applied belonged to
+    // this item at all. Deltas may be negative, so that accepted a request pairing an expensive
+    // dish with a discount option from somewhere else on the menu and charging the difference.
+    db.menuItemModifierGroup.findMany({
+      where: { menuItemId: { in: menuItemIds } },
+      include: { group: { include: { modifiers: true } } },
+    }),
   ]);
 
   const menuItemById = new Map(menuItems.map((m) => [m.id, m]));
   const overrideByMenuItemId = new Map(branchOverrides.map((o) => [o.menuItemId, o]));
   const variantById = new Map(variants.map((v) => [v.id, v]));
-  const modifierById = new Map(modifiers.map((m) => [m.id, m]));
+
+  /** groupId -> group, and menuItemId -> the groups it offers. */
+  const groupsByMenuItem = new Map<string, typeof offered[number]["group"][]>();
+  for (const row of offered) {
+    const list = groupsByMenuItem.get(row.menuItemId) ?? [];
+    list.push(row.group);
+    groupsByMenuItem.set(row.menuItemId, list);
+  }
 
   return lines.map((line) => {
     const menuItem = menuItemById.get(line.menuItemId);
@@ -205,19 +219,53 @@ async function resolveLines(
     }
 
     const basePrice = override?.priceOverridePaisa ?? menuItem.basePricePaisa;
+
     const variant = line.variantId ? variantById.get(line.variantId) : undefined;
-    const variantDelta = variant?.priceDeltaPaisa ?? 0;
+    if (line.variantId && !variant) throw new HttpError(400, `Unknown size: ${line.variantId}`);
+    // The variant has to be one of *this* item's sizes. Variants for every item in the order are
+    // loaded together, so without this a line could carry another item's size and be priced by its
+    // delta.
+    if (variant && variant.menuItemId !== line.menuItemId) {
+      throw new HttpError(400, `That size does not belong to ${menuItem.name}.`);
+    }
+
+    const offeredGroups = groupsByMenuItem.get(line.menuItemId) ?? [];
+    const modifierById = new Map(offeredGroups.flatMap((g) => g.modifiers.map((m) => [m.id, { m, g }] as const)));
 
     const resolvedModifiers = (line.modifierIds ?? []).map((modifierId) => {
-      const modifier = modifierById.get(modifierId);
-      if (!modifier) throw new HttpError(400, `Unknown modifier: ${modifierId}`);
+      const found = modifierById.get(modifierId);
+      // Not "unknown modifier" — the id may well exist, just not for this item. Either way the
+      // caller does not get to learn which, and either way it is refused.
+      if (!found) throw new HttpError(400, `That add-on is not available on ${menuItem.name}.`);
       return {
         id: newId(),
         modifierId,
-        nameSnapshot: modifier.name,
-        priceDeltaPaisa: modifier.priceDeltaPaisa,
+        groupId: found.g.id,
+        nameSnapshot: found.m.name,
+        priceDeltaPaisa: found.m.priceDeltaPaisa,
       };
     });
+
+    // Honour each group's own min/max. These have been stored and shown to the kitchen since the
+    // beginning and never once checked, so "choose exactly one" was a promise the menu made and
+    // the server did not keep.
+    for (const group of offeredGroups) {
+      const chosen = resolvedModifiers.filter((m) => m.groupId === group.id).length;
+      if (chosen < group.minSelect) {
+        throw new HttpError(
+          400,
+          `${menuItem.name}: choose at least ${group.minSelect} from ${group.name}.`
+        );
+      }
+      if (chosen > group.maxSelect) {
+        throw new HttpError(
+          400,
+          `${menuItem.name}: choose at most ${group.maxSelect} from ${group.name}.`
+        );
+      }
+    }
+
+    const variantDelta = variant?.priceDeltaPaisa ?? 0;
     const modifierTotal = resolvedModifiers.reduce((a, m) => a + m.priceDeltaPaisa, 0);
 
     return {
