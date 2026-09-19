@@ -24,6 +24,7 @@ const snapshot: BranchPricingSnapshot = {
   serviceChargeAppliesTo: ["DINE_IN"],
   serviceChargeTaxable: true,
   roundingMode: "NEAREST_1",
+  maxDiscountBasisPoints: 10_000,
   taxRules: [{ paymentMethods: [], rateBasisPoints: 1700, isActive: true }],
 };
 
@@ -68,6 +69,9 @@ describe("offline cart pricing", () => {
       serviceChargeAppliesTo: ["DINE_IN"],
       serviceChargeTaxable: true,
       roundingMode: "NEAREST_1",
+      // 100%, i.e. no discount ceiling. Deliberately permissive: a lower default would silently
+      // start refusing discounts every existing branch allows, the first time it deployed.
+      maxDiscountBasisPoints: 10_000,
     });
 
     const unconfigured = settingsForOrderType(DEFAULT_BRANCH_PRICING, "DINE_IN");

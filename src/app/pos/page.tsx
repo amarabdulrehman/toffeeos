@@ -31,6 +31,7 @@ export default async function PosPage() {
         serviceChargeAppliesTo: true,
         serviceChargeTaxable: true,
         roundingMode: true,
+        maxDiscountBasisPoints: true,
       },
     }),
     db.taxRule.findMany({
@@ -44,6 +45,7 @@ export default async function PosPage() {
     serviceChargeAppliesTo: settings?.serviceChargeAppliesTo ?? [...DEFAULT_BRANCH_PRICING.serviceChargeAppliesTo],
     serviceChargeTaxable: settings?.serviceChargeTaxable ?? DEFAULT_BRANCH_PRICING.serviceChargeTaxable,
     roundingMode: settings?.roundingMode ?? DEFAULT_BRANCH_PRICING.roundingMode,
+    maxDiscountBasisPoints: settings?.maxDiscountBasisPoints ?? DEFAULT_BRANCH_PRICING.maxDiscountBasisPoints,
     taxRules: taxRules.map((r) => ({
       paymentMethods: r.paymentMethods as PaymentMethodKey[],
       rateBasisPoints: r.rateBasisPoints,

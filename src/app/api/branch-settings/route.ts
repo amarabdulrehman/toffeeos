@@ -25,6 +25,9 @@ const schema = z.object({
   // src/server/hr.ts for how these two are actually applied.
   overtimeThresholdHoursPerWeek: z.number().int().min(1).max(168).nullable().optional(),
   overtimeMultiplierBasisPoints: z.number().int().min(10000).max(100000).optional(),
+  // Basis points of the amount being discounted. 10000 = 100% = no cap, which is the default and
+  // what every branch had before this field existed.
+  maxDiscountBasisPoints: z.number().int().min(0).max(10000).optional(),
 });
 
 export const PATCH = defineHandler(

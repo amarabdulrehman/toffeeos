@@ -332,6 +332,15 @@ model BranchSettings {
   /// Basis points, same convention as every other rate in this schema (10000 = 1.00x). Only read
   /// when overtimeThresholdHoursPerWeek is set. Default 15000 = time-and-a-half.
   overtimeMultiplierBasisPoints Int          @default(15000)
+  /// The largest discount a cashier may apply, in basis points of the amount being discounted
+  /// (2000 = 20%). Staff holding pos.discount.exceedMax are not bound by it — that permission had
+  /// no enforcement point anywhere in the codebase until this field existed to check against.
+  ///
+  /// Defaults to 10000 (100%, i.e. no cap) on purpose: any lower default would silently start
+  /// refusing discounts that every existing branch currently allows, the first time someone
+  /// deployed. It is opt-in, and an owner who never sets it is exactly as unprotected as before —
+  /// which is why the settings screen says so rather than leaving the field looking configured.
+  maxDiscountBasisPoints        Int          @default(10000)
 
   @@index([tenantId])
 }

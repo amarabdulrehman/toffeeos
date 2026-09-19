@@ -43,7 +43,16 @@ export const POST = defineHandler(
   { permission: "pos.order.create", input: createOrderSchema },
   async ({ session, input }) => {
     assertDiscountPermission(session, input.orderDiscount, input.lines);
-    const order = await createOrder(session.tenantId, session.branchId, session.id, input);
+    // The branch's discount ceiling is enforced inside createOrder, where the real line prices
+    // exist; whether this cashier may go past it is a property of their session, so it is read
+    // here and never from the request body.
+    const order = await createOrder(
+      session.tenantId,
+      session.branchId,
+      session.id,
+      input,
+      session.permissions.includes("pos.discount.exceedMax")
+    );
     return { order };
   }
 );

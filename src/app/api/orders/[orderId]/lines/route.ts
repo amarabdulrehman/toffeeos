@@ -26,7 +26,14 @@ export const POST = defineHandler(
   { permission: "pos.order.editItems", input: addLinesSchema },
   async ({ session, params, input }) => {
     assertDiscountPermission(session, undefined, input.lines);
-    const order = await addLinesToOrder(session.tenantId, session.branchId, params.orderId, input.lines, session.id);
+    const order = await addLinesToOrder(
+      session.tenantId,
+      session.branchId,
+      params.orderId,
+      input.lines,
+      session.id,
+      session.permissions.includes("pos.discount.exceedMax")
+    );
     return { order };
   }
 );

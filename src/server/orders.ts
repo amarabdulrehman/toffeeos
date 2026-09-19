@@ -11,6 +11,8 @@ import type { TenantSessionUser } from "@/server/auth/types";
 import {
   DEFAULT_BRANCH_PRICING,
   computeProvisionalTotal,
+  discountAmountPaisa,
+  exceedsDiscountCap,
   finalizeOrder,
   settingsForOrderType,
   type DiscountInput,
@@ -137,7 +139,7 @@ export async function getBranchPricingContext(
   tenantId: string,
   branchId: string,
   orderType: CreateOrderInput["type"]
-): Promise<{ settings: PricingSettings; taxRules: TaxRuleInput[] }> {
+): Promise<{ settings: PricingSettings; taxRules: TaxRuleInput[]; maxDiscountBasisPoints: number }> {
   const db = tenantDb(tenantId);
   const [branchSettings, taxRules] = await Promise.all([
     db.branchSettings.findUnique({ where: { branchId } }),
@@ -158,12 +160,52 @@ export async function getBranchPricingContext(
 
   return {
     settings,
+    maxDiscountBasisPoints:
+      branchSettings?.maxDiscountBasisPoints ?? DEFAULT_BRANCH_PRICING.maxDiscountBasisPoints,
     taxRules: taxRules.map((r) => ({
       paymentMethods: r.paymentMethods as PaymentMethodKey[],
       rateBasisPoints: r.rateBasisPoints,
       isActive: r.isActive,
     })),
   };
+}
+
+/**
+ * Refuses a discount larger than the branch allows, unless the caller may exceed it.
+ *
+ * This is the enforcement point pos.discount.exceedMax never had. Until BranchSettings gained
+ * maxDiscountBasisPoints there was no number in the system to check a discount against, so the
+ * permission sat in the roles screen gating nothing — an owner could deny it and still watch a
+ * cashier take 100% off a bill, which is the oldest way a till leaks money.
+ *
+ * Runs on resolved lines, after variants and add-ons are priced in, so the percentage is measured
+ * against what the customer is actually being charged rather than the menu's base price. Order and
+ * line discounts are checked against their own bases — the same bases the pricing engine uses, so
+ * a discount can never be accepted here and computed differently there.
+ */
+export function assertDiscountsWithinCap(
+  lines: { unitPricePaisa: number; quantity: number; discount?: DiscountInput }[],
+  orderDiscount: DiscountInput | undefined,
+  maxDiscountBasisPoints: number,
+  mayExceed: boolean
+): void {
+  if (mayExceed || maxDiscountBasisPoints >= 10_000) return;
+
+  const pct = (maxDiscountBasisPoints / 100).toFixed(maxDiscountBasisPoints % 100 === 0 ? 0 : 2);
+
+  for (const line of lines) {
+    if (exceedsDiscountCap(line.unitPricePaisa * line.quantity, line.discount, maxDiscountBasisPoints)) {
+      throw new HttpError(403, `That line discount is over this branch's ${pct}% limit.`);
+    }
+  }
+
+  const subtotal = lines.reduce(
+    (sum, l) => sum + (l.unitPricePaisa * l.quantity - discountAmountPaisa(l.unitPricePaisa * l.quantity, l.discount)),
+    0
+  );
+  if (exceedsDiscountCap(subtotal, orderDiscount, maxDiscountBasisPoints)) {
+    throw new HttpError(403, `That discount is over this branch's ${pct}% limit.`);
+  }
 }
 
 interface ResolvedLine extends CreateOrderLineInput {
@@ -301,7 +343,10 @@ export async function createOrder(
   tenantId: string,
   branchId: string,
   actorId: string | null,
-  input: CreateOrderInput
+  input: CreateOrderInput,
+  /** From the caller's session, never from the request body — a client-supplied bypass would be
+   * no bypass at all. */
+  mayExceedDiscountCap = false
 ) {
   const existing = await tenantDb(tenantId).order.findFirst({
     where: { idempotencyKey: input.idempotencyKey },
@@ -309,7 +354,8 @@ export async function createOrder(
   if (existing) return existing;
 
   const resolvedLines = await resolveLines(tenantId, branchId, input.lines);
-  const { settings, taxRules } = await getBranchPricingContext(tenantId, branchId, input.type);
+  const { settings, taxRules, maxDiscountBasisPoints } = await getBranchPricingContext(tenantId, branchId, input.type);
+  assertDiscountsWithinCap(resolvedLines, input.orderDiscount, maxDiscountBasisPoints, mayExceedDiscountCap);
   const totals = computeProvisionalTotal(toPricingLines(resolvedLines), input.orderDiscount, taxRules, settings);
 
   const orderId = input.id ?? newOrderId();
@@ -471,7 +517,8 @@ export async function addLinesToOrder(
   branchId: string,
   orderId: string,
   newLines: CreateOrderLineInput[],
-  actorId: string | null
+  actorId: string | null,
+  mayExceedDiscountCap = false
 ) {
   const db = tenantDb(tenantId);
   const order = await db.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true, discounts: true } });
@@ -480,7 +527,8 @@ export async function addLinesToOrder(
   }
 
   const resolvedNewLines = await resolveLines(tenantId, branchId, newLines);
-  const { settings, taxRules } = await getBranchPricingContext(tenantId, branchId, order.type);
+  const { settings, taxRules, maxDiscountBasisPoints } = await getBranchPricingContext(tenantId, branchId, order.type);
+  assertDiscountsWithinCap(resolvedNewLines, undefined, maxDiscountBasisPoints, mayExceedDiscountCap);
   const orderDiscount: DiscountInput | undefined = order.discounts[0]
     ? { type: order.discounts[0].type, value: order.discounts[0].value }
     : undefined;

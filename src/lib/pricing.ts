@@ -85,6 +85,8 @@ export interface BranchPricingSnapshot {
   serviceChargeAppliesTo: string[];
   serviceChargeTaxable: boolean;
   roundingMode: RoundingModeKey;
+  /** See BranchSettings.maxDiscountBasisPoints. 10000 = 100% = no cap. */
+  maxDiscountBasisPoints: BasisPoints;
   taxRules: TaxRuleInput[];
 }
 
@@ -118,7 +120,51 @@ export const DEFAULT_BRANCH_PRICING = {
   serviceChargeAppliesTo: ["DINE_IN"],
   serviceChargeTaxable: true,
   roundingMode: "NEAREST_1",
+  maxDiscountBasisPoints: 10_000,
 } as const satisfies Omit<BranchPricingSnapshot, "taxRules">;
+
+/**
+ * How much a discount actually takes off a given amount, before any cap is considered.
+ *
+ * Shared with the cap check below and mirrors what applyLineDiscount/applyOrderDiscount do, so
+ * "what the cashier is asking for" and "what they would be charged" can never disagree — a cap
+ * computed from a differently-rounded number would refuse discounts it then applied, or vice versa.
+ */
+export function discountAmountPaisa(amountPaisa: Paisa, discount: DiscountInput | undefined): Paisa {
+  if (!discount) return 0;
+  const raw = discount.type === "PERCENT" ? applyRate(amountPaisa, discount.value) : discount.value;
+  return Math.max(0, Math.min(raw, amountPaisa));
+}
+
+/**
+ * Is this discount larger than the branch allows?
+ *
+ * Expressed against the amount being discounted rather than as a flat rupee ceiling, because that
+ * is how a manager thinks about it: "nobody takes more than 20% off". A FIXED discount is therefore
+ * converted to its effective percentage of the same base, so Rs 300 off a Rs 1,000 bill and a 30%
+ * discount are treated identically — otherwise the cap is trivially sidestepped by switching the
+ * discount type.
+ *
+ * Compares paisa rather than percentages to avoid a rounding seam: the cap is turned into the
+ * largest permitted *amount*, which is the number the customer would actually see.
+ */
+export function exceedsDiscountCap(
+  amountPaisa: Paisa,
+  discount: DiscountInput | undefined,
+  capBasisPoints: BasisPoints
+): boolean {
+  if (!discount) return false;
+  if (capBasisPoints >= 10_000) return false; // 100% or more is no cap at all
+
+  // What would actually come off, already clamped to the amount. A zero-value line therefore yields
+  // zero here whatever is asked for, which is why it needs no special case: nothing is discounted,
+  // so there is nothing to refuse.
+  const asked = discountAmountPaisa(amountPaisa, discount);
+  if (asked === 0) return false;
+
+  // Equal to the cap is allowed: a manager who sets 20% expects to be able to give 20%.
+  return asked > applyRate(amountPaisa, capBasisPoints);
+}
 
 /** Applies a line-level discount, clamped so a line can never go negative. */
 function applyLineDiscount(grossPaisa: Paisa, discount: DiscountInput | undefined): {

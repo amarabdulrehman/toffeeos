@@ -200,6 +200,7 @@ interface BranchSettingsDto {
   serviceChargeAppliesTo: string[];
   serviceChargeTaxable: boolean;
   roundingMode: "NONE" | "NEAREST_1" | "NEAREST_5";
+  maxDiscountBasisPoints: number;
 }
 
 /** Order-level pricing settings — service charge %, which order types it applies to, whether it's
@@ -318,6 +319,34 @@ function OrderSettingsCard() {
               </SelectContent>
             </Select>
           </div>
+        </div>
+
+        {/* The discount ceiling lives with the other money settings rather than on the roles screen,
+            because it is a property of the branch, not of a person: the roles screen says who may
+            go past it, this says what "past it" means. Both are needed — the permission sat there
+            gating nothing until this number existed. */}
+        <div className="space-y-1.5 border-t pt-4">
+          <Label htmlFor="max-discount">Largest discount staff may apply (%)</Label>
+          <Input
+            id="max-discount"
+            type="number"
+            min={0}
+            max={100}
+            step={1}
+            disabled={saving}
+            defaultValue={settings.maxDiscountBasisPoints / 100}
+            onBlur={(e) => {
+              const pct = Number(e.target.value);
+              if (Number.isNaN(pct) || pct < 0 || pct > 100) return;
+              save({ maxDiscountBasisPoints: Math.round(pct * 100) });
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            {settings.maxDiscountBasisPoints >= 10000
+              ? "Currently 100% — no limit. Anyone who can apply a discount can take the whole bill off. Lower this to cap it."
+              : `Discounts over ${settings.maxDiscountBasisPoints / 100}% are refused. Staff whose role grants ` +
+                `"Exceed maximum discount" are not bound by it.`}
+          </p>
         </div>
 
         <div className="space-y-1.5">
