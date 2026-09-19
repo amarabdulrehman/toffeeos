@@ -112,11 +112,11 @@ to Spill. Your call, but do not let them discover it during a promotion.
 
 ### 30 of 94 permissions gate nothing
 
-The roles screen renders straight from the registry, so an owner can toggle 31 switches that change
-no behaviour — "Issue a refund" and "Reprint KOT" among them ("Exceed maximum discount" came off
-this list tonight). Most
-correspond to features that do not exist yet. A test now fails if the number grows, so the decision
-gets made when a permission is written rather than when a client finds out.
+The roles screen renders straight from the registry, so an owner can toggle 30 switches that change
+no behaviour — "Issue a refund" and "Reprint KOT" among them. "Exceed maximum discount" came off
+that list tonight and is the only one that has. Most of the rest correspond to features that do not
+exist yet. A test fails if the number grows, so the decision gets made when a permission is written
+rather than when a client finds out.
 
 ### No tips, and no per-guest bill splitting
 
