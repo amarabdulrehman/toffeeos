@@ -240,6 +240,12 @@ test("an add-on chosen offline survives the sync, at the price the cashier charg
   // already carries the add-on before anything is queued.
   await expect(page.getByText("Rs 600").first()).toBeVisible();
 
+  // The note rides the same payload as the add-on and was missing for the same reason, so it is
+  // worth proving on the path where a dropped field is hardest to notice.
+  const note = `No sugar ${suffix}`;
+  await page.getByRole("button", { name: `Note for ${itemName}`, exact: false }).first().click();
+  await page.getByRole("textbox", { name: `Note for ${itemName}`, exact: false }).first().fill(note);
+
   await page.getByRole("button", { name: "Send to Kitchen" }).click();
   await expect(page.getByText(/unsynced/)).toBeVisible();
 
@@ -259,10 +265,11 @@ test("an add-on chosen offline survives the sync, at the price the cashier charg
   // plain one. Asserted through the endpoint the kitchen screen actually reads, rather than the
   // line's name — a modifier is its own row, and the line is still called "Latte".
   const kds = await (await request.get("/api/kds/orders")).json();
-  const kdsLine = (kds.orders as { id: string; lines: { nameSnapshot: string; modifiers: { nameSnapshot: string }[] }[] }[])
+  const kdsLine = (kds.orders as { id: string; lines: { nameSnapshot: string; notes: string | null; modifiers: { nameSnapshot: string }[] }[] }[])
     .find((o) => o.id === synced!.id)
     ?.lines.find((l) => l.nameSnapshot.includes(itemName));
   expect(kdsLine, "the order should be on the kitchen board").toBeTruthy();
+  expect(kdsLine!.notes, "the note must survive the replay too").toBe(note);
   expect(
     kdsLine!.modifiers.map((m) => m.nameSnapshot),
     "and the kitchen must be told what was added to it"

@@ -54,6 +54,10 @@ export interface CartLine {
   /** Chosen add-ons. Part of the line's identity, not just its price: a latte with an extra shot
    * is a different line from a plain one, so the two must not merge in the cart. */
   modifierIds?: string[];
+  /** "No sugar", "extra spicy", "allergy — no peanuts". Free text the kitchen reads; it never
+   * affects the price, which is why it is not part of the line's merge signature the way add-ons
+   * are — but a line that carries one will not absorb a later plain tap of the same item. */
+  notes?: string;
   unitPricePaisa: number;
   quantity: number;
   discount?: Discount;

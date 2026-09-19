@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Minus, Plus, Search, Trash2 } from "lucide-react";
+import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { formatPkr } from "@/lib/money";
 import { useChannel } from "@/lib/realtime-client";
 import { topic } from "@/lib/realtime-topics";
 import { cacheTables, getCachedTables } from "@/lib/offline/db";
+import { CartRow } from "./cart-panel";
 import type { CartLine, FloorDto, OrderDto, RestaurantTableDto } from "./types";
 
 type StatusFilter = "ALL" | "AVAILABLE" | "RESERVED" | "BOOKED";
@@ -251,6 +252,7 @@ export function AddItemsPanel({
   lines,
   onQuantityChange,
   onRemoveLine,
+  onNoteChange,
   onCancel,
   onSubmit,
   submitting,
@@ -259,6 +261,7 @@ export function AddItemsPanel({
   lines: CartLine[];
   onQuantityChange: (key: string, delta: number) => void;
   onRemoveLine: (key: string) => void;
+  onNoteChange: (key: string, notes: string) => void;
   onCancel: () => void;
   onSubmit: () => void;
   submitting: boolean;
@@ -279,37 +282,15 @@ export function AddItemsPanel({
         ) : (
           <div className="space-y-2">
             {lines.map((line) => (
-              <div key={line.key} className="rounded-xl border border-border/60 bg-background p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="text-sm font-semibold leading-snug">{line.name}</div>
-                  <button
-                    onClick={() => onRemoveLine(line.key)}
-                    className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="mt-2 flex items-center justify-between">
-                  <div className="flex items-center gap-1 rounded-full border bg-muted/50 p-0.5">
-                    <button
-                      onClick={() => onQuantityChange(line.key, -1)}
-                      className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
-                    >
-                      <Minus className="h-3 w-3" />
-                    </button>
-                    <span className="w-5 text-center text-sm font-medium tabular-nums">{line.quantity}</span>
-                    <button
-                      onClick={() => onQuantityChange(line.key, 1)}
-                      className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
-                    >
-                      <Plus className="h-3 w-3" />
-                    </button>
-                  </div>
-                  <div className="font-heading text-sm font-semibold tabular-nums">
-                    {formatPkr(line.unitPricePaisa * line.quantity)}
-                  </div>
-                </div>
-              </div>
+              // The same row as the main cart, so a note can be written on a course added to a
+              // table that is already eating — which is exactly when one gets asked for.
+              <CartRow
+                key={line.key}
+                line={line}
+                onQuantityChange={onQuantityChange}
+                onRemoveLine={onRemoveLine}
+                onNoteChange={onNoteChange}
+              />
             ))}
           </div>
         )}

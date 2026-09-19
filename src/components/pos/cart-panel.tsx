@@ -1,6 +1,7 @@
 "use client";
 
-import { MapPin, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { MapPin, Minus, NotebookPen, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -33,6 +34,7 @@ export function CartPanel({
   lines,
   onQuantityChange,
   onRemoveLine,
+  onNoteChange,
   totals,
   canTakePayment,
   onSendToKitchen,
@@ -55,6 +57,7 @@ export function CartPanel({
   lines: CartLine[];
   onQuantityChange: (key: string, delta: number) => void;
   onRemoveLine: (key: string) => void;
+  onNoteChange: (key: string, notes: string) => void;
   totals: PreviewTotals | null;
   canTakePayment: boolean;
   onSendToKitchen: () => void;
@@ -117,40 +120,13 @@ export function CartPanel({
         )}
         <div className="space-y-2">
           {lines.map((line) => (
-            <div
+            <CartRow
               key={line.key}
-              className="rounded-xl border border-border/60 bg-background p-3 transition-colors hover:border-border"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="text-sm font-semibold leading-snug">{line.name}</div>
-                <button
-                  onClick={() => onRemoveLine(line.key)}
-                  className="-m-1.5 flex shrink-0 size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="mt-2 flex items-center justify-between">
-                <div className="flex items-center gap-1 rounded-full border bg-muted/50 p-0.5">
-                  <button
-                    onClick={() => onQuantityChange(line.key, -1)}
-                    className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground active:scale-95"
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="w-6 text-center text-sm font-semibold tabular-nums">{line.quantity}</span>
-                  <button
-                    onClick={() => onQuantityChange(line.key, 1)}
-                    className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground active:scale-95"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="font-heading text-sm font-semibold tabular-nums">
-                  {formatPkr(line.unitPricePaisa * line.quantity)}
-                </div>
-              </div>
-            </div>
+              line={line}
+              onQuantityChange={onQuantityChange}
+              onRemoveLine={onRemoveLine}
+              onNoteChange={onNoteChange}
+            />
           ))}
         </div>
       </div>
@@ -191,6 +167,95 @@ function Row({ label, value, bold }: { label: string; value?: number; bold?: boo
     <div className={`flex justify-between ${bold ? "text-base font-bold" : "text-muted-foreground"}`}>
       <span>{label}</span>
       <span className={bold ? "text-foreground" : "tabular-nums"}>{formatPkr(value ?? 0)}</span>
+    </div>
+  );
+}
+
+
+/**
+ * One line in the cart, with the note the kitchen will read.
+ *
+ * The note lives here rather than in the options dialog because most items never open one — an
+ * item with no sizes and no add-ons is a single tap — and "no sugar" is just as likely on those.
+ * Its own component so the open/closed state of the box belongs to the line rather than to a map
+ * of keys held by the panel.
+ */
+export function CartRow({
+  line,
+  onQuantityChange,
+  onRemoveLine,
+  onNoteChange,
+}: {
+  line: CartLine;
+  onQuantityChange: (key: string, delta: number) => void;
+  onRemoveLine: (key: string) => void;
+  onNoteChange: (key: string, notes: string) => void;
+}) {
+  // Opens on demand so a cart of ten items is not ten text boxes, but stays open for a line that
+  // already carries a note — otherwise the note is invisible until someone thinks to look for it.
+  const [open, setOpen] = useState(false);
+  const showBox = open || !!line.notes;
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-background p-3 transition-colors hover:border-border">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-sm font-semibold leading-snug">{line.name}</div>
+        <button
+          onClick={() => onRemoveLine(line.key)}
+          aria-label={`Remove ${line.name}`}
+          className="-m-1.5 flex shrink-0 size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1 rounded-full border bg-muted/50 p-0.5">
+          <button
+            onClick={() => onQuantityChange(line.key, -1)}
+            aria-label={`One fewer ${line.name}`}
+            className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground active:scale-95"
+          >
+            <Minus className="h-3.5 w-3.5" />
+          </button>
+          <span className="w-6 text-center text-sm font-semibold tabular-nums">{line.quantity}</span>
+          <button
+            onClick={() => onQuantityChange(line.key, 1)}
+            aria-label={`One more ${line.name}`}
+            className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground active:scale-95"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setOpen((v) => !v)}
+            aria-label={`Note for ${line.name}`}
+            title="Note for the kitchen"
+            className={`flex size-8 items-center justify-center rounded-full transition-colors hover:bg-muted active:scale-95 ${
+              line.notes ? "text-warning" : "text-muted-foreground"
+            }`}
+          >
+            <NotebookPen className="h-4 w-4" />
+          </button>
+          <div className="font-heading text-sm font-semibold tabular-nums">
+            {formatPkr(line.unitPricePaisa * line.quantity)}
+          </div>
+        </div>
+      </div>
+      {showBox && (
+        <Input
+          autoFocus={open}
+          value={line.notes ?? ""}
+          onChange={(e) => onNoteChange(line.key, e.target.value)}
+          onBlur={() => setOpen(false)}
+          // Matches the server's own limit on the column, so a long note is stopped where it is
+          // typed rather than rejected after Send to Kitchen.
+          maxLength={280}
+          aria-label={`Note for ${line.name}`}
+          placeholder="No sugar, extra spicy…"
+          className="mt-2 h-8 text-sm"
+        />
+      )}
     </div>
   );
 }

@@ -113,4 +113,36 @@ test.describe("POS payment — cash/card tax switching never overcharges", () =>
     expect(order.taxPaisa).toBe(3_840); // 8% of Rs 480 (48000 paisa) = 3840 paisa exactly
     expect(order.totalPaisa).toBe(51_800); // 48000 + 3840 = 51840, rounded to the nearest Rs 1
   });
+
+  test("a note typed on a cart line reaches the order the kitchen reads", async ({ page, request }) => {
+    /**
+     * The other half of a gap the KDS fix exposed: OrderLine.notes has existed since the schema was
+     * written, /api/orders accepts it, and the printed ticket has always rendered it — but no screen
+     * anywhere let anyone type one. "No sugar" and "allergy, no peanuts" had to be shouted across a
+     * kitchen, which works until it is busy, which is the only time it matters.
+     *
+     * Asserted on the server's copy of the order rather than on the board, because the board's
+     * rendering is pinned separately in kds-and-online-ordering.spec.ts. This is the capture half.
+     */
+    const table = await getAvailableTable(request);
+    await page.goto("/pos");
+    await expect(page.getByText("Online — all orders synced")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole("button", { name: "Select a table" }).click();
+    await page.getByRole("dialog").getByText(table.label, { exact: true }).click();
+    await page.getByRole("button", { name: SEED_MENU_ITEM.name, exact: false }).first().click();
+
+    const note = `No sugar ${Math.random().toString(36).slice(2, 7)}`;
+    await page.getByRole("button", { name: `Note for ${SEED_MENU_ITEM.name}`, exact: false }).first().click();
+    await page.getByRole("textbox", { name: `Note for ${SEED_MENU_ITEM.name}`, exact: false }).first().fill(note);
+
+    await page.getByRole("button", { name: "Send to Kitchen" }).click();
+    await expect(page.getByText(/Order #\d+ sent to kitchen/i)).toBeVisible({ timeout: 30_000 });
+
+    const orders = await (await request.get("/api/orders")).json();
+    const order = (orders.orders as { tableId: string; lines: { notes: string | null }[] }[]).find(
+      (o) => o.tableId === table.id && o.lines.some((l) => l.notes === note)
+    );
+    expect(order, "the note the cashier typed must reach the order, or the kitchen never learns of it").toBeTruthy();
+  });
 });

@@ -232,7 +232,10 @@ export function PosTerminal({
         (l) =>
           l.menuItemId === item.id &&
           l.variantId === variantId &&
-          [...(l.modifierIds ?? [])].sort().join(",") === signature
+          [...(l.modifierIds ?? [])].sort().join(",") === signature &&
+          // A line someone has written a note on is not a match for a later plain tap. Merging
+          // would silently apply "no sugar" to a second coffee nobody asked to change.
+          !l.notes
       );
       if (existing) {
         return prev.map((l) => (l === existing ? { ...l, quantity: l.quantity + 1 } : l));
@@ -251,6 +254,12 @@ export function PosTerminal({
         },
       ];
     });
+  }
+
+  /** Trimmed, and an emptied box clears the note rather than storing "" — the kitchen should see
+   *  no note at all, not a blank one. */
+  function setLineNote(key: string, notes: string) {
+    setLines((prev) => prev.map((l) => (l.key === key ? { ...l, notes: notes.trim() || undefined } : l)));
   }
 
   function handleSelectItem(_categoryId: string, item: MenuItemDto) {
@@ -310,6 +319,7 @@ export function PosTerminal({
           menuItemId: l.menuItemId,
           variantId: l.variantId,
           modifierIds: l.modifierIds,
+          notes: l.notes,
           quantity: l.quantity,
           discount: l.discount,
         })),
@@ -399,6 +409,7 @@ export function PosTerminal({
             menuItemId: l.menuItemId,
             variantId: l.variantId,
             modifierIds: l.modifierIds,
+            notes: l.notes,
             quantity: l.quantity,
             discount: l.discount,
           })),
@@ -567,6 +578,7 @@ export function PosTerminal({
               lines={lines}
               onQuantityChange={handleQuantityChange}
               onRemoveLine={(key) => setLines((prev) => prev.filter((l) => l.key !== key))}
+              onNoteChange={setLineNote}
               onCancel={() => {
                 setAddingItemsToOrder(false);
                 setLines([]);
@@ -619,6 +631,7 @@ export function PosTerminal({
             lines={lines}
             onQuantityChange={handleQuantityChange}
             onRemoveLine={(key) => setLines((prev) => prev.filter((l) => l.key !== key))}
+            onNoteChange={setLineNote}
             totals={lines.length === 0 ? null : totals}
             canTakePayment={canTakePayment}
             onSendToKitchen={() => handleSendToKitchen()}

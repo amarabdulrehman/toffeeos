@@ -99,6 +99,7 @@ export async function queueCreateOrder(args: {
       // replay — a customer undercharged, a kitchen ticket missing what they asked for, and no
       // error anywhere to say so. CreateOrderPayload has always had the field; nothing filled it.
       modifierIds: l.modifierIds,
+      notes: l.notes,
       quantity: l.quantity,
       discount: l.discount,
     })),
