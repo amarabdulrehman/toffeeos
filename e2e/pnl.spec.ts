@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { authFile, uniqueSuffix } from "./fixtures/test-data";
+import { getMenuItemId } from "./fixtures/api";
 
 /**
  * Cash-basis P&L. The assertions here are mostly about *internal consistency* — that the P&L can't
@@ -9,6 +10,7 @@ import { authFile, uniqueSuffix } from "./fixtures/test-data";
 
 interface Pnl {
   grossSalesPaisa: number;
+  refundsPaisa: number;
   salesTaxPaisa: number;
   netRevenuePaisa: number;
   orderCount: number;
@@ -54,8 +56,10 @@ test.describe("P&L report", () => {
     const res = await request.get(`/api/reports/pnl?${wideRange()}`);
     const pnl: Pnl = await res.json();
 
-    // Tax is collected for the PRA and remitted — it must never be counted as income.
-    expect(pnl.netRevenuePaisa).toBe(pnl.grossSalesPaisa - pnl.salesTaxPaisa);
+    // Tax is collected for the PRA and remitted — it must never be counted as income. Refunds come
+    // off the same line: this identity is what silently stopped holding when refunds were added and
+    // this report was not told about them.
+    expect(pnl.netRevenuePaisa).toBe(pnl.grossSalesPaisa - pnl.refundsPaisa - pnl.salesTaxPaisa);
     expect(pnl.salesTaxPaisa).toBeGreaterThan(0); // the demo tenant has PRA rules and paid orders
     expect(pnl.netRevenuePaisa).toBeLessThan(pnl.grossSalesPaisa);
 
@@ -74,6 +78,54 @@ test.describe("P&L report", () => {
     for (const [k, v] of Object.entries(pnl)) {
       if (k.endsWith("Paisa")) expect(Number.isInteger(v), `${k} must be an integer`).toBe(true);
     }
+  });
+
+  test("a refund comes off profit, along with the tax that went back with it", async ({ request }) => {
+    /**
+     * This report summed Order.totalPaisa and stopped. Refunds were added without it being told,
+     * so every rupee handed back to a customer still counted as profit — and the Sales tab beside
+     * it, which has always netted refunds, quoted a different number for the same range.
+     *
+     * A refund is a slice of a tax-inclusive order, so its tax share goes back too. Asserting the
+     * split rather than just "profit went down" is the point: taking the whole refund off gross
+     * while leaving tax untouched is the obvious wrong fix and would over-correct by exactly this
+     * amount.
+     */
+    const qs = wideRange();
+    const menuItemId = await getMenuItemId(request, "Fish Pakora");
+
+    const created = await request.post("/api/orders", {
+      data: { type: "TAKEAWAY", idempotencyKey: `pnl-refund-${uniqueSuffix()}`, lines: [{ menuItemId, quantity: 2 }] },
+    });
+    expect(created.ok(), await created.text()).toBeTruthy();
+    const order = (await created.json()).order;
+
+    const paid = await request.post(`/api/orders/${order.id}/pay`, {
+      data: { tenders: [{ method: "CASH", amountPaisa: order.totalPaisa }] },
+    });
+    expect(paid.ok(), await paid.text()).toBeTruthy();
+    const settled = (await paid.json()).order;
+
+    const before: Pnl = await (await request.get(`/api/reports/pnl?${qs}`)).json();
+
+    const refundPaisa = Math.floor(settled.paidPaisa / 2);
+    const refunded = await request.post(`/api/orders/${order.id}/refund`, {
+      data: { amountPaisa: refundPaisa, method: "CASH", reason: "pnl netting probe" },
+    });
+    expect(refunded.ok(), await refunded.text()).toBeTruthy();
+
+    const after: Pnl = await (await request.get(`/api/reports/pnl?${qs}`)).json();
+
+    // The same apportionment the report does, computed here from the order's own numbers.
+    const refundedTaxPaisa = Math.round((refundPaisa * settled.taxPaisa) / settled.totalPaisa);
+
+    expect(after.grossSalesPaisa, "gross is what was rung up and does not move").toBe(before.grossSalesPaisa);
+    expect(after.refundsPaisa - before.refundsPaisa, "the refund is reported in full").toBe(refundPaisa);
+    expect(after.salesTaxPaisa - before.salesTaxPaisa, "tax owed drops by the refund's share").toBe(-refundedTaxPaisa);
+    expect(
+      after.netProfitPaisa - before.netProfitPaisa,
+      "profit falls by the refund less the tax that was never the restaurant's"
+    ).toBe(-(refundPaisa - refundedTaxPaisa));
   });
 
   test("a recorded expense increases costs and reduces profit by exactly its amount", async ({ request }) => {

@@ -836,6 +836,7 @@ function RiderTab({ qs }: { qs: string }) {
 
 interface PnlReportData {
   grossSalesPaisa: number;
+  refundsPaisa: number;
   salesTaxPaisa: number;
   netRevenuePaisa: number;
   orderCount: number;
@@ -1119,6 +1120,7 @@ function PnlTab({ qs }: { qs: string }) {
               // net profit in a spreadsheet.
               downloadCsv("profit-and-loss", [
                 { line: "Gross sales", amountRs: (data.grossSalesPaisa / 100).toFixed(2) },
+                { line: "Less: refunds", amountRs: (-data.refundsPaisa / 100).toFixed(2) },
                 { line: "Less: sales tax collected", amountRs: (-data.salesTaxPaisa / 100).toFixed(2) },
                 { line: "Net revenue", amountRs: (data.netRevenuePaisa / 100).toFixed(2) },
                 { line: "Stock purchases", amountRs: (-data.stockPurchasesPaisa / 100).toFixed(2) },
@@ -1137,6 +1139,12 @@ function PnlTab({ qs }: { qs: string }) {
         </CardHeader>
         <CardContent>
           <PnlRow label="Gross sales" amountPaisa={data.grossSalesPaisa} hint={`${data.orderCount} paid orders`} />
+          {/* Shown only when there were refunds: a permanent "Less: refunds — Rs 0" row on every
+              café's P&L is noise, but a month with refunds in it must say so, or the gross figure
+              above and the net below look like they disagree. */}
+          {data.refundsPaisa > 0 && (
+            <PnlRow label="Less: refunds" amountPaisa={data.refundsPaisa} deduction indent />
+          )}
           <PnlRow label="Less: sales tax collected" amountPaisa={data.salesTaxPaisa} deduction indent />
           <PnlRow label="Net revenue" amountPaisa={data.netRevenuePaisa} emphasis />
 

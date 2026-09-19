@@ -354,7 +354,10 @@ export async function staffPerformanceReport(tenantId: string, branchIds: string
   const [orders, discounts, voids, users] = await Promise.all([
     db.order.findMany({
       where: { branchId: { in: branchIds }, status: "PAID", paidAt: { gte: range.from, lte: range.to } },
-      select: { createdById: true, totalPaisa: true, paidAt: true },
+      // refundedPaisa comes along because a cashier's sales figure that counts money already
+      // handed back is both wrong and, if anything is paid on it, worth gaming: ring up a large
+      // order, refund it tomorrow, keep the credit.
+      select: { createdById: true, totalPaisa: true, refundedPaisa: true, paidAt: true },
     }),
     db.orderDiscount.findMany({
       where: { tenantId, order: { branchId: { in: branchIds }, paidAt: { gte: range.from, lte: range.to } } },
@@ -399,7 +402,9 @@ export async function staffPerformanceReport(tenantId: string, branchIds: string
     const day = (o.paidAt ?? new Date()).toISOString().slice(0, 10);
     const row = ensure(o.createdById, day);
     row.orders += 1;
-    row.totalPaisa += o.totalPaisa;
+    // Net of anything refunded on that order, so the figure is money the café kept rather than
+    // money that passed through the till.
+    row.totalPaisa += o.totalPaisa - o.refundedPaisa;
   }
   for (const d of discounts) {
     // OrderDiscount has no timestamp of its own — the order's paidAt is the closest proxy.
@@ -548,6 +553,9 @@ export async function riderPerformanceReport(tenantId: string, branchIds: string
 
 export interface PnlReport {
   grossSalesPaisa: number;
+  /** Money handed back in the range, tax included — the same figure the Sales tab nets off. */
+  refundsPaisa: number;
+  /** Sales tax on the orders in range, already reduced by the tax share of those refunds. */
   salesTaxPaisa: number;
   netRevenuePaisa: number;
   orderCount: number;
@@ -566,8 +574,16 @@ export interface PnlReport {
 }
 
 /**
- * Cash-basis P&L. Three things worth being explicit about, because each one is a place a reader
+ * Cash-basis P&L. Four things worth being explicit about, because each one is a place a reader
  * could reasonably expect a different number:
+ *
+ * 0. **Refunds come off, and so does the tax on them.** This report did not know refunds existed
+ *    until they were wired in here: it summed Order.totalPaisa and stopped, so every rupee handed
+ *    back to a customer still counted as profit. An owner who refunded Rs 20,000 in a month read a
+ *    profit figure Rs 20,000 too high, while the Sales tab beside it — which has always netted
+ *    refunds — quoted something different. A refund is a slice of an order that was tax-inclusive,
+ *    so its tax share is returned too; taking the whole refund off gross while leaving tax whole
+ *    would over-correct by exactly that share.
  *
  * 1. **Revenue is net of sales tax.** Order.totalPaisa includes taxPaisa, but PRA tax is collected
  *    on the government's behalf and remitted — it was never the restaurant's money. Counting it as
@@ -586,11 +602,18 @@ export interface PnlReport {
 export async function pnlReport(tenantId: string, branchIds: string[], range: DateRange): Promise<PnlReport> {
   const db = tenantDb(tenantId);
 
-  const [orderAgg, grnAgg, grnMissingCost, payrollAgg, expenses, categories] = await Promise.all([
+  const [orderAgg, refundedOrders, grnAgg, grnMissingCost, payrollAgg, expenses, categories] = await Promise.all([
     db.order.aggregate({
       where: paidOrdersWhere(branchIds, range),
       _sum: { totalPaisa: true, taxPaisa: true },
       _count: { _all: true },
+    }),
+    // Only the refunded ones, and fetched rather than aggregated: apportioning a refund's tax
+    // share needs each order's own tax-to-total ratio, which no _sum can give. In a normal month
+    // this is a handful of rows.
+    db.order.findMany({
+      where: { ...paidOrdersWhere(branchIds, range), refundedPaisa: { gt: 0 } },
+      select: { refundedPaisa: true, taxPaisa: true, totalPaisa: true },
     }),
     db.stockMovement.aggregate({
       where: { branchId: { in: branchIds }, type: "GRN", createdAt: { gte: range.from, lte: range.to } },
@@ -620,8 +643,21 @@ export async function pnlReport(tenantId: string, branchIds: string[], range: Da
   ]);
 
   const grossSalesPaisa = orderAgg._sum.totalPaisa ?? 0;
-  const salesTaxPaisa = orderAgg._sum.taxPaisa ?? 0;
-  const netRevenuePaisa = grossSalesPaisa - salesTaxPaisa;
+
+  let refundsPaisa = 0;
+  let refundedTaxPaisa = 0;
+  for (const o of refundedOrders) {
+    refundsPaisa += o.refundedPaisa;
+    // The refund's own share of that order's tax. A CHECK constraint keeps refundedPaisa within
+    // paidPaisa, and a paid order always has a positive total, but the guard costs nothing and a
+    // division by zero here would poison every figure below it.
+    if (o.totalPaisa > 0) {
+      refundedTaxPaisa += Math.round((o.refundedPaisa * o.taxPaisa) / o.totalPaisa);
+    }
+  }
+
+  const salesTaxPaisa = (orderAgg._sum.taxPaisa ?? 0) - refundedTaxPaisa;
+  const netRevenuePaisa = grossSalesPaisa - refundsPaisa - salesTaxPaisa;
 
   const stockPurchasesPaisa = grnAgg._sum.costPaisa ?? 0;
   const salariesPaisa = payrollAgg._sum.grossPayPaisa ?? 0;
@@ -640,6 +676,7 @@ export async function pnlReport(tenantId: string, branchIds: string[], range: Da
 
   return {
     grossSalesPaisa,
+    refundsPaisa,
     salesTaxPaisa,
     netRevenuePaisa,
     orderCount: orderAgg._count._all,

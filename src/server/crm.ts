@@ -35,14 +35,16 @@ async function aggregatesFor(tenantId: string, customerIds: string[]): Promise<M
   const db = tenantDb(tenantId);
   const orders = await db.order.findMany({
     where: { customerId: { in: customerIds }, status: "PAID" },
-    select: { customerId: true, totalPaisa: true, paidAt: true },
+    select: { customerId: true, totalPaisa: true, refundedPaisa: true, paidAt: true },
   });
   const byCustomer = new Map<string, CustomerAggregate>();
   for (const o of orders) {
     if (!o.customerId) continue;
     const agg = byCustomer.get(o.customerId) ?? { totalOrders: 0, totalSpendPaisa: 0, lastOrderAt: null };
     agg.totalOrders += 1;
-    agg.totalSpendPaisa += o.totalPaisa;
+    // Less whatever came back. Lifetime spend decides who counts as a regular, and a customer who
+    // was refunded in full has not spent anything.
+    agg.totalSpendPaisa += o.totalPaisa - o.refundedPaisa;
     if (o.paidAt && (!agg.lastOrderAt || o.paidAt > agg.lastOrderAt)) agg.lastOrderAt = o.paidAt;
     byCustomer.set(o.customerId, agg);
   }

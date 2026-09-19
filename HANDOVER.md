@@ -117,20 +117,39 @@ visible to the client. Decide before a café runs a promotion on it.
 ### Twenty-nine permissions gate nothing
 
 Ninety-four are declared, sixty-five enforced. The roles screen renders from the registry, so an
-owner can toggle twenty-nine switches that change no behaviour — "Reprint KOT" among them. Most
-correspond to features that do not exist yet.
+owner can toggle twenty-nine switches that change no behaviour — "Reprint KOT" among them.
+
+I went through all twenty-nine. Every one corresponds to a feature that was scoped and never built:
+there is no line-void, no no-sale drawer open, no tax-exempt flag, no table merge, no branch price
+override, no purchase orders. So the risk is an owner believing a capability is controlled when the
+capability does not exist — confusing, not dangerous. Nothing on that list leaves a working feature
+ungoverned.
+
+I checked the other direction too, which is the one that would actually matter: of 134 API route
+files, 33 declare no permission. All 33 are deliberate — the public ones (login, signup, invite
+acceptance, online ordering, tenant status), the two cron jobs (Bearer `CRON_SECRET`, and they fail
+closed if it is unset), the platform-admin routes (a separate handler with its own auth), and
+`clock-out`, which only ever touches the caller's own record. No tenant-facing route is unguarded.
+
+Worth stating plainly: there is no screen or endpoint anywhere that edits a role's permissions.
+Roles are created at signup and changed only by `db:sync-roles`. That is why "Manage roles" is
+itself on the unenforced list.
 
 Two came off that list this week: the discount ceiling and refunds both gate something real now. A
 test fails if the number grows again, so the decision gets made when a permission is written rather
 than when a client finds it.
 
-### Menu setup is manual
+### Menu setup imports, but does not edit
 
-There is no import. A café with a seventy-eight item menu is a long evening of typing, and sizes and
-add-ons can be created but not reordered or renamed without deleting and recreating them.
+A CSV import now exists (Menu → Import a menu). One row per sellable line, repeated rows give an
+item its sizes, and it previews before it writes — a file with a bad row in it writes nothing at
+all, and re-running skips what is already there, so a run that dies halfway is fixed by running it
+again. That takes onboarding a seventy-eight item menu from an evening to a few minutes.
 
-If you are onboarding more than a couple of clients, a CSV import is the single highest-value thing
-you could build next.
+What it does not do is change anything that already exists. Sizes and add-ons can be created but
+not renamed or reordered without deleting and recreating them, and the import deliberately will not
+update an item it finds — it leaves it alone. A café that wants a price list changed still needs
+someone to do it by hand.
 
 ### Receipt printing goes through the browser
 
