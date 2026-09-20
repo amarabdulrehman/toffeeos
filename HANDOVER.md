@@ -228,7 +228,8 @@ Ten minutes on a different network would settle it.
 
 ## 5. What is solid
 
-Verified with 142 end-to-end tests and 137 unit tests passing, against a clean production build:
+Verified with 154 end-to-end tests and 164 unit tests passing (one e2e test skips itself when the
+demo tenant has no second branch), against a clean production build:
 
 - **Offline** — orders punched during an outage queue locally and sync once, with the exact charged
   amount and no drift.
@@ -242,10 +243,23 @@ Verified with 142 end-to-end tests and 137 unit tests passing, against a clean p
 - **Impersonation** — single-use and audit-logged before the admin follows through.
 - **Accessibility and responsive layout** — every staff screen and every public page, at phone,
   tablet and laptop.
+- **What the kitchen is told** — add-ons and line notes reach the board, the ticket and the
+  customer's receipt, and survive an order punched during an outage. None of that was true a day
+  ago: the data was captured and sent and then rendered nowhere, and the offline queue dropped
+  add-ons entirely, undercharging without an error anywhere.
+- **Refunds reach the reports** — the P&L nets refunds and the tax that went back with them, so it
+  can no longer disagree with the Sales tab about the same range.
 
 Every fix in this period was verified by deliberately breaking it and watching the right test fail,
 then restoring it. Three times that caught a test that passed for the wrong reason, including one
 where removing the cash drawer's refund subtraction left the drawer tests green.
+
+One more thing the suite earned on its last run, worth recording because it argues for running the
+whole thing rather than the specs you touched: five POS tests failed together that each passed in
+isolation. They were not flakes. Every seeded category shared a sortOrder of 0 and the menu
+endpoints ordered on that column alone, so the first category — the one the POS grid opens on — was
+whatever Postgres felt like returning that day. The tests had been passing on luck, and a café
+would have seen its menu tabs reorder themselves between page loads.
 
 ---
 
