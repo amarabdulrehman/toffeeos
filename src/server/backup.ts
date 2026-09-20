@@ -14,11 +14,11 @@ import { platformDb } from "@/server/db";
  * backing up. Upgrade to Pro once the cost is justified by real revenue; until then, this is
  * something rather than nothing.
  *
- * Restoring from one of these isn't scripted (deliberately — a generic restore across 51 tables
- * with FK ordering and RLS is a lot of untested surface to build blind). If it's ever actually
- * needed: download the .json.gz from the "db-backups" bucket, gunzip it, and it's a plain
- * `{ [ModelName]: row[] }` object — write a targeted restore for whatever actually broke rather
- * than a generic one that's never been exercised against a real incident.
+ * Restoring is scripted: prisma/restore-backup.ts. This comment used to say it deliberately was
+ * not, and that stopped being true on 10 September 2026 — it is repeated in enough places that it
+ * is worth correcting at the source. The dump is a plain `{ [ModelName]: row[] }` object, so the
+ * restore enumerates its own tables from the file rather than carrying a second list that could
+ * drift from the one below.
  */
 const BACKUPS_BUCKET = "db-backups";
 const RETENTION_DAYS = 14;

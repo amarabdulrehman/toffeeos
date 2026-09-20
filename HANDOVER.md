@@ -89,13 +89,19 @@ key is Sensitive in Vercel and cannot be read back, so there is no way to assert
 
 Two things about it still need saying.
 
-**Restoring is not scripted, deliberately.** A generic restore across 56 tables with foreign-key
-ordering and RLS is a large amount of surface that would never be exercised until the worst possible
-day. The documented plan is to download the `.json.gz`, gunzip it — it is a plain
-`{ [ModelName]: row[] }` object — and write a targeted restore for whatever actually broke. That is
-an honest plan, but it has never been rehearsed, and an unrehearsed restore is not a backup. Do it
-once against a scratch database and compare a few row counts. An hour now, against a very bad
-afternoon later.
+**Restoring is scripted, and was proven once.** `prisma/restore-backup.ts`, added 10 September
+2026. It restores inside `SET session_replication_role = replica` so foreign-key triggers are
+suspended — a JSON dump has no dependency ordering — re-enables them at the end, and runs as one
+transaction, so a failure rolls back rather than leaving a half-restored database. It refuses to
+touch production unless `ALLOW_PROD_RESTORE=1` is set, because every table it writes is emptied
+first. It takes its table list from the dump file itself, so it cannot drift from what the backup
+writes.
+
+An earlier version of this note claimed no restore path existed. That was wrong, and it was wrong
+on the day it was written. What is actually true is narrower: it was proven against one backup in
+the development project, and it has never been exercised against a production dump or on a realistic
+data volume. That rehearsal is still worth doing, and it is a much smaller job than writing the
+thing from scratch, which is what this section previously implied was outstanding.
 
 **The backups live in the same Supabase project as the data.** That covers the common case — a bad
 migration, an accidental delete, an application bug — and not a Supabase-side loss event. Moving to
@@ -282,8 +288,8 @@ would have seen its menu tabs reorder themselves between page loads.
 
 ## The short version
 
-Upgrade the plan, recover the database password, run the migrations, restore a backup once to prove
-you can, and set up email DNS. That is the difference between software that works and a business you can invoice
+Upgrade the plan, recover the database password, rehearse a restore against a production dump, and
+set up email DNS. The migrations are applied — pushed and confirmed on 20 September 2026. That is the difference between software that works and a business you can invoice
 from.
 
 Everything in section 3 is a conversation to have with a café before they sign, not a reason to
