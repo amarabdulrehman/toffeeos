@@ -97,11 +97,29 @@ touch production unless `ALLOW_PROD_RESTORE=1` is set, because every table it wr
 first. It takes its table list from the dump file itself, so it cannot drift from what the backup
 writes.
 
-An earlier version of this note claimed no restore path existed. That was wrong, and it was wrong
-on the day it was written. What is actually true is narrower: it was proven against one backup in
-the development project, and it has never been exercised against a production dump or on a realistic
-data volume. That rehearsal is still worth doing, and it is a much smaller job than writing the
-thing from scratch, which is what this section previously implied was outstanding.
+Rehearsed properly on 20 September 2026, against development: `npm run db:backup` to capture the
+current state, then `npm run db:restore` to put that same archive back. 8,934 rows across all 56
+tables, and afterwards the database was identical — same order count, same totals to the paisa, same
+refunded totals, no orphaned foreign keys, menu order intact. The money-path e2e specs were then run
+against the restored database and passed. So the mechanism works end to end, not just in principle.
+
+Two changes came out of doing it. The restore inserted one row at a time, which is fine at nine
+thousand and the wrong shape for a café a year in — hundreds of thousands of round trips inside one
+transaction is where a restore stops being slow and starts timing out, discovered on the worst
+possible day. It now batches, clamped per table so a wide table shortens the batch rather than
+overrunning Postgres' parameter ceiling. And it now verifies row counts against the archive after
+committing and exits non-zero on a mismatch, so a restore reports whether it worked instead of just
+exiting.
+
+**What is still not proven: production volume.** Development is 0.46 MB. A trading café is a
+different animal, and the failures worth fearing are the ones that only appear at size. Doing that
+needs production's service role key, which is Sensitive in Vercel, and a scratch database to restore
+into — the backup is read from Supabase Storage and written to whatever `DIRECT_URL` points at, and
+those are separate variables, so pointing storage at production and `DIRECT_URL` at a throwaway
+database is a safe rehearsal that cannot touch live data.
+
+An earlier version of this note claimed no restore path existed at all. That was wrong on the day it
+was written.
 
 **The backups live in the same Supabase project as the data.** That covers the common case — a bad
 migration, an accidental delete, an application bug — and not a Supabase-side loss event. Moving to

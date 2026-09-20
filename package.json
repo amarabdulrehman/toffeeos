@@ -24,6 +24,8 @@
     "audit:payments": "cross-env NODE_OPTIONS=--conditions=react-server tsx prisma/audit-payments.ts",
     "db:seed-demo-costs": "tsx prisma/seed-demo-costs.ts",
     "db:order-menu": "tsx prisma/order-menu.ts",
+    "db:backup": "cross-env NODE_OPTIONS=--conditions=react-server tsx prisma/run-backup.ts",
+    "db:restore": "cross-env NODE_OPTIONS=--conditions=react-server tsx prisma/restore-backup.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

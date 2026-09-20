@@ -30,6 +30,23 @@ import { Client } from "pg";
 const PROD_REF = "ntzwlkgqzkxworwuiqlh";
 const BUCKET = "db-backups";
 
+/**
+ * Rows per INSERT.
+ *
+ * This used to be one statement per row. That is fine against the development database — nine
+ * thousand rows — and it is the wrong shape for the only situation this script exists for: a real
+ * café's database, a year in, restored during an incident. Hundreds of thousands of individual
+ * round trips inside a single transaction is where a restore stops being slow and starts timing
+ * out, which you would discover on the worst possible day.
+ *
+ * Batched, so it is a few thousand statements rather than a few hundred thousand. Postgres caps a
+ * statement at 65535 bound parameters and rows x columns is what counts against it — the widest
+ * table today is Order at 39, so 500 rows is 19,500. Rather than leave that as a comment that stops
+ * being true the day someone adds a wide table, the batch is clamped per table below.
+ */
+const ROWS_PER_INSERT = 500;
+const PG_MAX_PARAMS = 65535;
+
 /** Order matters only for the emptying pass; inserts run with FK triggers suspended. */
 function tablesInDump(dump: Record<string, unknown[]>): string[] {
   return Object.keys(dump);
@@ -80,19 +97,33 @@ async function main() {
     for (const table of tables) await c.query(`DELETE FROM "${table}"`);
 
     for (const table of tables) {
-      const rows = dump[table] ?? [];
+      const rows = (dump[table] ?? []) as Record<string, unknown>[];
       if (!rows.length) continue;
-      const cols = Object.keys(rows[0] as Record<string, unknown>);
+
+      // Columns come from the union of every row, not from rows[0]. Prisma returns a consistent
+      // shape today, so in practice these are the same — but "the first row defines the insert for
+      // all the others" is the kind of assumption that holds until one table does something
+      // slightly different, and then drops a column's data silently during a restore.
+      const cols = [...new Set(rows.flatMap((r) => Object.keys(r)))];
       const quoted = cols.map((col) => `"${col}"`).join(", ");
-      for (const row of rows as Record<string, unknown>[]) {
-        const params = cols.map((col) => {
-          const v = row[col];
-          // JSON round-trips objects/arrays; pg wants them as-is for json/jsonb and text[] columns.
-          return v !== null && typeof v === "object" && !Array.isArray(v) ? JSON.stringify(v) : v;
+
+      // Clamped, so a future table wide enough to matter shortens the batch instead of failing.
+      const perBatch = Math.max(1, Math.min(ROWS_PER_INSERT, Math.floor(PG_MAX_PARAMS / cols.length)));
+
+      for (let start = 0; start < rows.length; start += perBatch) {
+        const batch = rows.slice(start, start + perBatch);
+        const params: unknown[] = [];
+        const tuples = batch.map((row) => {
+          const placeholders = cols.map((col) => {
+            const v = row[col] ?? null;
+            // JSON round-trips objects/arrays; pg wants them as-is for json/jsonb and text[] columns.
+            params.push(v !== null && typeof v === "object" && !Array.isArray(v) ? JSON.stringify(v) : v);
+            return `$${params.length}`;
+          });
+          return `(${placeholders.join(", ")})`;
         });
-        const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
-        await c.query(`INSERT INTO "${table}" (${quoted}) VALUES (${placeholders})`, params);
-        restored++;
+        await c.query(`INSERT INTO "${table}" (${quoted}) VALUES ${tuples.join(", ")}`, params);
+        restored += batch.length;
       }
     }
 
@@ -105,6 +136,24 @@ async function main() {
   }
 
   console.log(`\nRestored ${restored} rows across ${tables.length} tables.`);
+
+  // Then prove it, rather than trusting an exit code. A restore that landed the wrong number
+  // of rows somewhere is exactly the failure worth catching here and not during an incident.
+  const mismatches: string[] = [];
+  for (const table of tables) {
+    const expected = (dump[table] ?? []).length;
+    const { rows: got } = await c.query<{ n: string }>(`SELECT count(*)::text AS n FROM "${table}"`);
+    const actual = Number(got[0].n);
+    if (actual !== expected) mismatches.push(`  ${table}: archive has ${expected}, database has ${actual}`);
+  }
+  if (mismatches.length > 0) {
+    console.error(`
+ROW COUNTS DO NOT MATCH in ${mismatches.length} table(s):`);
+    mismatches.forEach((m) => console.error(m));
+    await c.end();
+    process.exit(1);
+  }
+  console.log("Verified: every table matches the archive's row count.");
   await c.end();
 }
 
