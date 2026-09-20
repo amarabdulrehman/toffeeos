@@ -80,16 +80,33 @@ npx prisma migrate deploy
 
 ## 2. Before the first real café goes live
 
-### Nobody has confirmed a backup exists
+### Backups are being written. Nobody has ever restored one
 
-The nightly job writes to a `db-backups` bucket in production's Supabase project. The cron is
-configured and `CRON_SECRET` is set, but the route fails closed and silently — a job that has never
-run looks exactly like one that runs fine.
+Checked on 20 September 2026: the nightly job is landing objects in the `db-backups` bucket in
+production's Supabase project (`ntzwlkgqzkxworwuiqlh`). That was the open question and it is closed.
+Verified by the owner from the Supabase dashboard, not from this repo — production's service role
+key is Sensitive in Vercel and cannot be read back, so there is no way to assert this from a test.
 
-Open Supabase → Storage → `db-backups` and read the newest object's date. If it is not from the last
-day or two, the backup has never run, and the free-tier backup story is fiction.
+Two things about it still need saying.
 
-This is the difference between a bad afternoon and losing a restaurant's books.
+**Restoring is not scripted, deliberately.** A generic restore across 56 tables with foreign-key
+ordering and RLS is a large amount of surface that would never be exercised until the worst possible
+day. The documented plan is to download the `.json.gz`, gunzip it — it is a plain
+`{ [ModelName]: row[] }` object — and write a targeted restore for whatever actually broke. That is
+an honest plan, but it has never been rehearsed, and an unrehearsed restore is not a backup. Do it
+once against a scratch database and compare a few row counts. An hour now, against a very bad
+afternoon later.
+
+**The backups live in the same Supabase project as the data.** That covers the common case — a bad
+migration, an accidental delete, an application bug — and not a Supabase-side loss event. Moving to
+Pro's managed daily backups with point-in-time recovery is the real answer once revenue justifies
+it.
+
+One maintenance note, now enforced: the table list in `src/server/backup.ts` is hand-maintained,
+because Prisma 7 no longer exposes model introspection at runtime. A model added to the schema and
+left off that list would be silently absent from every backup thereafter — nothing errors, the file
+still uploads and still looks the right shape. `tests/backup-coverage.test.ts` now fails if the two
+ever disagree, so that cannot happen quietly again.
 
 ### Email is not configured at the DNS level
 
@@ -265,8 +282,8 @@ would have seen its menu tabs reorder themselves between page loads.
 
 ## The short version
 
-Upgrade the plan, recover the database password, run the migrations, confirm a backup exists, and
-set up email DNS. That is the difference between software that works and a business you can invoice
+Upgrade the plan, recover the database password, run the migrations, restore a backup once to prove
+you can, and set up email DNS. That is the difference between software that works and a business you can invoice
 from.
 
 Everything in section 3 is a conversation to have with a café before they sign, not a reason to
