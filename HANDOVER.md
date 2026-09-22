@@ -182,11 +182,40 @@ fine. Splitting a bill between guests into separate receipts does not exist, and
 gratuity field anywhere. The service charge probably covers tipping for this market; the split bill
 is worth raising before a table of six asks for it.
 
-### WhatsApp says messages were sent that nothing sends
+### WhatsApp is built and honest, and waiting on Meta
 
-There is no WhatsApp provider wired up. The adapter is a stub and every message is recorded as
-**SENT**. Making it honest flips every message in every log from SENT to FAILED at once — true, and
-visible to the client. Decide before a café runs a promotion on it.
+The software side is finished. What is left is account work, not code.
+
+The adapter is a real Cloud API client now. It sends `type: "template"` with the registered
+template name and its parameters in order, which is what Meta requires — business-initiated
+messages (a daily summary, a win-back, a low-stock alert) cannot be free text, they can only be
+approved templates. It carries its own 8-second timeout and catches everything, because
+`notifyOrderThankYou` runs inside the payment path and an uncaught error or a hung request there
+would fail or stall a sale over a thank-you message.
+
+It no longer lies. With no credentials nothing is attempted and the message is logged
+`SKIPPED_NOT_CONFIGURED` with the reason attached, rather than the old stub's **SENT**. That was
+the worst state available: an owner reading a month of delivered-looking messages that had never
+left the building. The WhatsApp screen now says plainly whether this deployment can send, and the
+message log shows why anything failed.
+
+**What you still have to do, and none of it is in this repo:**
+
+1. Meta Business account and business verification — days to weeks, and entirely out of your hands
+2. A WhatsApp Business Account and a phone number not already registered on WhatsApp
+3. Submit each template to **Meta** for approval. The approve/reject flow on the Templates tab is
+   ours, for your own review — it is not Meta's, and Meta rejects on tone and formatting
+4. Set `WHATSAPP_ACCESS_TOKEN` in Vercel (a permanent System User token, one for the platform)
+5. Paste each restaurant's phone number ID into WhatsApp → Connection
+
+The token is platform-level and the phone number ID is per tenant, so one Meta app serves every
+café. If a template was registered under a different name than its key, put that in
+`WhatsAppTemplate.metaTemplateName`; otherwise the key is used and already matches Meta's format.
+
+The send path is covered by `tests/whatsapp-adapter.test.ts`, which controls `fetch` to pin the
+payload shape, the timeout, Meta's rejections, non-JSON responses and the access token never
+reaching a tenant-readable log. `e2e/whatsapp-connection.spec.ts` pins the honest logging. What
+nobody can test until step 4 is a real delivery.
 
 ### Twenty-eight permissions gate nothing
 

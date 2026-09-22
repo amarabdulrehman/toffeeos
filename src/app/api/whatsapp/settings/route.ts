@@ -1,9 +1,14 @@
 import { z } from "zod";
 import { defineHandler } from "@/server/handler";
 import { getSettings, updateSettings } from "@/server/whatsapp/settings";
+import { env } from "@/lib/env";
 
 export const GET = defineHandler({ permission: "whatsapp.manage" }, async ({ session }) => {
-  return getSettings(session.tenantId);
+  const settings = await getSettings(session.tenantId);
+  // Whether the platform itself can send is a server fact the screen cannot work out on its own,
+  // and it is the difference between "your messages are going out" and "nothing has ever been
+  // delivered". A boolean, never the token.
+  return { ...settings, providerConfigured: !!env.WHATSAPP_ACCESS_TOKEN };
 });
 
 const patchSchema = z.object({

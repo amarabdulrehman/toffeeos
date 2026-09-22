@@ -35,7 +35,11 @@ export interface NotifyInput {
 export async function notifyWhatsApp(input: NotifyInput) {
   const db = tenantDb(input.tenantId);
 
-  const log = (status: "SENT" | "FAILED" | "SKIPPED_DISABLED" | "SKIPPED_OPTOUT" | "SKIPPED_NO_TEMPLATE", renderedBody?: string) =>
+  const log = (
+    status: "SENT" | "FAILED" | "SKIPPED_DISABLED" | "SKIPPED_OPTOUT" | "SKIPPED_NO_TEMPLATE" | "SKIPPED_NOT_CONFIGURED",
+    renderedBody?: string,
+    extra?: { providerMessageId?: string | null; error?: string }
+  ) =>
     db.whatsAppMessageLog.create({
       data: {
         tenantId: input.tenantId,
@@ -45,6 +49,8 @@ export async function notifyWhatsApp(input: NotifyInput) {
         templateKey: input.templateKey,
         renderedBody,
         status,
+        providerMessageId: extra?.providerMessageId ?? null,
+        error: extra?.error ?? null,
       },
     });
 
@@ -70,9 +76,24 @@ export async function notifyWhatsApp(input: NotifyInput) {
   const template = await getApprovedTemplate(input.tenantId, input.templateKey);
   if (!template) return log("SKIPPED_NO_TEMPLATE");
 
+  // Rendered for the log, not for Meta. Meta composes the real message from its own approved copy
+  // and the parameters below; this is what the restaurant reads back afterwards, and keeping both
+  // means the log still shows something useful when a send fails before Meta ever sees it.
   const body = renderTemplate(template.bodyText, input.params);
-  const result = await sendWhatsAppCloudMessage(input.toPhone, body);
-  return log(result.ok ? "SENT" : "FAILED", body);
+
+  const result = await sendWhatsAppCloudMessage(input.toPhone, body, {
+    phoneNumberId: settings.businessPhoneNumberId ?? "",
+    // Falls back to the key, which is already in Meta's required shape (lowercase and underscores).
+    templateName: template.metaTemplateName ?? template.key,
+    language: template.language,
+    params: input.params,
+  });
+
+  if (result.ok) return log("SENT", body, { providerMessageId: result.providerMessageId });
+  // Not configured is not a failure: nothing was attempted, and the restaurant needs a prompt to
+  // finish connecting rather than an error to chase.
+  if (result.notConfigured) return log("SKIPPED_NOT_CONFIGURED", body, { error: result.error });
+  return log("FAILED", body, { error: result.error });
 }
 
 export async function listMessageLog(tenantId: string, branchIds?: string[]) {

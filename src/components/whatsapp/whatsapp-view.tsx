@@ -23,6 +23,10 @@ interface Settings {
   deliveryUpdatesEnabled: boolean;
   thankYouEnabled: boolean;
   thankYouTrigger: "ON_ORDER" | "ON_PAYMENT";
+  businessPhoneNumberId: string | null;
+  businessAccountId: string | null;
+  /** Whether this deployment holds a Meta access token at all. Server-side fact, never the token. */
+  providerConfigured: boolean;
 }
 
 interface Recipient {
@@ -45,6 +49,8 @@ interface MessageLogRow {
   toPhone: string;
   templateKey: string;
   status: string;
+  /** Why it did not send. Null unless something went wrong. */
+  error: string | null;
   createdAt: string;
 }
 
@@ -66,6 +72,7 @@ const STATUS_VARIANT: Record<Template["status"], "secondary" | "outline" | "dest
 
 export function WhatsAppView() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [connectionDraft, setConnectionDraft] = useState<{ phoneNumberId: string; accountId: string } | null>(null);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [messages, setMessages] = useState<MessageLogRow[]>([]);
@@ -75,13 +82,41 @@ export function WhatsAppView() {
   const [sendingSummary, setSendingSummary] = useState(false);
 
   const load = useCallback(() => {
-    fetch("/api/whatsapp/settings").then((r) => r.json()).then(setSettings);
+    fetch("/api/whatsapp/settings")
+      .then((r) => r.json())
+      .then((d: Settings) => {
+        setSettings(d);
+        // Reset the draft from the server on every load, so Save reflects what is stored rather
+        // than whatever was half-typed before a refresh.
+        setConnectionDraft({
+          phoneNumberId: d.businessPhoneNumberId ?? "",
+          accountId: d.businessAccountId ?? "",
+        });
+      });
     fetch("/api/whatsapp/recipients").then((r) => r.json()).then((d) => setRecipients(d.recipients ?? []));
     fetch("/api/whatsapp/templates").then((r) => r.json()).then((d) => setTemplates(d.templates ?? []));
     fetch("/api/whatsapp/messages").then((r) => r.json()).then((d) => setMessages(d.messages ?? []));
   }, []);
 
   useEffect(load, [load]);
+
+  /** Blank is stored as null rather than "", so "not connected" is one state and not two. */
+  async function saveConnection() {
+    const res = await fetch("/api/whatsapp/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        businessPhoneNumberId: connectionDraft?.phoneNumberId.trim() || null,
+        businessAccountId: connectionDraft?.accountId.trim() || null,
+      }),
+    });
+    if (!res.ok) {
+      toast.error("Could not save the connection.");
+      return;
+    }
+    toast.success("Connection saved.");
+    load();
+  }
 
   async function toggleSetting(key: keyof Settings, value: boolean | string) {
     setSettings((s) => (s ? { ...s, [key]: value } : s));
@@ -187,6 +222,32 @@ export function WhatsAppView() {
 
   if (!settings) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
 
+  const connectionDirty =
+    !!connectionDraft &&
+    (connectionDraft.phoneNumberId.trim() !== (settings.businessPhoneNumberId ?? "") ||
+      connectionDraft.accountId.trim() !== (settings.businessAccountId ?? ""));
+
+  /**
+   * What the restaurant is actually told at the top of the page.
+   *
+   * Both halves have to be true to send: the platform needs a Meta access token, and this
+   * restaurant needs its own phone number id. Saying "connected" while either is missing is how a
+   * café ends up believing a month of messages went out when none did.
+   */
+  const connection = settings.providerConfigured
+    ? settings.businessPhoneNumberId
+      ? { live: true, reason: "" }
+      : {
+          live: false,
+          reason:
+            "Almost there — add this restaurant's WhatsApp phone number ID below and messages will start sending.",
+        }
+    : {
+        live: false,
+        reason:
+          "WhatsApp is not connected on this deployment yet, so nothing is delivered. Messages are recorded as skipped, never as sent.",
+      };
+
   return (
     <div className="p-8">
       <div className="mb-6 flex items-center gap-3">
@@ -196,11 +257,52 @@ export function WhatsAppView() {
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight">WhatsApp</h1>
           <p className="text-sm text-muted-foreground">
-            Built against a dev-stub adapter — no live Meta Business account configured yet. Sends are logged,
-            not actually delivered, until real Cloud API credentials are wired in.
+            {connection.live
+              ? "Connected to WhatsApp. Messages below are really sent."
+              : connection.reason}
           </p>
         </div>
       </div>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Connection</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Both of these come from Meta&apos;s WhatsApp Manager once the business is verified and a number
+            is registered. The phone number ID is the one that decides whether this restaurant can send;
+            the business account ID is recorded for support.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="wa-phone-id">Phone number ID</Label>
+              <Input
+                id="wa-phone-id"
+                value={connectionDraft?.phoneNumberId ?? ""}
+                placeholder="e.g. 123456789012345"
+                onChange={(e) =>
+                  setConnectionDraft((d) => ({ phoneNumberId: e.target.value, accountId: d?.accountId ?? "" }))
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="wa-waba-id">Business account ID</Label>
+              <Input
+                id="wa-waba-id"
+                value={connectionDraft?.accountId ?? ""}
+                placeholder="e.g. 987654321098765"
+                onChange={(e) =>
+                  setConnectionDraft((d) => ({ phoneNumberId: d?.phoneNumberId ?? "", accountId: e.target.value }))
+                }
+              />
+            </div>
+          </div>
+          <Button onClick={saveConnection} disabled={!connectionDirty}>
+            Save connection
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card className="mb-6">
         <CardHeader>
@@ -384,6 +486,9 @@ export function WhatsAppView() {
                       <TableCell>{TEMPLATE_LABELS[m.templateKey] ?? m.templateKey}</TableCell>
                       <TableCell>
                         <Badge variant={m.status === "SENT" ? "secondary" : m.status === "FAILED" ? "destructive" : "outline"}>{m.status.replace(/_/g, " ")}</Badge>
+                        {/* The reason, not just the verdict. "FAILED" on its own sends somebody
+                            to us; "Template name does not exist" they can fix themselves. */}
+                        {m.error && <div className="mt-1 max-w-xs text-xs text-muted-foreground">{m.error}</div>}
                       </TableCell>
                       <TableCell>{new Date(m.createdAt).toLocaleString()}</TableCell>
                     </TableRow>

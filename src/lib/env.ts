@@ -39,6 +39,16 @@ const envSchema = z.object({
 
   // Optional — unset means src/server/email/adapter.ts falls back to its dev-stub (console.log)
   // instead of actually sending. Set both to activate real password-reset emails.
+  /**
+   * One platform-level token, not one per tenant, because each restaurant's number lives as a
+   * phone_number_id under our own Meta app — that id is the per-tenant part and is already on
+   * WhatsAppSettings. Optional in the same way RESEND_API_KEY is: absent means WhatsApp is inert
+   * rather than broken, and adding it switches sending on with no code change.
+   */
+  WHATSAPP_ACCESS_TOKEN: z.string().min(1).optional(),
+  /** Pinned rather than floating: Meta ships breaking changes between Graph versions. */
+  WHATSAPP_API_VERSION: z.string().min(1).default("v20.0"),
+
   RESEND_API_KEY: z.string().min(1).optional(),
   EMAIL_FROM: z.string().min(1).optional(),
 });

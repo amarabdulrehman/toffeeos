@@ -879,6 +879,10 @@ model WhatsAppTemplate {
   name            String
   language        String                 @default("en")
   bodyText        String // Meta template syntax: {{1}}, {{2}}, ... placeholders
+  /// The name this template is registered under in Meta's own template manager. Meta requires
+  /// lowercase letters, digits and underscores, which `key` already satisfies, so this is only
+  /// needed when a restaurant registered it under a different name. Null falls back to `key`.
+  metaTemplateName String?
   status          WhatsAppTemplateStatus @default(DRAFT)
   submittedAt     DateTime?
   approvedAt      DateTime?
@@ -895,6 +899,12 @@ enum WhatsAppMessageStatus {
   SKIPPED_DISABLED
   SKIPPED_OPTOUT
   SKIPPED_NO_TEMPLATE
+  /// No provider credentials, so nothing was attempted. Distinct from FAILED on purpose: FAILED
+  /// means Meta refused or the network broke and is worth chasing, this means the restaurant has
+  /// not finished connecting WhatsApp and is worth a prompt instead. Before this existed the
+  /// adapter was a stub that reported SENT, so a log full of delivered-looking messages was the
+  /// one outcome worse than the feature being off.
+  SKIPPED_NOT_CONFIGURED
 }
 
 /// Append-only send log — every attempt, sent or skipped, with the reason, so "did the win-back
@@ -908,6 +918,10 @@ model WhatsAppMessageLog {
   templateKey  String
   renderedBody String?
   status       WhatsAppMessageStatus
+  /// Meta's own id for the message (wamid...), the only handle support can trace a delivery by.
+  providerMessageId String?
+  /// Why it failed, kept short and never containing the access token. Null unless status is FAILED.
+  error        String?
   createdAt    DateTime              @default(now())
 
   @@index([tenantId, createdAt])
