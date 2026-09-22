@@ -22,6 +22,7 @@ export function OrderQueuePanel({
   onCancel,
   canCancel,
   onReprintReceipt,
+  onReprintKot,
   canRefund,
   onRefund,
   onClose,
@@ -40,6 +41,10 @@ export function OrderQueuePanel({
    * take-payment permission, since re-printing an already-paid order's receipt is its own
    * auditable action, not just a side effect of paying. */
   onReprintReceipt?: (order: OrderDto) => void;
+  /** Omit to hide it — gated by pos.kot.reprint. Separate from printing one at the moment the
+   * order is sent, because a reprint usually means the first slip was lost or never came out, and
+   * a kitchen that can silently reprint tickets can also quietly duplicate an order. */
+  onReprintKot?: (order: OrderDto) => void;
   /** pos.payment.refund. Absent for a cashier whose role does not grant it. */
   canRefund?: boolean;
   onRefund?: (order: OrderDto) => void;
@@ -78,10 +83,17 @@ export function OrderQueuePanel({
               <span className="font-heading text-sm font-semibold tabular-nums">{formatPkr(o.totalPaisa)}</span>
             </div>
             {o.status !== "PAID" && o.status !== "VOIDED" && (
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <Button variant="success" className="flex-1" onClick={() => onPay(o)}>
                   Payment
                 </Button>
+                {/* Only once it has actually gone to the kitchen — a ticket for an order the
+                    kitchen has not been told about is how the same food gets made twice. */}
+                {onReprintKot && o.status !== "OPEN" && (
+                  <Button variant="outline" onClick={() => onReprintKot(o)}>
+                    Ticket
+                  </Button>
+                )}
                 {o.status === "SENT_TO_KITCHEN" || o.status === "READY" ? (
                   canCancel &&
                   onCancel && (

@@ -91,13 +91,17 @@ test.describe("Tenant deletion", () => {
 
       // ...and so is every row that pointed at it, in every table. This is the assertion that
       // actually matters: one missed table means data for a restaurant that no longer exists.
+      // One statement rather than one per table. Fifty sequential round trips to a pooler in
+      // ap-southeast-1 is roughly twenty seconds of pure latency, which is most of this test's
+      // budget spent on waiting and is what made it fail under a full-suite run while passing on
+      // its own. The table names come from TENANT_OWNED_TABLES, a constant in this repo, so they
+      // are safe to interpolate — the tenant id is still bound.
       const leftovers = await withDb(async (c) => {
-        const found: string[] = [];
-        for (const table of TENANT_OWNED_TABLES) {
-          const r = await c.query(`SELECT count(*)::int n FROM "${table}" WHERE "tenantId" = $1`, [victim.id]);
-          if (r.rows[0].n > 0) found.push(`${table}(${r.rows[0].n})`);
-        }
-        return found;
+        const union = TENANT_OWNED_TABLES.map(
+          (table) => `SELECT '${table}' AS t, count(*)::int AS n FROM "${table}" WHERE "tenantId" = $1`
+        ).join(" UNION ALL ");
+        const r = await c.query<{ t: string; n: number }>(union, [victim.id]);
+        return r.rows.filter((row) => row.n > 0).map((row) => `${row.t}(${row.n})`);
       });
       expect(leftovers, `orphaned rows left behind: ${leftovers.join(", ")}`).toEqual([]);
 

@@ -10,6 +10,9 @@ import { OptionsDialog } from "./options-dialog";
 import { RefundDialog } from "./refund-dialog";
 import { PaymentDialog } from "./payment-dialog";
 import { ReceiptDialog } from "./receipt-dialog";
+// The same ticket the kitchen screen prints. A café with no screen in the kitchen had no way to
+// get one at the till, which is most small cafés.
+import { KotDialog } from "@/components/kds/kot-dialog";
 import { OrderQueuePanel } from "./order-queue-panel";
 import { CancelOrderDialog } from "./cancel-order-dialog";
 import { TablesDialog, ResumedOrderPanel, AddItemsPanel } from "./tables-dialog";
@@ -52,6 +55,8 @@ export function PosTerminal({
   canVoid,
   canCancel,
   canReprintReceipt,
+  canPrintKot,
+  canReprintKot,
   canRefund,
 }: {
   tenantId: string;
@@ -67,6 +72,8 @@ export function PosTerminal({
   canVoid: boolean;
   canCancel: boolean;
   canReprintReceipt: boolean;
+  canPrintKot: boolean;
+  canReprintKot: boolean;
   canRefund: boolean;
 }) {
   const sync = useSync();
@@ -90,6 +97,7 @@ export function PosTerminal({
   const [payingOrder, setPayingOrder] = useState<OrderDto | null>(null);
   const [paying, setPaying] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState<OrderDto | null>(null);
+  const [kotOrder, setKotOrder] = useState<OrderDto | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState<OrderDto | null>(null);
   const idempotencyKey = useRef(crypto.randomUUID());
   const localOrderCounter = useRef(-1);
@@ -351,7 +359,19 @@ export function PosTerminal({
           return;
         }
         await fetch(`/api/orders/${data.order.id}/send-to-kitchen`, { method: "POST" });
-        toast.success(`Order #${data.order.orderNumber} sent to kitchen.`);
+
+        // Offered beside the confirmation rather than in a dialog over it. A modal here blocks the
+        // till until someone dismisses it — on every order, during a rush — and an interrupted
+        // cashier leaves the table locked behind it. This stays out of the way: one tap prints,
+        // ignoring it costs nothing, and a missed one is still reprintable from the Order Queue.
+        const orderId = data.order.id;
+        toast.success(`Order #${data.order.orderNumber} sent to kitchen.`, {
+          duration: canPrintKot && !andPay ? 10_000 : undefined,
+          action:
+            canPrintKot && !andPay
+              ? { label: "Print ticket", onClick: () => void openKotFor(orderId) }
+              : undefined,
+        });
         resetCart();
         if (andPay) {
           const full = await fetch("/api/orders").then((r) => r.json());
@@ -483,6 +503,19 @@ export function PosTerminal({
   // The pay/lines endpoints both return the bare updated Order row (no lines/table/payments
   // relations — see src/server/orders.ts) — not enough to print a real itemized receipt, so this
   // refetches the full order the same way the order queue and the add-items flow already do.
+  /** The create/send responses are bare Order rows — no lines, no table — so the ticket is built
+   * from the same full refetch the receipt uses. */
+  async function openKotFor(orderId: string) {
+    try {
+      const data = await fetch("/api/orders").then((r) => r.json());
+      const full: OrderDto | undefined = (data.orders ?? []).find((o: OrderDto) => o.id === orderId);
+      if (full) setKotOrder(full);
+    } catch {
+      // The order is already with the kitchen; failing to show a ticket is not worth an error on
+      // top of a successful send. It can be reprinted from the Order Queue.
+    }
+  }
+
   async function openReceiptFor(orderId: string) {
     try {
       const data = await fetch("/api/orders").then((r) => r.json());
@@ -609,6 +642,7 @@ export function PosTerminal({
             onCancel={(o) => setCancellingOrder(o)}
             canCancel={canCancel}
             onReprintReceipt={canReprintReceipt ? (o) => openReceiptFor(o.id) : undefined}
+            onReprintKot={canReprintKot ? (o) => setKotOrder(o) : undefined}
             canRefund={canRefund}
             onRefund={(o) => setRefundingOrder(o)}
             onClose={() => setShowQueue(false)}
@@ -682,6 +716,29 @@ export function PosTerminal({
           onClose={() => setPayingOrder(null)}
           onConfirm={handleConfirmPayment}
           submitting={paying}
+        />
+
+        <KotDialog
+          order={
+            kotOrder
+              ? {
+                  orderNumber: kotOrder.orderNumber,
+                  type: kotOrder.type,
+                  source: kotOrder.source ?? "POS",
+                  sentToKitchenAt: kotOrder.sentToKitchenAt ?? null,
+                  table: kotOrder.table ?? null,
+                  lines: kotOrder.lines.map((l) => ({
+                    id: l.id,
+                    nameSnapshot: l.nameSnapshot,
+                    quantity: l.quantity,
+                    notes: l.notes ?? null,
+                    modifiers: l.modifiers,
+                  })),
+                }
+              : null
+          }
+          branchName={branchName}
+          onClose={() => setKotOrder(null)}
         />
 
         <ReceiptDialog

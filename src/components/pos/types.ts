@@ -129,5 +129,8 @@ export interface OrderDto {
   taxPaisa?: number;
   roundingAdjustmentPaisa?: number;
   table?: { label: string } | null;
+  /** Already returned by GET /api/orders — the kitchen ticket prints it as the time the order
+   * reached the kitchen, which is what a cook reads first to know how long it has been waiting. */
+  sentToKitchenAt?: string | null;
   payments?: { method: PaymentMethod; amountPaisa: number }[];
 }

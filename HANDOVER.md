@@ -188,12 +188,14 @@ There is no WhatsApp provider wired up. The adapter is a stub and every message 
 **SENT**. Making it honest flips every message in every log from SENT to FAILED at once — true, and
 visible to the client. Decide before a café runs a promotion on it.
 
-### Twenty-nine permissions gate nothing
+### Twenty-eight permissions gate nothing
 
-Ninety-four are declared, sixty-five enforced. The roles screen renders from the registry, so an
-owner can toggle twenty-nine switches that change no behaviour — "Reprint KOT" among them.
+Ninety-four are declared, sixty-six enforced. The roles screen renders from the registry, so an
+owner can toggle twenty-eight switches that change no behaviour. "Reprint KOT" used to be among
+them and no longer is: printing a kitchen ticket from the till now gates on `pos.kot.print`, and
+reprinting one from the Order Queue on `pos.kot.reprint`.
 
-I went through all twenty-nine. Every one corresponds to a feature that was scoped and never built:
+I went through the rest. Every one corresponds to a feature that was scoped and never built:
 there is no line-void, no no-sale drawer open, no tax-exempt flag, no table merge, no branch price
 override, no purchase orders.
 
