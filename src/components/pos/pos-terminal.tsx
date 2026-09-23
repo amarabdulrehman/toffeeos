@@ -88,7 +88,9 @@ export function PosTerminal({
   const [tablesOpen, setTablesOpen] = useState(false);
   const [resumed, setResumed] = useState<{ table: RestaurantTableDto; order: OrderDto } | null>(null);
   const [addingItemsToOrder, setAddingItemsToOrder] = useState(false);
-  const [totals, setTotals] = useState<PreviewTotals | null>(null);
+  /** The server's answer, tagged with the local figure it was computed for, so a stale reply for a
+   *  cart that has since changed can be recognised and ignored rather than shown. */
+  const [serverTotals, setServerTotals] = useState<{ for: object | null; totals: PreviewTotals } | null>(null);
   const [optionsItem, setOptionsItem] = useState<MenuItemDto | null>(null);
   const [refundingOrder, setRefundingOrder] = useState<OrderDto | null>(null);
   const [sending, setSending] = useState(false);
@@ -195,7 +197,6 @@ export function PosTerminal({
    */
   useEffect(() => {
     if (lines.length === 0) return;
-    setTotals(localTotals);
 
     const controller = new AbortController();
     const handle = setTimeout(() => {
@@ -210,7 +211,7 @@ export function PosTerminal({
         }),
       })
         .then((r) => r.json())
-        .then(setTotals)
+        .then((t: PreviewTotals) => setServerTotals({ for: localTotals, totals: t }))
         // Offline, hanging, or aborted because the cart changed again — the locally computed total
         // is already on screen, so there is nothing to recover here.
         .catch(() => {});
@@ -221,6 +222,19 @@ export function PosTerminal({
       controller.abort();
     };
   }, [lines, orderType, discount, localTotals]);
+
+  /**
+   * What the till shows: the server's figure when it answered for exactly this cart, the local one
+   * otherwise.
+   *
+   * Derived rather than copied into state. The local total used to be pushed into state at the top
+   * of the effect above, which is an extra render on every keystroke and the thing the linter flags
+   * — and it made "which figure is on screen" depend on the order two setState calls landed in.
+   * Comparing against localTotals' identity works because it is memoized on exactly the inputs the
+   * request is built from, so a reply for an older cart can never be mistaken for the current one.
+   */
+  const totals: PreviewTotals | null =
+    serverTotals && serverTotals.for === localTotals ? serverTotals.totals : localTotals;
 
   function addLine(item: MenuItemDto, variantId?: string, modifierIds: string[] = []) {
     const variant = variantId ? item.variants.find((v) => v.id === variantId) : undefined;
@@ -290,7 +304,7 @@ export function PosTerminal({
 
   function resetCart() {
     setLines([]);
-    setTotals(null);
+    setServerTotals(null);
     setTable(null);
     setDeliveryAddress("");
     setCustomer(null);

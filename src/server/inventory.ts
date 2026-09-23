@@ -233,10 +233,11 @@ export async function recordTransfer(tenantId: string, actorId: string, input: R
   if (input.fromLocationId === input.toLocationId) throw new HttpError(400, "Source and destination must differ.");
 
   const result = await runInTenantTransaction(tenantId, async (tx) => {
-    const [fromLocation, toLocation] = await Promise.all([
-      tx.stockLocation.findUniqueOrThrow({ where: { id: input.fromLocationId, tenantId } }),
-      tx.stockLocation.findUniqueOrThrow({ where: { id: input.toLocationId, tenantId } }),
-    ]);
+    // One after the other, not Promise.all. A transaction is a single connection, so "in parallel"
+    // was only ever pg queuing them behind each other — and pg 9 removes that queue and throws
+    // instead. There is no speed to lose here and a hard failure to avoid.
+    const fromLocation = await tx.stockLocation.findUniqueOrThrow({ where: { id: input.fromLocationId, tenantId } });
+    const toLocation = await tx.stockLocation.findUniqueOrThrow({ where: { id: input.toLocationId, tenantId } });
 
     const existing = await tx.stockLevel.findUnique({
       where: { locationId_itemId: { locationId: input.fromLocationId, itemId: input.itemId }, tenantId },
@@ -272,10 +273,11 @@ export async function recordTransfer(tenantId: string, actorId: string, input: R
       },
     });
 
-    const [from, to] = await Promise.all([
-      applyStockDelta(tx, tenantId, fromLocation.branchId, input.fromLocationId, input.itemId, -input.quantity),
-      applyStockDelta(tx, tenantId, toLocation.branchId, input.toLocationId, input.itemId, input.quantity),
-    ]);
+    // Sequential for the same reason, and because each side reads a level and then writes it: two
+    // read-then-write sequences interleaved on one connection is the shape that goes wrong the day
+    // both sides touch the same row.
+    const from = await applyStockDelta(tx, tenantId, fromLocation.branchId, input.fromLocationId, input.itemId, -input.quantity);
+    const to = await applyStockDelta(tx, tenantId, toLocation.branchId, input.toLocationId, input.itemId, input.quantity);
     return { fromLevel: from.level, toLevel: to.level, transferGroupId, newAlerts: [from.newAlert, to.newAlert].filter((a) => a !== null) };
   });
   await Promise.all(result.newAlerts.map((alert) => notifyLowStock(tenantId, alert)));

@@ -68,6 +68,13 @@ export const rawPool: Pool =
 // Prisma 7 connects only through a driver adapter (no more bare `datasourceUrl` string) — each
 // runtime role gets its own adapter instance over its own connection string, which is what
 // actually keeps the two connections (and thus the two Postgres roles) from ever mixing.
+//
+// Do not upgrade `pg` to 9 without checking Prisma first. Prisma's query engine runs a query's
+// independent parts concurrently on one transaction connection (Array.map inside interpretNode), and
+// tenantDb puts every query in a transaction. pg 8 queues those and runs them in order, which is
+// correct, but prints "client.query() when the client is already executing a query" — once, at the
+// first page load. pg 9 removes the queue and throws instead, which would break almost every tenant
+// query. package.json pins ^8 so this cannot happen by accident; it can by hand.
 export const rawDb: PrismaClient =
   globalForPrisma.__tableosRawDb ??
   new PrismaClient({ adapter: new PrismaPg({ connectionString: env.DATABASE_URL }) });

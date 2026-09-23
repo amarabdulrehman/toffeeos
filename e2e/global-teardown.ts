@@ -154,6 +154,18 @@ async function purgeImportSpecMenu() {
       `DELETE FROM "Category" WHERE (${catWhere})
          AND id NOT IN (SELECT "categoryId" FROM "MenuItem")`
     );
+    // And hides the ones that could not go. A category holding an item that was actually ordered
+    // cannot be deleted without deleting the order, but it can be switched off: the menu, the POS
+    // grid and the storefront all read active categories only, so it disappears from the tenant
+    // somebody demos to clients while every order that references it stays intact.
+    //
+    // "E2E Options" is exempt on purpose. menu-options.spec.ts reuses that one category across runs
+    // and finds it through the active menu, so hiding it would make that spec create a fresh one
+    // every run — the accumulation this exists to stop.
+    await c.query(
+      `UPDATE "Category" SET "isActive" = false
+        WHERE (${catWhere}) AND name <> 'E2E Options' AND "isActive" = true`
+    );
   } catch {
     // Best-effort, like every other purge here.
   } finally {

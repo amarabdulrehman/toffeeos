@@ -155,25 +155,17 @@ It defaults to 100%, which means no limit — deliberately, so that deploying it
 an existing branch. But a café left at the default has no cap at all, and the roles screen implies
 otherwise. Set it during onboarding, per branch.
 
-### The demo tenant's menu has test items on it
+### The demo tenant's menu is clean
 
-The POS grid for the demo tenant carries around a dozen categories named `E2E ...`, each holding
-one probe item. They come from the end-to-end tests: any spec that needs an add-on group has to
-build its own item, because attaching one to a seeded item would turn every other spec's single tap
-into a dialog.
+The end-to-end tests have to build their own menu items, and each run used to leave a few
+`E2E ...` categories on the demo tenant — around a hundred by now, and the first thing a café would
+see on the POS grid in a demo. Teardown now deletes the ones nothing was ever ordered from and
+switches off the rest. Categories holding an item that was actually sold cannot be deleted without
+deleting the order, but the menu, the POS and the storefront all read active categories only, so
+they disappear while every order that references them stays intact.
 
-The teardown clears these, but only the ones nothing was ever ordered from. `OrderLine.menuItemId`
-is NOT NULL, so an item a test actually sold cannot be deleted without deleting the order too, and
-deleting order history to tidy up a menu is the wrong trade to make automatically.
-
-It is cosmetic, and it is also the first thing a café sees if you demo on that tenant. Two ways
-out: clear them by hand before a demo, or give those specs a single fixed probe item each instead
-of a freshly suffixed one per run, which stops the count growing at all. The second is the real
-fix and is maybe an hour.
-
----
-
-## 3. What a café will run into in the first month
+One stays visible on purpose: `E2E Options`, which `menu-options.spec.ts` reuses across runs. It
+is a single category, and hiding it would make that spec create a fresh one every run.
 
 ### No tipping, and no per-guest bill splitting
 
@@ -198,6 +190,10 @@ It no longer lies. With no credentials nothing is attempted and the message is l
 the worst state available: an owner reading a month of delivered-looking messages that had never
 left the building. The WhatsApp screen now says plainly whether this deployment can send, and the
 message log shows why anything failed.
+
+The history is corrected too. Every row the old stub wrote as SENT had no Meta message id, because
+nothing was ever sent; a migration rewrites exactly those to `SKIPPED_NOT_CONFIGURED` with an
+explanation, and cannot touch a genuine delivery, which always carries one.
 
 **What you still have to do, and none of it is in this repo:**
 
