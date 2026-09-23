@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { Client } from "pg";
 import { request, type FullConfig } from "@playwright/test";
 import { TENANT_SLUG, DEMO_PASSWORD, USERS, authFile, type UserKey } from "./fixtures/test-data";
 
@@ -78,7 +79,40 @@ async function loginAs(baseURL: string, user: UserKey): Promise<void> {
   await ctx.dispose();
 }
 
+/** Production's Supabase project. Nothing in the test harness may ever write to it. */
+const PRODUCTION_REF = "ntzwlkgqzkxworwuiqlh";
+
+/**
+ * Starts every run with an empty rate-limit ledger — in the development database only.
+ *
+ * Six specs cover the most sensitive public endpoints (signup, password reset, account
+ * enumeration), and each one skips itself when it meets a 429, because a 429 there is the limiter
+ * doing its job rather than a regression. Correct in isolation. But signup allows three per hour,
+ * and hits persisted between runs, so two runs inside an hour left those specs skipping — reporting
+ * green having asserted nothing, on exactly the endpoints where silence is least acceptable. After
+ * a day of iteration the table held 690 rows and nothing ever cleared it.
+ *
+ * This does not weaken the control: the limiter is untouched and still enforced throughout the run.
+ * It only stops one run's traffic from spending the next run's budget.
+ */
+async function resetDevelopmentRateLimits() {
+  const url = process.env.DIRECT_URL;
+  if (!url) return;
+  if (url.includes(PRODUCTION_REF)) {
+    throw new Error("DIRECT_URL points at production. The e2e suite must never run against it.");
+  }
+  const c = new Client({ connectionString: url });
+  try {
+    await c.connect();
+    const { rowCount } = await c.query('DELETE FROM "RateLimitHit"');
+    if (rowCount) console.log(`[global-setup] cleared ${rowCount} rate-limit hits left by earlier runs`);
+  } finally {
+    await c.end().catch(() => {});
+  }
+}
+
 export default async function globalSetup(config: FullConfig) {
+  await resetDevelopmentRateLimits();
   const baseURL = config.projects[0]?.use?.baseURL ?? "http://localhost:3100";
   const roles = Object.keys(USERS) as UserKey[];
   let reused = 0;

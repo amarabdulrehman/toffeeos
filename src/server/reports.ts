@@ -3,7 +3,7 @@ import { differenceInMinutes } from "date-fns";
 import { tenantDb } from "@/server/db";
 import { HttpError } from "@/server/handler";
 import { currentUnitCostPaisa } from "@/server/recipes";
-import { businessDayRange } from "@/lib/business-day";
+import { businessDayOf, businessDayRange } from "@/lib/business-day";
 import type { TenantSessionUser } from "@/server/auth/types";
 
 /**
@@ -76,7 +76,21 @@ export async function assertWritableMembership(
 export interface DateRange {
   from: Date;
   to: Date;
+  /**
+   * The branch's timezone, carried with the range so that grouping by day uses the same clock the
+   * range was built with. The range itself was always resolved in local time; the per-day buckets
+   * inside it were not — they used UTC dates, so in Pakistan anything paid between midnight and
+   * 5am landed on the previous day. For a café trading past midnight that is a whole late shift
+   * reported against the wrong date.
+   *
+   * Optional because several HR screens reuse this type purely as a filter and never group by
+   * day; they receive exact instants from the browser and have no use for it. Anything that does
+   * group falls back to the same zone resolveReportRange falls back to.
+   */
+  timezone?: string;
 }
+
+const DEFAULT_TIMEZONE = "Asia/Karachi";
 
 /**
  * Turns the "YYYY-MM-DD" from/to a report's date picker sends into real UTC instants, in the
@@ -93,17 +107,22 @@ export interface DateRange {
  * aggregate "all branches" report spanning mixed timezones needs its own designed behavior, not a
  * silent pick-the-first-branch default like this one.
  */
-export async function resolveReportRange(tenantId: string, branchIds: string[], fromDay: string, toDay: string): Promise<DateRange> {
+/** The clock a report should read days by: the first branch in scope, as everywhere else. */
+export async function reportTimezone(tenantId: string, branchIds: string[]): Promise<string> {
   const branch = branchIds.length
     ? await tenantDb(tenantId).branch.findUnique({ where: { id: branchIds[0] }, select: { timezone: true } })
     : null;
-  const timezone = branch?.timezone ?? "Asia/Karachi";
-  return { from: businessDayRange(fromDay, timezone).from, to: businessDayRange(toDay, timezone).to };
+  return branch?.timezone ?? DEFAULT_TIMEZONE;
 }
 
-function previousEquivalentRange({ from, to }: DateRange): DateRange {
+export async function resolveReportRange(tenantId: string, branchIds: string[], fromDay: string, toDay: string): Promise<DateRange> {
+  const timezone = await reportTimezone(tenantId, branchIds);
+  return { from: businessDayRange(fromDay, timezone).from, to: businessDayRange(toDay, timezone).to, timezone };
+}
+
+function previousEquivalentRange({ from, to, timezone }: DateRange): DateRange {
   const rangeMs = to.getTime() - from.getTime();
-  return { from: new Date(from.getTime() - rangeMs), to: new Date(from.getTime()) };
+  return { from: new Date(from.getTime() - rangeMs), to: new Date(from.getTime()), timezone };
 }
 
 /** What counts as realised revenue: a PAID order, dated by when the money actually came in
@@ -164,7 +183,7 @@ export async function salesReport(tenantId: string, branchIds: string[], range: 
     totalPaisa += o.totalPaisa;
     refundedPaisa += o.refundedPaisa;
 
-    const day = (o.paidAt ?? o.createdAt).toISOString().slice(0, 10);
+    const day = businessDayOf(o.paidAt ?? o.createdAt, range.timezone ?? DEFAULT_TIMEZONE);
     const dayEntry = byDay.get(day) ?? { orders: 0, totalPaisa: 0, refundedPaisa: 0 };
     dayEntry.orders += 1;
     dayEntry.totalPaisa += o.totalPaisa;
@@ -399,7 +418,7 @@ export async function staffPerformanceReport(tenantId: string, branchIds: string
   }
 
   for (const o of orders) {
-    const day = (o.paidAt ?? new Date()).toISOString().slice(0, 10);
+    const day = businessDayOf(o.paidAt ?? new Date(), range.timezone ?? DEFAULT_TIMEZONE);
     const row = ensure(o.createdById, day);
     row.orders += 1;
     // Net of anything refunded on that order, so the figure is money the café kept rather than
@@ -409,12 +428,12 @@ export async function staffPerformanceReport(tenantId: string, branchIds: string
   for (const d of discounts) {
     // OrderDiscount has no timestamp of its own — the order's paidAt is the closest proxy.
     if (!d.appliedById || !d.order.paidAt) continue;
-    const day = d.order.paidAt.toISOString().slice(0, 10);
+    const day = businessDayOf(d.order.paidAt, range.timezone ?? DEFAULT_TIMEZONE);
     ensure(d.appliedById, day).discounts += 1;
   }
   for (const v of voids) {
     if (!v.actorId) continue;
-    const day = v.createdAt.toISOString().slice(0, 10);
+    const day = businessDayOf(v.createdAt, range.timezone ?? DEFAULT_TIMEZONE);
     ensure(v.actorId, day).voids += 1;
   }
 

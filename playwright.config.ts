@@ -27,6 +27,31 @@ export default defineConfig({
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    /**
+     * The till on an iPad, in Safari's engine.
+     *
+     * Everything above runs in Chrome. Most cafés here run their till on an iPad, and on iOS
+     * every browser is WebKit underneath — Chrome for iPad included — so a WebKit-only failure is
+     * a failure on the device the till actually lives on. A standard iPad on its side is the usual
+     * setup, which is what this emulates: WebKit, 1080x810, Safari's user agent, touch.
+     *
+     * Only the specs that drive the till, the kitchen and the customer storefront through a real
+     * page. The rest are API calls, which do not care what browser sent them, and running them
+     * twice would buy an extra twenty minutes and no coverage.
+     *
+     * Emulation, not a device: it catches engine and layout differences, not iOS's own quirks —
+     * the keyboard covering an input, a printer dialog, the app being backgrounded mid-order.
+     */
+    {
+      name: "ipad-safari",
+      use: { ...devices["iPad (gen 7) landscape"] },
+      testMatch: [
+        "pos-payment-correctness.spec.ts",
+        "kitchen-ticket.spec.ts",
+        "offline-sync.spec.ts",
+        "kds-and-online-ordering.spec.ts",
+      ],
+    },
   ],
   webServer: {
     command: "npm run dev",

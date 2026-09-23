@@ -2,6 +2,7 @@ import "dotenv/config";
 import { request as playwrightRequest, type FullConfig } from "@playwright/test";
 import { Client } from "pg";
 import { authFile } from "./fixtures/test-data";
+import { reclaimTables } from "./fixtures/reclaim-tables";
 
 /**
  * Staff accounts the suite creates: the invite spec's accepted hires, and the throwaway staff the
@@ -173,16 +174,6 @@ export default async function globalTeardown(config: FullConfig) {
   const ctx = await playwrightRequest.newContext({ baseURL, storageState: authFile("owner") });
 
   try {
-    const ordersRes = await ctx.get("/api/orders");
-    if (!ordersRes.ok()) return;
-    const { orders } = await ordersRes.json();
-
-    const openOrders = orders.filter((o: { status: string }) =>
-      ["OPEN", "SENT_TO_KITCHEN", "READY"].includes(o.status)
-    );
-    for (const o of openOrders) {
-      await ctx.post(`/api/orders/${o.id}/void`, { data: { reason: "E2E suite cleanup" } }).catch(() => {});
-    }
 
     // Expense rows the suite created. Named with an "E2E " category prefix and a unique suffix, so
     // this only ever touches the suite's own data — a real expense a human recorded while testing
@@ -214,16 +205,7 @@ export default async function globalTeardown(config: FullConfig) {
       }
     }
 
-    const tablesRes = await ctx.get("/api/tables");
-    if (!tablesRes.ok()) return;
-    const { floors } = await tablesRes.json();
-    for (const floor of floors) {
-      for (const table of floor.tables) {
-        if (table.status !== "AVAILABLE") {
-          await ctx.patch(`/api/tables/${table.id}/status`, { data: { status: "AVAILABLE" } }).catch(() => {});
-        }
-      }
-    }
+    await reclaimTables();
   } finally {
     // In the finally, not the try: several blocks above bail early with `return` when an endpoint
     // is unreachable, and this cleanup should still run in that case.

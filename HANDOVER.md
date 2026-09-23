@@ -285,8 +285,12 @@ Worth an hour with an actual printer before you promise it.
 
 ## 4. Unverified — genuine unknowns
 
-**iOS Safari has never been tested.** If a café uses iPads on the counter — common — offline
-behaviour there is unknown, and offline is the product's headline claim.
+**iPads are tested in emulation, not on a real device.** The suite now runs the till, kitchen
+tickets, offline mode, the kitchen screen and the customer storefront a second time as an iPad in
+landscape — WebKit, which every iPad browser uses underneath, Chrome included — and all of it
+passes, offline sync included. That covers the engine and the layout. It does not cover iOS itself:
+the on-screen keyboard covering an input, the print dialog, Safari suspending a backgrounded tab
+mid-order. Ten minutes on the café's actual iPad before their first service is still worth it.
 
 **The Supabase connection has been unreliable.** Around a 10% failure rate on direct probes during
 one session, enough to destroy three consecutive test runs with `ENOTFOUND` and timeouts. If that is

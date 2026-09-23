@@ -1,4 +1,5 @@
 import type { APIRequestContext } from "@playwright/test";
+import { reclaimTables } from "./reclaim-tables";
 
 /**
  * Resolves real IDs from the running app rather than hardcoding UUIDs — this database carries
@@ -25,15 +26,25 @@ export interface TableRef {
  * runs (or a suite re-run right after a failure) don't collide on a table an earlier run left
  * occupied. */
 export async function getAvailableTable(request: APIRequestContext): Promise<TableRef> {
-  const res = await request.get("/api/tables");
-  if (!res.ok()) throw new Error(`GET /api/tables failed: ${res.status()}`);
-  const { floors } = await res.json();
-  for (const floor of floors) {
-    for (const table of floor.tables) {
-      if (table.status === "AVAILABLE") return { id: table.id, label: table.label };
+  async function firstFree(): Promise<TableRef | null> {
+    const res = await request.get("/api/tables");
+    if (!res.ok()) throw new Error(`GET /api/tables failed: ${res.status()}`);
+    const { floors } = await res.json();
+    for (const floor of floors) {
+      for (const table of floor.tables) {
+        if (table.status === "AVAILABLE") return { id: table.id, label: table.label };
+      }
     }
+    return null;
   }
-  throw new Error("No AVAILABLE table found — the demo tenant's floor may be fully occupied by leftover test orders");
+
+  // Specs run one at a time, so when this is called no other test has an order in flight — every
+  // occupied table belongs to a spec that has already finished with it.
+  const free = (await firstFree()) ?? (await reclaimTables().then(firstFree));
+  if (!free) {
+    throw new Error("No AVAILABLE table found, even after reclaiming leftover test orders");
+  }
+  return free;
 }
 
 export interface OrderSummary {

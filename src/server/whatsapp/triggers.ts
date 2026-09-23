@@ -61,8 +61,8 @@ export async function sendDailySummaryForBranch(tenantId: string, branchId: stri
   const { from, to } = businessDayRange(dayString, branch.timezone);
 
   const [sales, items] = await Promise.all([
-    salesReport(tenantId, [branchId], { from, to }),
-    itemWiseReport(tenantId, [branchId], { from, to }),
+    salesReport(tenantId, [branchId], { from, to, timezone: branch.timezone }),
+    itemWiseReport(tenantId, [branchId], { from, to, timezone: branch.timezone }),
   ]);
   const topItems = items.slice(0, 3);
   const dayLabel = formatInTimeZone(from, branch.timezone, "MMM d");

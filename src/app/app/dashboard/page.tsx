@@ -2,7 +2,7 @@ import Link from "next/link";
 import { subDays } from "date-fns";
 import { ArrowRight, BarChart3, ChefHat, ShieldCheck, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
 import { auth } from "@/server/auth";
-import { resolveReportBranchIds, salesReport } from "@/server/reports";
+import { reportTimezone, resolveReportBranchIds, salesReport } from "@/server/reports";
 import type { TenantSessionUser } from "@/server/auth/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,10 @@ async function RevenueTrendCard({ user }: { user: TenantSessionUser }) {
   const branchIds = await resolveReportBranchIds(user, undefined);
   const to = new Date();
   const from = subDays(to, 7);
-  const report = await salesReport(user.tenantId, branchIds, { from, to });
+  // The chart groups by day, so it needs the café's clock rather than UTC's — otherwise a sale at
+  // 1am lands on yesterday's bar. Same choice of branch as resolveReportRange makes.
+  const timezone = await reportTimezone(user.tenantId, branchIds);
+  const report = await salesReport(user.tenantId, branchIds, { from, to, timezone });
   const trend = report.previousPeriod.changePct;
 
   return (
