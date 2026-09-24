@@ -50,6 +50,9 @@ export default defineConfig({
         "kitchen-ticket.spec.ts",
         "offline-sync.spec.ts",
         "kds-and-online-ordering.spec.ts",
+        // Sets its own phone and portrait-tablet sizes, so here it runs as iPhone and portrait-iPad
+        // Safari rather than at this project's landscape size.
+        "pos-small-screens.spec.ts",
       ],
     },
   ],

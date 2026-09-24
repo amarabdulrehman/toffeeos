@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useChannel } from "@/lib/realtime-client";
 import { topic } from "@/lib/realtime-topics";
 import { KotDialog } from "./kot-dialog";
+import { formatElapsed } from "@/lib/elapsed";
 
 const SLA_SECONDS = 600; // default KDS SLA; BranchSettings.kdsSlaSeconds makes this configurable server-side
 
@@ -61,11 +62,6 @@ function useElapsedSeconds(since: string | null, until: string | null): number {
   return Math.max(0, Math.floor((end - new Date(since).getTime()) / 1000));
 }
 
-function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 function OrderCard({
   order,

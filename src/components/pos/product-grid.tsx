@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,10 +31,14 @@ export function ProductGrid({
   categories,
   loading = false,
   onSelectItem,
+  headerAction,
 }: {
   categories: MenuCategoryDto[];
   loading?: boolean;
   onSelectItem: (categoryId: string, item: MenuItemDto) => void;
+  /** Sits beside the search box in the same row. It used to be positioned absolutely over the
+   *  grid from outside, which is how it ended up on top of the search field on a portrait tablet. */
+  headerAction?: ReactNode;
 }) {
   // Categories arrive async (fetched by the parent after mount), so a plain useState default of
   // categories[0]?.id would freeze at "" forever — derive the effective selection instead, falling
@@ -57,18 +61,24 @@ export function ProductGrid({
   }, [categories, activeCategory, search]);
 
   return (
-    <div className="flex h-full flex-col gap-4 bg-muted/25 p-5">
-      <div className="relative max-w-sm">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search menu…"
-          // A placeholder disappears as soon as the cashier types, so it cannot be the only name
-          // this field has.
-          aria-label="Search menu"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="rounded-full border-none bg-card pl-9 shadow-sm"
-        />
+    // @container: the item grid below picks its column count from the width of *this* panel, not
+    // the screen's. With the cart beside it, a 1080px iPad leaves the menu about 740px and a portrait
+    // one about 510px — viewport breakpoints guessed wrong for both.
+    <div className="@container flex h-full flex-col gap-3 bg-muted/25 p-3 sm:gap-4 sm:p-5">
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 max-w-md flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search menu…"
+            // A placeholder disappears as soon as the cashier types, so it cannot be the only name
+            // this field has.
+            aria-label="Search menu"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-11 rounded-full border-none bg-card pl-9 shadow-sm"
+          />
+        </div>
+        {headerAction && <div className="ml-auto shrink-0">{headerAction}</div>}
       </div>
 
       {!search.trim() && loading && (
@@ -80,14 +90,19 @@ export function ProductGrid({
       )}
 
       {!search.trim() && !loading && (
-        <div className="flex flex-wrap gap-2">
+        // One row that scrolls sideways below large screens, rather than wrapping. On a portrait
+        // tablet the wrapped pills took two or three rows off the top of the menu before a single
+        // item was visible. They wrap again once there is width to spare.
+        <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:-mx-5 sm:px-5 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0 [&::-webkit-scrollbar]:hidden">
           {categories.map((c, i) => {
             const active = c.id === activeCategoryId;
             return (
               <button
                 key={c.id}
                 onClick={() => setSelectedCategoryId(c.id)}
-                className={`rounded-full border px-4 py-2 text-sm font-medium transition-all ${
+                // 44px tall: the smallest target a finger hits reliably, which is what these are
+                // on a tablet.
+                className={`min-h-11 shrink-0 whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-all ${
                   active
                     ? "border-primary bg-primary text-primary-foreground shadow-sm"
                     : `border-transparent ${accentFor(i).pill} hover:opacity-80`
@@ -100,10 +115,10 @@ export function ProductGrid({
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-3 overflow-y-auto pb-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-2.5 overflow-y-auto pb-4 @md:grid-cols-3 @md:gap-3 @2xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6">
         {loading &&
           Array.from({ length: 10 }).map((_, i) => (
-            <div key={i} className="flex min-h-[6.5rem] flex-col justify-between rounded-2xl border border-border/60 bg-card p-3.5 shadow-sm">
+            <div key={i} className="flex min-h-28 flex-col justify-between rounded-2xl border border-border/60 bg-card p-3.5 shadow-sm">
               <Skeleton className="h-4 w-4/5" />
               <Skeleton className="h-5 w-16" />
             </div>
@@ -116,11 +131,14 @@ export function ProductGrid({
                 key={item.id}
                 disabled={!item.isAvailable}
                 onClick={() => onSelectItem(categories[categoryIndex]?.id ?? activeCategoryId, item)}
-                className="group relative flex min-h-[6.5rem] flex-col items-start overflow-hidden rounded-2xl border border-border/60 bg-card p-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-sm"
+                // active:scale is the only feedback a finger gets — there is no hover on a tablet.
+                className="group relative flex min-h-28 touch-manipulation flex-col items-start overflow-hidden rounded-2xl border border-border/60 bg-card p-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md active:translate-y-0 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-sm"
               >
                 <span className={`absolute inset-x-0 top-0 h-1 ${accentFor(categoryIndex).stripe}`} />
-                <div className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-tight">{item.name}</div>
-                <div className="mt-2 flex w-full items-center justify-between">
+                {/* Three lines, not two: "Chicken Wings (6pc)" and "Vegetable Samosa (4pc)" were
+                    cut mid-word on a small tablet, and the part that went missing was the portion. */}
+                <div className="line-clamp-3 text-sm font-semibold leading-snug">{item.name}</div>
+                <div className="mt-auto flex w-full items-center justify-between gap-1 pt-2">
                   <span className="font-heading text-base font-semibold text-primary">
                     {formatPkr(item.basePricePaisa)}
                   </span>

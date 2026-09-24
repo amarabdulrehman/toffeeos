@@ -43,25 +43,28 @@ export default async function PosLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <header className="relative z-10 flex shrink-0 items-center justify-between bg-sidebar px-5 py-3 text-sidebar-foreground shadow-md">
+      <header className="relative z-10 flex shrink-0 items-center justify-between bg-sidebar px-3 py-2 text-sidebar-foreground shadow-md sm:px-5 sm:py-3">
         <div className="flex items-center gap-3">
           <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
             <UtensilsCrossed className="size-4.5" />
           </span>
-          <div className="leading-tight">
+          <div className="min-w-0 leading-tight">
             <div className="font-heading text-base font-semibold tracking-tight">{BRAND_NAME}</div>
             <div className="text-xs text-sidebar-foreground/55">{user.branchName}</div>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        {/* On a narrow screen the labels go and the controls stay: the header was wrapping to two
+            lines on a small tablet and pushing the menu down. */}
+        <div className="flex items-center gap-2 sm:gap-4">
           <Link
             href="/app/dashboard"
-            className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            aria-label="Back office"
+            className="flex min-h-10 items-center gap-1 rounded-full px-2.5 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <ChevronLeft className="size-4" />
-            Back office
+            <span className="max-sm:hidden">Back office</span>
           </Link>
-          <div className="h-6 w-px bg-sidebar-border" />
+          <div className="hidden h-6 w-px bg-sidebar-border sm:block" />
           <div className="flex items-center gap-2">
             <span className="flex size-7.5 items-center justify-center rounded-full bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground ring-1 ring-white/10">
               {user.name
@@ -70,7 +73,7 @@ export default async function PosLayout({ children }: { children: React.ReactNod
                 .slice(0, 2)
                 .join("")}
             </span>
-            <span className="text-sm font-medium">{user.name}</span>
+            <span className="hidden text-sm font-medium md:inline">{user.name}</span>
           </div>
           <div className="w-24">
             <SignOutButton onDark />

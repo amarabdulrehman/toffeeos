@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ClipboardList } from "lucide-react";
+import { ChevronDown, ClipboardList, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ProductGrid } from "./product-grid";
@@ -21,6 +21,9 @@ import { useSync } from "@/lib/offline/use-sync";
 import { cacheMenu, cacheOpenOrders, getCachedMenu, getCachedOpenOrders, listQueue, type CreateOrderAction } from "@/lib/offline/db";
 import { queueCreateOrder, queuePayOrder, queueVoidOrder } from "@/lib/offline/queue";
 import { newOrderId } from "@/lib/ids";
+import { useMediaQuery } from "@/lib/use-media-query";
+import { formatPkr } from "@/lib/money";
+import { cn } from "@/lib/utils";
 import { computeProvisionalTotal, settingsForOrderType, type BranchPricingSnapshot } from "@/lib/pricing";
 import type {
   CartLine,
@@ -95,6 +98,17 @@ export function PosTerminal({
   const [refundingOrder, setRefundingOrder] = useState<OrderDto | null>(null);
   const [sending, setSending] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
+  /**
+   * Whether the order panel is pulled up, on screens too narrow to show it beside the menu.
+   *
+   * Below 768px the cart does not fit next to a usable menu - on a phone it ran off the right edge
+   * and squeezed the menu into a strip - so it lives in a sheet instead, summarised by a bar at the
+   * bottom. On wider screens it is always visible and this flag has no effect.
+   */
+  const [paneOpen, setPaneOpen] = useState(false);
+  // Wide by default before hydration: that layout hides nothing, so a first paint on a phone costs a
+  // moment of cramped layout rather than a hidden cart.
+  const isWide = useMediaQuery("(min-width: 768px)", true);
   const [queue, setQueue] = useState<OrderDto[]>([]);
   const [payingOrder, setPayingOrder] = useState<OrderDto | null>(null);
   const [paying, setPaying] = useState(false);
@@ -233,6 +247,8 @@ export function PosTerminal({
    * Comparing against localTotals' identity works because it is memoized on exactly the inputs the
    * request is built from, so a reply for an older cart can never be mistaken for the current one.
    */
+  const orderItemCount = lines.reduce((n, l) => n + l.quantity, 0);
+
   const totals: PreviewTotals | null =
     serverTotals && serverTotals.for === localTotals ? serverTotals.totals : localTotals;
 
@@ -303,6 +319,8 @@ export function PosTerminal({
   }
 
   function resetCart() {
+    // Back to the menu for the next order.
+    setPaneOpen(false);
     setLines([]);
     setServerTotals(null);
     setTable(null);
@@ -602,22 +620,91 @@ export function PosTerminal({
   return (
     <div className="flex h-full flex-col">
       <OfflineBanner sync={sync} />
-      <div className="grid min-h-0 flex-1 grid-cols-[1fr_340px]">
-        <div className="relative min-h-0">
-          <ProductGrid categories={categories} loading={menuLoading} onSelectItem={handleSelectItem} />
-          {canTakePayment && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="absolute right-5 top-5 rounded-full border-none bg-card shadow-sm"
-              onClick={() => setShowQueue((s) => !s)}
-            >
-              <ClipboardList className="size-4" />
-              Order Queue
+      {/* The cart grows with the screen instead of sitting at a fixed 340px: 300 on a portrait
+          tablet, where 340 took 42% of the width, and 380 on a wide one. */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[1fr_300px] lg:grid-cols-[1fr_340px] xl:grid-cols-[1fr_380px]">
+        <div className="flex min-h-0 flex-col">
+          <div className="min-h-0 flex-1">
+            <ProductGrid
+              categories={categories}
+              loading={menuLoading}
+              onSelectItem={handleSelectItem}
+              headerAction={
+                canTakePayment && (
+                  <Button
+                    variant="outline"
+                    className="h-11 rounded-full border-none bg-card shadow-sm"
+                    onClick={() => {
+                      const next = !showQueue;
+                      setShowQueue(next);
+                      setPaneOpen(next);
+                    }}
+                  >
+                    <ClipboardList className="size-4" />
+                    <span className="max-sm:sr-only">Order Queue</span>
+                  </Button>
+                )
+              }
+            />
+          </div>
+
+          {/* The order, summarised, on screens where the panel is a sheet. Adding an item does not
+              open it: a cashier ringing up six items wants to keep tapping the menu, and watches
+              the count and total here instead. */}
+          <div className="flex shrink-0 items-center gap-3 border-t bg-card px-3 py-2.5 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] md:hidden">
+            <div className="min-w-0 flex-1">
+              {lines.length > 0 ? (
+                <>
+                  <div className="text-xs text-muted-foreground">
+                    {orderItemCount} item{orderItemCount === 1 ? "" : "s"}
+                    {table ? ` · Table ${table.label}` : ""}
+                  </div>
+                  <div className="font-heading text-lg font-bold tabular-nums">{formatPkr(totals?.totalPaisa ?? 0)}</div>
+                </>
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  {resumed ? `Table ${resumed.table.label} · order #${resumed.order.orderNumber}` : "Tap items to add them"}
+                </div>
+              )}
+            </div>
+            <Button size="lg" className="h-12 shrink-0 px-5" onClick={() => setPaneOpen(true)}>
+              <ShoppingBag className="size-4" />
+              View order
             </Button>
-          )}
+          </div>
         </div>
 
+        {/* Tap outside the sheet to put it away. */}
+        {paneOpen && !isWide && (
+          <div aria-hidden className="fixed inset-0 z-30 bg-black/40" onClick={() => setPaneOpen(false)} />
+        )}
+
+        <div
+          // One panel, positioned two ways: a column on wide screens, a sheet sliding up from the
+          // bottom on narrow ones. Rendered once either way, so the cart's lines, notes and totals
+          // are the same whichever way round the device is held.
+          //
+          // inert while it is off-screen: a closed sheet is still in the DOM, and without this a
+          // keyboard or screen reader would walk into a cart the cashier cannot see.
+          inert={!isWide && !paneOpen}
+          className={cn(
+            "flex min-h-0 flex-col",
+            "max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-40 max-md:h-[88dvh] max-md:overflow-hidden max-md:rounded-t-2xl max-md:bg-card max-md:shadow-2xl max-md:transition-transform max-md:duration-200",
+            paneOpen ? "max-md:translate-y-0" : "max-md:translate-y-full"
+          )}
+        >
+          <div className="flex shrink-0 items-center justify-between border-b px-4 py-2 md:hidden">
+            <span className="text-sm font-semibold">
+              {showQueue ? "Order Queue" : resumed ? `Table ${resumed.table.label}` : "Current order"}
+            </span>
+            <Button variant="ghost" size="sm" className="h-10" onClick={() => setPaneOpen(false)}>
+              <ChevronDown className="size-4" />
+              Back to menu
+            </Button>
+          </div>
+          {/* *:h-full: the panels below used to fill a grid cell by being stretched; inside this
+              wrapper they have to be told, or the queue and the resumed order stop scrolling. */}
+          <div className="min-h-0 flex-1 *:h-full">
         {resumed && addingItemsToOrder ? (
           <div className="min-h-0 border-l bg-card">
             <AddItemsPanel
@@ -639,7 +726,10 @@ export function PosTerminal({
             <ResumedOrderPanel
               table={resumed.table}
               order={resumed.order}
-              onClose={() => setResumed(null)}
+              onClose={() => {
+                setResumed(null);
+                setPaneOpen(false);
+              }}
               onTakePayment={() => setPayingOrder(resumed.order)}
               onAddItems={() => {
                 setLines([]);
@@ -659,7 +749,10 @@ export function PosTerminal({
             onReprintKot={canReprintKot ? (o) => setKotOrder(o) : undefined}
             canRefund={canRefund}
             onRefund={(o) => setRefundingOrder(o)}
-            onClose={() => setShowQueue(false)}
+            onClose={() => {
+              setShowQueue(false);
+              setPaneOpen(false);
+            }}
           />
         ) : (
           <CartPanel
@@ -687,6 +780,8 @@ export function PosTerminal({
             sending={sending}
           />
         )}
+          </div>
+        </div>
 
         <TablesDialog
           open={tablesOpen}
@@ -700,6 +795,7 @@ export function PosTerminal({
           }}
           onResumeOrder={(t, order) => {
             setResumed({ table: t, order });
+            setPaneOpen(true);
             setTablesOpen(false);
           }}
         />
