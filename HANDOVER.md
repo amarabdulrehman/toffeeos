@@ -24,9 +24,36 @@ Upgrading is minutes. Nothing else on this list matters until it is done.
 Everything below that touches the database is blocked on this, and it is not recoverable by
 looking: Vercel marks the variable Sensitive, so it cannot be read back after it was set.
 
-The fix is a reset, and the order matters. Reset it in Supabase, then **immediately** update
-`DATABASE_URL` and `DIRECT_URL` in Vercel and redeploy. Reset without updating Vercel and the site
-goes down completely rather than partially.
+The fix is a reset, and it is safer than an earlier version of this note said — but only if you
+touch **one** variable, not two.
+
+The app connects to Postgres as three different roles, and only one of them is `postgres`:
+
+| Variable | Role | Used for |
+|---|---|---|
+| `DATABASE_URL` | `app_user` | every tenant query, with row-level security enforced |
+| `PLATFORM_DATABASE_URL` | `platform_user` | the platform admin console, BYPASSRLS |
+| `DIRECT_URL` | `postgres` | migrations during a deploy, and local admin scripts |
+
+Supabase's "reset database password" changes the `postgres` password and nothing else. `app_user`
+and `platform_user` have their own passwords, set by hand when the roles were created. So:
+
+1. Reset the password in Supabase.
+2. Update **only `DIRECT_URL`** in Vercel:
+   `postgresql://postgres.<project-ref>:<password>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres`
+3. Redeploy.
+
+**Do not change `DATABASE_URL` or `PLATFORM_DATABASE_URL`.** An earlier version of this note told
+you to point `DATABASE_URL` at `postgres`. That would have been a quiet disaster: `postgres` is a
+superuser, and superusers ignore row-level security entirely. Everything would have kept working —
+nothing would look wrong — while the database-level wall between one café's data and another's was
+gone.
+
+Nothing live uses `postgres`, so the reset cannot take the till down, and it is safe during
+trading. The only thing it can break is the next deploy's migration step, which fails the build and
+leaves the current deployment serving until `DIRECT_URL` is updated.
+
+If the password contains `@ # / ?`, percent-encode those characters in the URL (`@` is `%40`).
 
 While you are there: the password currently in use has been typed into a chat window and a shell
 history, so it should be rotated regardless.
