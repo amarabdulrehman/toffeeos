@@ -71,6 +71,7 @@ export default async function PosPage() {
       canReprintReceipt={user.permissions.includes("pos.receipt.reprint")}
       canPrintKot={user.permissions.includes("pos.kot.print")}
       canReprintKot={user.permissions.includes("pos.kot.reprint")}
+      canPrintBill={user.permissions.includes("pos.receipt.print")}
     />
   );
 }

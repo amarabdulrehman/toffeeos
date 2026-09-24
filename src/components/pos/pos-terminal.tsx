@@ -10,6 +10,7 @@ import { OptionsDialog } from "./options-dialog";
 import { RefundDialog } from "./refund-dialog";
 import { PaymentDialog } from "./payment-dialog";
 import { ReceiptDialog } from "./receipt-dialog";
+import { BillDialog } from "./bill-dialog";
 // The same ticket the kitchen screen prints. A café with no screen in the kitchen had no way to
 // get one at the till, which is most small cafés.
 import { KotDialog } from "@/components/kds/kot-dialog";
@@ -60,6 +61,7 @@ export function PosTerminal({
   canReprintReceipt,
   canPrintKot,
   canReprintKot,
+  canPrintBill,
   canRefund,
 }: {
   tenantId: string;
@@ -77,6 +79,7 @@ export function PosTerminal({
   canReprintReceipt: boolean;
   canPrintKot: boolean;
   canReprintKot: boolean;
+  canPrintBill: boolean;
   canRefund: boolean;
 }) {
   const sync = useSync();
@@ -114,6 +117,7 @@ export function PosTerminal({
   const [paying, setPaying] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState<OrderDto | null>(null);
   const [kotOrder, setKotOrder] = useState<OrderDto | null>(null);
+  const [billOrderId, setBillOrderId] = useState<string | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState<OrderDto | null>(null);
   const idempotencyKey = useRef(crypto.randomUUID());
   const localOrderCounter = useRef(-1);
@@ -731,6 +735,7 @@ export function PosTerminal({
                 setPaneOpen(false);
               }}
               onTakePayment={() => setPayingOrder(resumed.order)}
+              onPrintBill={canPrintBill ? () => setBillOrderId(resumed.order.id) : undefined}
               onAddItems={() => {
                 setLines([]);
                 setAddingItemsToOrder(true);
@@ -747,6 +752,7 @@ export function PosTerminal({
             canCancel={canCancel}
             onReprintReceipt={canReprintReceipt ? (o) => openReceiptFor(o.id) : undefined}
             onReprintKot={canReprintKot ? (o) => setKotOrder(o) : undefined}
+            onPrintBill={canPrintBill ? (o) => setBillOrderId(o.id) : undefined}
             canRefund={canRefund}
             onRefund={(o) => setRefundingOrder(o)}
             onClose={() => {
@@ -849,6 +855,16 @@ export function PosTerminal({
           }
           branchName={branchName}
           onClose={() => setKotOrder(null)}
+        />
+
+        <BillDialog
+          orderId={billOrderId}
+          tenantName={tenantName}
+          branchName={branchName}
+          logoUrl={logoUrl}
+          showLogo={showLogoOnReceipt}
+          receiptHeader={receiptHeader}
+          onClose={() => setBillOrderId(null)}
         />
 
         <ReceiptDialog

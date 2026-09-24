@@ -10,7 +10,7 @@ import path from "node:path";
  * believes they have denied "Issue a refund" and they have not. It is a promise the UI makes and
  * the server does not keep.
  *
- * This does not demand that the list be empty today — 28 keys are unenforced, all of them for
+ * This does not demand that the list be empty today — 27 keys are unenforced, all of them for
  * features not yet built, and deciding which to wire up, hide or delete is a product call. What it does is
  * stop the number growing: add a permission without enforcing it and this fails, so the decision
  * gets made at the moment the key is introduced rather than discovered by a client.
@@ -42,7 +42,6 @@ const KNOWN_UNENFORCED = new Set([
   "pos.order.changeType",
   "pos.order.voidLine",
   "pos.pin.bypassVerification",
-  "pos.receipt.print",
   "pos.shift.bypassTimeRestriction",
   "pos.tax.edit",
   "pos.tax.exempt",

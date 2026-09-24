@@ -1,4 +1,5 @@
 import { formatPkr, paymentStanding } from "@/lib/money";
+import type { OrderBill } from "@/lib/bill";
 import type { OrderDto } from "./types";
 
 const METHOD_LABEL: Record<string, string> = {
@@ -22,6 +23,7 @@ export function Receipt({
   logoUrl,
   showLogo = false,
   receiptHeader,
+  bill,
 }: {
   order: OrderDto;
   tenantName: string;
@@ -32,11 +34,17 @@ export function Receipt({
   showLogo?: boolean;
   /** BranchSettings.receiptHeader — address, phone, NTN, printed under the branch name. */
   receiptHeader?: string | null;
+  /**
+   * Present when this is a bill for an unpaid order rather than a receipt. Its figures replace the
+   * order's own, which are only a provisional cash-rate estimate until payment — and it carries a
+   * total for each way of paying, because tax depends on which one the customer chooses.
+   */
+  bill?: OrderBill;
 }) {
-  const subtotal = order.subtotalPaisa ?? order.totalPaisa;
+  const subtotal = bill ? bill.subtotalPaisa : (order.subtotalPaisa ?? order.totalPaisa);
   const discountedSubtotal = order.discountedSubtotalPaisa ?? subtotal;
-  const discount = subtotal - discountedSubtotal;
-  const serviceCharge = order.serviceChargePaisa ?? 0;
+  const discount = bill ? bill.discountPaisa : subtotal - discountedSubtotal;
+  const serviceCharge = bill ? bill.serviceChargePaisa : (order.serviceChargePaisa ?? 0);
   const tax = order.taxPaisa ?? 0;
   const rounding = order.roundingAdjustmentPaisa ?? 0;
   const taxableBase = discountedSubtotal + serviceCharge;
@@ -74,6 +82,7 @@ export function Receipt({
         )}
       </div>
       <div className="my-2 border-t border-dashed border-black" />
+      {bill && <div className="mb-1 text-center text-base font-bold tracking-[0.3em]">BILL</div>}
       <div className="flex justify-between">
         <span>Order #{order.orderNumber}</span>
         <span>{new Date(order.createdAt).toLocaleString()}</span>
@@ -122,13 +131,19 @@ export function Receipt({
             <span className="tabular-nums">{formatPkr(serviceCharge, { showPaisa: true })}</span>
           </div>
         )}
-        {tax > 0 && (
+        {bill && bill.deliveryFeePaisa > 0 && (
+          <div className="flex justify-between">
+            <span>Delivery</span>
+            <span className="tabular-nums">{formatPkr(bill.deliveryFeePaisa, { showPaisa: true })}</span>
+          </div>
+        )}
+        {!bill && tax > 0 && (
           <div className="flex justify-between">
             <span>Tax ({taxRatePct}%)</span>
             <span className="tabular-nums">{formatPkr(tax, { showPaisa: true })}</span>
           </div>
         )}
-        {rounding !== 0 && (
+        {!bill && rounding !== 0 && (
           <div className="flex justify-between">
             <span>Rounding</span>
             <span className="tabular-nums">{formatPkr(rounding, { showPaisa: true })}</span>
@@ -136,10 +151,14 @@ export function Receipt({
         )}
       </div>
       <div className="my-2 border-t border-dashed border-black" />
-      <div className="flex justify-between text-base font-bold">
-        <span>TOTAL</span>
-        <span className="tabular-nums">{formatPkr(order.totalPaisa, { showPaisa: true })}</span>
-      </div>
+      {bill ? (
+        <BillTotals bill={bill} />
+      ) : (
+        <div className="flex justify-between text-base font-bold">
+          <span>TOTAL</span>
+          <span className="tabular-nums">{formatPkr(order.totalPaisa, { showPaisa: true })}</span>
+        </div>
+      )}
       {payments.length > 0 && (
         <>
           <div className="my-2 border-t border-dashed border-black" />
@@ -177,7 +196,7 @@ export function Receipt({
         <div className="text-base font-bold tracking-[0.25em]">
           {standing.state === "PAID" ? "PAID" : standing.state === "PART_PAID" ? "PART PAID" : "UNPAID"}
         </div>
-        {standing.balancePaisa > 0 && (
+        {!bill && standing.balancePaisa > 0 && (
           <div className="mt-0.5 font-bold">
             Balance due {formatPkr(standing.balancePaisa, { showPaisa: true })}
           </div>
@@ -188,6 +207,52 @@ export function Receipt({
       <div className="text-center">
         {standing.state === "PAID" ? "Thank you for dining with us!" : "This is not a payment receipt."}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The totals block of a bill: one per way of paying that comes to a different amount.
+ *
+ * A branch with a single tax rate gets an ordinary TOTAL. A branch on PRA's split gets a block for
+ * cash and one for card and the rest, each with its own tax line, so the customer sees what they
+ * will actually be charged whichever way they pay — the card figure is lower, which is the point
+ * of the lower rate.
+ */
+function BillTotals({ bill }: { bill: OrderBill }) {
+  if (bill.options.length === 1) {
+    const [only] = bill.options;
+    return (
+      <div className="space-y-0.5">
+        {only.taxPaisa > 0 && (
+          <div className="flex justify-between">
+            <span>Tax ({only.taxRatePct}%)</span>
+            <span className="tabular-nums">{formatPkr(only.taxPaisa, { showPaisa: true })}</span>
+          </div>
+        )}
+        <div className="flex justify-between text-base font-bold">
+          <span>TOTAL</span>
+          <span className="tabular-nums">{formatPkr(only.totalPaisa, { showPaisa: true })}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {bill.options.map((option) => (
+        <div key={option.methods.join("-")} className="space-y-0.5">
+          <div className="font-bold">If paid by {option.methods.map((m) => METHOD_LABEL[m] ?? m).join(", ")}</div>
+          <div className="flex justify-between pl-2">
+            <span>Tax ({option.taxRatePct}%)</span>
+            <span className="tabular-nums">{formatPkr(option.taxPaisa, { showPaisa: true })}</span>
+          </div>
+          <div className="flex justify-between pl-2 text-base font-bold">
+            <span>TOTAL</span>
+            <span className="tabular-nums">{formatPkr(option.totalPaisa, { showPaisa: true })}</span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

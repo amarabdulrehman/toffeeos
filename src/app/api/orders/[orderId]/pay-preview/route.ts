@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { defineHandler } from "@/server/handler";
-import { getBranchPricingContext } from "@/server/orders";
-import { finalizeOrder, type DiscountInput, type PricingLineInput } from "@/lib/pricing";
+import { getBranchPricingContext, pricingLinesFromStored } from "@/server/orders";
+import { finalizeOrder, type DiscountInput } from "@/lib/pricing";
 
 const tenderSchema = z.object({
   method: z.enum(["CASH", "CARD", "JAZZCASH", "EASYPAISA", "BANK_TRANSFER", "OTHER"]),
@@ -24,12 +24,7 @@ export const POST = defineHandler(
     });
 
     const { settings, taxRules } = await getBranchPricingContext(session.tenantId, session.branchId, order.type);
-    const pricingLines: PricingLineInput[] = order.lines.map((l) => ({
-      id: l.id,
-      unitPricePaisa: l.unitPricePaisa,
-      quantity: l.quantity,
-      isVoided: l.isVoided,
-    }));
+    const pricingLines = pricingLinesFromStored(order.lines);
     const orderDiscount: DiscountInput | undefined = order.discounts[0]
       ? { type: order.discounts[0].type, value: order.discounts[0].value }
       : undefined;

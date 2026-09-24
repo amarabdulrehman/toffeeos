@@ -329,6 +329,35 @@ function toPricingLines(resolved: ResolvedLine[]): PricingLineInput[] {
   }));
 }
 
+/**
+ * Pricing input rebuilt from lines already saved on an order.
+ *
+ * Every place that re-prices a saved order goes through this — adding a course, previewing a
+ * payment, taking it, printing a bill. They used to each build the input by hand, and all three
+ * left out the line's own discount: it was saved on the line when the order was created and
+ * counted in the total the cart showed, then quietly dropped when the order was re-priced, so the
+ * item was charged at full price. One builder means the discount cannot be forgotten in one place
+ * and remembered in another.
+ */
+export function pricingLinesFromStored(
+  lines: {
+    id: string;
+    unitPricePaisa: number;
+    quantity: number;
+    isVoided: boolean;
+    discountType: "PERCENT" | "FIXED" | null;
+    discountValue: number | null;
+  }[]
+): PricingLineInput[] {
+  return lines.map((l) => ({
+    id: l.id,
+    unitPricePaisa: l.unitPricePaisa,
+    quantity: l.quantity,
+    isVoided: l.isVoided,
+    discount: l.discountType && l.discountValue != null ? { type: l.discountType, value: l.discountValue } : undefined,
+  }));
+}
+
 const MAX_ORDER_NUMBER_RETRIES = 3;
 
 /**
@@ -534,7 +563,7 @@ export async function addLinesToOrder(
     : undefined;
 
   const allPricingLines: PricingLineInput[] = [
-    ...order.lines.filter((l) => !l.isVoided).map((l) => ({ id: l.id, unitPricePaisa: l.unitPricePaisa, quantity: l.quantity })),
+    ...pricingLinesFromStored(order.lines.filter((l) => !l.isVoided)),
     ...toPricingLines(resolvedNewLines),
   ];
   const totals = computeProvisionalTotal(allPricingLines, orderDiscount, taxRules, settings);
@@ -699,12 +728,7 @@ export async function takePayment(
   });
 
   const { settings, taxRules } = await getBranchPricingContext(tenantId, branchId, order.type);
-  const pricingLines: PricingLineInput[] = order.lines.map((l) => ({
-    id: l.id,
-    unitPricePaisa: l.unitPricePaisa,
-    quantity: l.quantity,
-    isVoided: l.isVoided,
-  }));
+  const pricingLines = pricingLinesFromStored(order.lines);
   const orderDiscount: DiscountInput | undefined = order.discounts[0]
     ? { type: order.discounts[0].type, value: order.discounts[0].value }
     : undefined;

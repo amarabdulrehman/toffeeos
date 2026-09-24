@@ -23,6 +23,7 @@ export function OrderQueuePanel({
   canCancel,
   onReprintReceipt,
   onReprintKot,
+  onPrintBill,
   canRefund,
   onRefund,
   onClose,
@@ -45,6 +46,8 @@ export function OrderQueuePanel({
    * order is sent, because a reprint usually means the first slip was lost or never came out, and
    * a kitchen that can silently reprint tickets can also quietly duplicate an order. */
   onReprintKot?: (order: OrderDto) => void;
+  /** Omit to hide it — gated by pos.receipt.print. The bill a table asks for before paying. */
+  onPrintBill?: (order: OrderDto) => void;
   /** pos.payment.refund. Absent for a cashier whose role does not grant it. */
   canRefund?: boolean;
   onRefund?: (order: OrderDto) => void;
@@ -89,6 +92,11 @@ export function OrderQueuePanel({
                 </Button>
                 {/* Only once it has actually gone to the kitchen — a ticket for an order the
                     kitchen has not been told about is how the same food gets made twice. */}
+                {onPrintBill && (
+                  <Button variant="outline" onClick={() => onPrintBill(o)}>
+                    Bill
+                  </Button>
+                )}
                 {onReprintKot && o.status !== "OPEN" && (
                   <Button variant="outline" onClick={() => onReprintKot(o)}>
                     Ticket

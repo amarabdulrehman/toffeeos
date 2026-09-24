@@ -193,12 +193,15 @@ export function ResumedOrderPanel({
   onClose,
   onTakePayment,
   onAddItems,
+  onPrintBill,
 }: {
   table: RestaurantTableDto;
   order: OrderDto;
   onClose: () => void;
   onTakePayment: () => void;
   onAddItems: () => void;
+  /** Omit to hide it — gated by pos.receipt.print. */
+  onPrintBill?: () => void;
 }) {
   return (
     <div className="space-y-4 rounded-xl border bg-card p-4 shadow-xs">
@@ -232,6 +235,11 @@ export function ResumedOrderPanel({
           <Button variant="outline" size="lg" className="w-full" onClick={onAddItems}>
             Add items
           </Button>
+          {onPrintBill && (
+            <Button variant="outline" size="lg" className="w-full" onClick={onPrintBill}>
+              Print bill
+            </Button>
+          )}
           <Button variant="success" size="lg" className="w-full" onClick={onTakePayment}>
             Take Payment
           </Button>
