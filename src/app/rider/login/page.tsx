@@ -79,7 +79,7 @@ export default function RiderLoginPage() {
               <div className="space-y-2">
                 <Label htmlFor="tenantSlug">Restaurant URL</Label>
                 <Input
-                  id="tenantSlug"
+                  id="tenantSlug" autoCapitalize="none" autoCorrect="off" spellCheck={false}
                   placeholder="karachi-karahi"
                   value={tenantSlug}
                   onChange={(e) => setTenantSlug(e.target.value.trim())}

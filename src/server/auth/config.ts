@@ -2,6 +2,7 @@ import "server-only";
 import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
+import { emailInput, slugInput } from "@/lib/identity";
 import { platformDb, tenantDb } from "@/server/db";
 import { verifyPassword, verifyPin } from "@/lib/password";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -20,25 +21,25 @@ import type { PlatformSessionUser, SessionUser } from "./types";
 type LooseUser = Record<string, unknown>;
 
 const tenantCredentialsSchema = z.object({
-  tenantSlug: z.string().min(1),
-  email: z.string().email(),
+  tenantSlug: slugInput(),
+  email: emailInput(),
   password: z.string().min(1),
 });
 
 const pinSchema = z.object({
-  tenantSlug: z.string().min(1),
+  tenantSlug: slugInput(),
   branchId: z.string().min(1),
   pin: z.string().min(4).max(8),
 });
 
 const otpSchema = z.object({
-  tenantSlug: z.string().min(1),
+  tenantSlug: slugInput(),
   phone: z.string().min(1),
   code: z.string().min(4).max(8),
 });
 
 const platformCredentialsSchema = z.object({
-  email: z.string().email(),
+  email: emailInput(),
   password: z.string().min(1),
   // Only required when the account has 2FA enabled — see /api/platform/mfa/check, which the login
   // page calls after password verification to decide whether to show this field at all. Always

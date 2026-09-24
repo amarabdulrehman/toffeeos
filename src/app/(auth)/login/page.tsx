@@ -58,7 +58,7 @@ function LoginForm() {
             <Label htmlFor="tenantSlug">Restaurant URL</Label>
             <div className="flex items-center gap-1">
               <Input
-                id="tenantSlug"
+                id="tenantSlug" autoCapitalize="none" autoCorrect="off" spellCheck={false}
                 placeholder="your-restaurant"
                 value={tenantSlug}
                 onChange={(e) => setTenantSlug(e.target.value.trim())}
@@ -68,7 +68,7 @@ function LoginForm() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <Input id="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">

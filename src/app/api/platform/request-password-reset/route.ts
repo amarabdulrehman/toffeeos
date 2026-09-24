@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { emailInput } from "@/lib/identity";
 import { requestPlatformPasswordReset } from "@/server/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 // Public, unauthenticated — deliberately NOT behind definePlatformHandler, since there's no
 // session yet at this point. Same generic-response, no-enumeration contract as the tenant version.
-const schema = z.object({ email: z.string().email() });
+const schema = z.object({ email: emailInput() });
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";

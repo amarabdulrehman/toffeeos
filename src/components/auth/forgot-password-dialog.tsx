@@ -92,12 +92,12 @@ export function ForgotPasswordDialog({
             {forTenant && (
               <div className="space-y-2">
                 <Label htmlFor="forgot-slug">Restaurant URL</Label>
-                <Input id="forgot-slug" value={tenantSlug} onChange={(e) => setTenantSlug(e.target.value.trim())} required />
+                <Input id="forgot-slug" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={tenantSlug} onChange={(e) => setTenantSlug(e.target.value.trim())} required />
               </div>
             )}
             <div className="space-y-2">
               <Label htmlFor="forgot-email">Email</Label>
-              <Input id="forgot-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <Input id="forgot-email" autoCapitalize="none" autoCorrect="off" spellCheck={false} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
             <DialogFooter>
               <Button type="submit" disabled={submitting || !email || (forTenant && !tenantSlug)}>

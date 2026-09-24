@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { emailInput } from "@/lib/identity";
 import { definePlatformHandler, HttpError } from "@/server/platform-handler";
 import { Prisma } from "@/generated/prisma/client";
 import { platformDb } from "@/server/db";
@@ -8,7 +9,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 const schema = z
   .object({
     currentPassword: z.string().min(1),
-    newEmail: z.string().email().optional(),
+    newEmail: emailInput().optional(),
     newPassword: z.string().min(8, "Password must be at least 8 characters").optional(),
   })
   .refine((v) => v.newEmail || v.newPassword, { message: "Provide a new email and/or a new password." });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { emailInput } from "@/lib/identity";
 import { definePlatformHandler, platformDb, HttpError } from "@/server/platform-handler";
 import { adminCreateTenant } from "@/server/tenant-signup";
 import { TIER_ORDER } from "@/server/tier";
@@ -57,13 +58,16 @@ export const GET = definePlatformHandler({ input: listSchema }, async ({ input }
 
 const createSchema = z.object({
   restaurantName: z.string().min(2).max(120),
+  // Lowercased before the pattern check, so "Karachi-Karahi" becomes a valid code instead of an error.
   slug: z
     .string()
+    .trim()
+    .toLowerCase()
     .min(2)
     .max(60)
     .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers, and hyphens only"),
   ownerName: z.string().min(2).max(120),
-  ownerEmail: z.string().email(),
+  ownerEmail: emailInput(),
   branchName: z.string().min(2).max(120),
   city: z.string().max(120).optional(),
   planKey: z.enum(TIER_ORDER),

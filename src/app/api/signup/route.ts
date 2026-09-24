@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { z } from "zod";
+import { emailInput } from "@/lib/identity";
 import { signupTenant } from "@/server/tenant-signup";
 import { HttpError } from "@/server/handler";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -14,13 +15,16 @@ import { checkRateLimit } from "@/lib/rate-limit";
 // rate-limit pattern as src/app/api/online-order/[tenantSlug]/checkout/route.ts.
 const signupSchema = z.object({
   restaurantName: z.string().min(2).max(120),
+  // Lowercased before the pattern check, so "Karachi-Karahi" becomes a valid code instead of an error.
   slug: z
     .string()
+    .trim()
+    .toLowerCase()
     .min(2)
     .max(60)
     .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers, and hyphens only"),
   ownerName: z.string().min(2).max(120),
-  ownerEmail: z.string().email(),
+  ownerEmail: emailInput(),
   ownerPassword: z.string().min(8, "Password must be at least 8 characters"),
   branchName: z.string().min(2).max(120),
   city: z.string().max(120).optional(),

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { slugInput } from "@/lib/identity";
 import { findTenantBySlug, tenantAcceptsLogin } from "@/server/auth/session-user";
 import { issueOtp, otpDeliveryAvailable } from "@/server/auth/otp-store";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -9,7 +10,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 // Always returns { ok: true } regardless of whether the phone matches a real user, so this can't
 // be used to enumerate who has an account.
 const schema = z.object({
-  tenantSlug: z.string().min(1),
+  tenantSlug: slugInput(),
   phone: z.string().min(1),
 });
 

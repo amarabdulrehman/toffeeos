@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { emailInput, slugInput } from "@/lib/identity";
 import { requestTenantPasswordReset } from "@/server/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -7,8 +8,8 @@ import { checkRateLimit } from "@/lib/rate-limit";
 // tenant/email combination actually has an account — the whole point is that this can't be used to
 // enumerate who has one.
 const schema = z.object({
-  tenantSlug: z.string().min(1),
-  email: z.string().email(),
+  tenantSlug: slugInput(),
+  email: emailInput(),
 });
 
 export async function POST(req: NextRequest) {

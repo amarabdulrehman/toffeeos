@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { emailInput } from "@/lib/identity";
 import { defineHandler, HttpError } from "@/server/handler";
 import { createInvite } from "@/server/staff-invites";
 
 const schema = z.object({
   branchId: z.string().min(1),
   roleId: z.string().min(1),
-  email: z.string().email(),
+  email: emailInput(),
 });
 
 export const POST = defineHandler(

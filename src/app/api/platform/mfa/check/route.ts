@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { emailInput } from "@/lib/identity";
 import { platformDb } from "@/server/db";
 import { verifyPassword } from "@/lib/password";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -9,7 +10,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 // Deliberately checks the password itself (not just "does this email have 2FA") and shares the
 // exact rate-limit key auth/config.ts's authorize() uses for this account, so this can't be used
 // as a side channel to hammer the password separately from the real sign-in attempt limit.
-const schema = z.object({ email: z.string().email(), password: z.string().min(1) });
+const schema = z.object({ email: emailInput(), password: z.string().min(1) });
 
 export async function POST(req: NextRequest) {
   const raw = await req.json().catch(() => ({}));

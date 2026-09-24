@@ -1,4 +1,5 @@
 import "server-only";
+import { normalizeSlug } from "@/lib/identity";
 import { rawDb, tenantDb } from "@/server/db";
 import { resolveEffectivePermissions } from "@/server/permissions/check";
 import type { TenantSessionUser } from "./types";
@@ -6,7 +7,9 @@ import type { TenantSessionUser } from "./types";
 /** Tenant lookup by slug. Tenant carries no tenantId column of its own, so it has no RLS policy
  * (see the migration) — this is safe to run on rawDb directly. */
 export async function findTenantBySlug(slug: string) {
-  return rawDb.tenant.findUnique({ where: { slug } });
+  // Every restaurant-code lookup comes through here — login, OTP, password reset, the public
+  // storefront and status URLs — so normalizing once covers all of them. Codes are stored lowercase.
+  return rawDb.tenant.findUnique({ where: { slug: normalizeSlug(slug) } });
 }
 
 export function tenantAcceptsLogin(status: string): boolean {

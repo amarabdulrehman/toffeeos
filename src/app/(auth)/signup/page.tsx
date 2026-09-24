@@ -79,7 +79,7 @@ export default function SignupPage() {
           <div className="space-y-2">
             <Label htmlFor="slug">Restaurant URL</Label>
             <Input
-              id="slug"
+              id="slug" autoCapitalize="none" autoCorrect="off" spellCheck={false}
               value={slug}
               onChange={(e) => {
                 setSlugTouched(true);
@@ -99,7 +99,7 @@ export default function SignupPage() {
           <div className="space-y-2">
             <Label htmlFor="ownerEmail">Your email</Label>
             <Input
-              id="ownerEmail"
+              id="ownerEmail" autoCapitalize="none" autoCorrect="off" spellCheck={false}
               type="email"
               value={ownerEmail}
               onChange={(e) => setOwnerEmail(e.target.value)}
