@@ -224,7 +224,27 @@ export async function periodReport(tenantId: string, branchIds: string[], from: 
     to: businessDayRange(to, clock.timezone, clock.dayStartMinutes).to,
     ...clock,
   };
-  const orders = await paidOrdersIn(tenantId, branchIds, range);
+  // Compared with the same number of days immediately before. A period still under way is compared
+  // up to the same point — the last seven days at 2pm against the seven before them at 2pm — or
+  // today's half-finished day would always make the period look worse than the one before it.
+  const n = dayList.length;
+  const today = todayFor(clock.timezone, new Date(), clock.dayStartMinutes);
+  const underWay = to >= today;
+  const previous: DateRange = {
+    from: businessDayRange(addDays(from, -n), clock.timezone, clock.dayStartMinutes).from,
+    to: underWay
+      ? new Date(Date.now() - n * 24 * 60 * 60 * 1000)
+      : businessDayRange(addDays(from, -1), clock.timezone, clock.dayStartMinutes).to,
+    ...clock,
+  };
+
+  const [orders, compareOrders] = await Promise.all([
+    paidOrdersIn(tenantId, branchIds, range),
+    tenantDb(tenantId).order.findMany({
+      where: paidOrdersWhere(branchIds, previous),
+      select: { totalPaisa: true, refundedPaisa: true },
+    }),
+  ]);
 
   const perDay = new Map<string, PeriodDay>(
     dayList.map((day) => [
@@ -247,5 +267,17 @@ export async function periodReport(tenantId: string, branchIds: string[], from: 
     }
   }
 
-  return { from, to, dayStartMinutes: clock.dayStartMinutes, totals: totalsOf(orders), days: [...perDay.values()] };
+  const span = n === 1 ? "the day before" : `the ${n} days before`;
+  return {
+    from,
+    to,
+    dayStartMinutes: clock.dayStartMinutes,
+    totals: totalsOf(orders),
+    days: [...perDay.values()],
+    compare: {
+      label: underWay ? `${span}, to the same time` : span,
+      orderCount: compareOrders.length,
+      netPaisa: compareOrders.reduce((sum, o) => sum + o.totalPaisa - o.refundedPaisa, 0),
+    },
+  };
 }

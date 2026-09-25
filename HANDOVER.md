@@ -341,7 +341,9 @@ demo tenant has no second branch), against a clean production build:
   can no longer disagree with the Sales tab about the same range.
 - **Daily Sales** — today, yesterday, any day, and weekly and monthly closings with every day
   listed and a printable summary. Built on the Sales report's own definition of a sale, and tested
-  to agree with it to the paisa for a day and for a week. Owners and managers only.
+  to agree with it to the paisa for a day and for a week. Owners and managers only. The
+  dashboard's sales card switches between today, yesterday, 7 days, 30 days and this month, each
+  against the period before it.
 - **A café's day can end after midnight** — each branch sets when its day ends (midnight to 6am, on
   the Branches screen). A 1:30am sale then counts in tonight's takings, drawer and closing, and the
   Sales report, cash drawer, dashboard and WhatsApp summary all follow the same setting.

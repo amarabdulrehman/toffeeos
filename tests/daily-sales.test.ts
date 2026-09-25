@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   capAtToday,
   dayEndsLabel,
+  dayMonth,
   dayTitle,
   hourLabel,
+  hourlySeries,
   monthOf,
   periodTitle,
   shiftPeriod,
@@ -73,5 +75,40 @@ describe("words on the screen", () => {
     expect(dayEndsLabel(0)).toBe("midnight");
     expect(dayEndsLabel(240)).toBe("4am");
     expect(dayEndsLabel(150)).toBe("2:30am");
+  });
+});
+
+describe("a day's chart, hour by hour", () => {
+  it("fills the quiet hours between the first sale and the last", () => {
+    const series = hourlySeries(
+      [
+        { hour: 13, grossPaisa: 500 },
+        { hour: 16, grossPaisa: 900 },
+      ],
+      0
+    );
+    expect(series.map((s) => s.label)).toEqual(["1pm", "2pm", "3pm", "4pm"]);
+    expect(series.map((s) => s.salesPaisa)).toEqual([500, 0, 0, 900]);
+  });
+
+  it("runs a late night in the order it happened", () => {
+    // A day ending at 4am: 11pm, then midnight, then 1am — not 1am first because it is a smaller number.
+    const series = hourlySeries(
+      [
+        { hour: 1, grossPaisa: 300 },
+        { hour: 23, grossPaisa: 700 },
+      ],
+      240
+    );
+    expect(series.map((s) => s.label)).toEqual(["11pm", "12am", "1am"]);
+    expect(series.map((s) => s.salesPaisa)).toEqual([700, 0, 300]);
+  });
+
+  it("has nothing to draw on a day with no sales", () => {
+    expect(hourlySeries([], 0)).toEqual([]);
+  });
+
+  it("labels chart days without the weekday", () => {
+    expect(dayMonth("2026-09-05")).toBe("5 Sep");
   });
 });

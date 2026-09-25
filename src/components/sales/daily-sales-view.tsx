@@ -601,7 +601,7 @@ function PeriodPanel({
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div className="col-span-2 *:h-full lg:col-span-1">
-          <StatCard label="Net sales" value={formatPkr(t.netPaisa)} icon={Banknote} hero />
+          <StatCard label="Net sales" value={formatPkr(t.netPaisa)} icon={Banknote} hero trend={trendAgainst(t.netPaisa, data.compare.netPaisa)} />
         </div>
         <StatCard label="Orders" value={t.orderCount} icon={ShoppingBag} />
         <StatCard label="Average a day" value={formatPkr(Math.round(t.netPaisa / Math.max(1, data.days.length)))} icon={CalendarDays} />
@@ -609,6 +609,11 @@ function PeriodPanel({
           <StatCard label="Best day" value={best ? shortDay(best.day) : "—"} icon={ReceiptText} />
         </div>
       </div>
+
+      <p className="mt-2 text-sm text-muted-foreground">
+        {data.compare.label[0].toUpperCase() + data.compare.label.slice(1)}: {formatPkr(data.compare.netPaisa)} from{" "}
+        {data.compare.orderCount} {data.compare.orderCount === 1 ? "order" : "orders"}.
+      </p>
 
       <Card className="mt-6">
         <CardHeader>

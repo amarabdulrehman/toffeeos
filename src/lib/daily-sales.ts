@@ -59,6 +59,8 @@ export interface PeriodReport {
   totals: SalesTotals;
   /** Every day in the period, including the ones with no sales — a closing lists them all. */
   days: PeriodDay[];
+  /** The same number of days just before, up to the same time if this period isn't over. */
+  compare: { label: string; orderCount: number; netPaisa: number };
 }
 
 export const METHOD_LABEL: Record<string, string> = {
@@ -128,6 +130,12 @@ export function shortDay(day: string, withYear = false): string {
   return `${WEEKDAYS[weekday]} ${d} ${MONTHS[m - 1]}${withYear ? ` ${y}` : ""}`;
 }
 
+/** "14 Feb" — for chart labels, where the weekday is clutter. */
+export function dayMonth(day: string): string {
+  const { m, d } = parts(day);
+  return `${d} ${MONTHS[m - 1]}`;
+}
+
 /** "Today", "Yesterday", or the date. */
 export function dayTitle(day: string, today: string): string {
   if (day === today) return "Today";
@@ -163,4 +171,27 @@ export function dayEndsLabel(dayStartMinutes: number): string {
 export function changePct(now: number, before: number): number | null {
   if (before <= 0) return null;
   return ((now - before) / before) * 100;
+}
+
+/**
+ * A day's sales hour by hour for a chart, from the first hour anything sold to the last, with the
+ * quiet hours in between filled in at zero — a chart that skips from 1pm to 7pm draws a smooth line
+ * through an afternoon when nothing happened. Hours run in the café's order, so a day that ends at
+ * 4am runs 4am … 11pm, 12am … 3am.
+ */
+export function hourlySeries(
+  byHour: { hour: number; grossPaisa: number }[],
+  dayStartMinutes: number
+): { label: string; salesPaisa: number }[] {
+  if (byHour.length === 0) return [];
+  const start = Math.floor(dayStartMinutes / 60);
+  const position = (hour: number) => (hour - start + 24) % 24;
+  const sales = new Map(byHour.map((h) => [h.hour, h.grossPaisa]));
+  const positions = byHour.map((h) => position(h.hour));
+  const series: { label: string; salesPaisa: number }[] = [];
+  for (let p = Math.min(...positions); p <= Math.max(...positions); p++) {
+    const hour = (p + start) % 24;
+    series.push({ label: hourLabel(hour), salesPaisa: sales.get(hour) ?? 0 });
+  }
+  return series;
 }

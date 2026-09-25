@@ -94,6 +94,10 @@ test.describe("Daily Sales", () => {
   test("a week lists every day, and its days add up to its total and to the Sales report", async ({ request }) => {
     const from = "2024-02-12"; // a Monday
     const to = "2024-02-18";
+    // A sale on each side of the week's first edge. Without these the comparison below passed with
+    // its window a day too wide, because the extra day it took in had nothing on it.
+    await paidOrder(request, "CASH", "2024-02-11T07:00:00.000Z"); // Sunday noon — the week before
+    await paidOrder(request, "CASH", "2024-02-12T07:00:00.000Z"); // Monday noon — this week
     const res = await request.get(`/api/sales/period?from=${from}&to=${to}`);
     expect(res.ok(), await res.text()).toBeTruthy();
     const week = (await res.json()) as { totals: Totals; days: { day: string; netPaisa: number; orderCount: number }[] };
@@ -111,6 +115,15 @@ test.describe("Daily Sales", () => {
     // And the day inside it is the same day as when opened on its own.
     const single = await day(request, QUIET_DAY);
     expect(week.days.find((d) => d.day === QUIET_DAY)!.netPaisa).toBe(single.totals.netPaisa);
+
+    // The week after compares itself with exactly this one — a finished period against the whole
+    // of the one before, not "to the same time".
+    const next = await request.get("/api/sales/period?from=2024-02-19&to=2024-02-25");
+    expect(next.ok(), await next.text()).toBeTruthy();
+    const { compare } = (await next.json()) as { compare: { label: string; netPaisa: number; orderCount: number } };
+    expect(compare.label).toBe("the 7 days before");
+    expect(compare.netPaisa, "compared with the week before it").toBe(week.totals.netPaisa);
+    expect(compare.orderCount).toBe(week.totals.orderCount);
   });
 
   test("a sale at 1:30am belongs to the night before when the day ends at 4am", async ({ request }) => {
@@ -190,11 +203,45 @@ test.describe("Daily Sales", () => {
     await expect(dialog.getByRole("button", { name: "Print" })).toBeEnabled();
   });
 
-  test("the dashboard shows today so far and links to the rest", async ({ page }) => {
+  test("the dashboard's sales card switches period, and each shows what the reports say", async ({ page, request }) => {
+    // Asked with no date, the API answers for today by the branch's own clock.
+    const todayRes = await request.get("/api/sales/day");
+    expect(todayRes.ok(), await todayRes.text()).toBeTruthy();
+    const today = (await todayRes.json()).day as string;
+    const period = async (from: string) => {
+      const res = await request.get(`/api/sales/period?from=${from}&to=${today}`);
+      expect(res.ok(), await res.text()).toBeTruthy();
+      return (await res.json()).totals.netPaisa as number;
+    };
+    const minus = (days: number) => new Date(Date.parse(`${today}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
+    const expected: [string, number][] = [
+      ["Today", (await day(request, today)).totals.netPaisa],
+      ["Yesterday", (await day(request, minus(1))).totals.netPaisa],
+      ["7 days", await period(minus(6))],
+      ["30 days", await period(minus(29))],
+      ["This month", await period(`${today.slice(0, 7)}-01`)],
+    ];
+
     await page.goto("/app/dashboard");
-    await expect(page.getByText("Today so far")).toBeVisible({ timeout: 20_000 });
+    const card = page.getByRole("group", { name: "Sales period" });
+    await expect(card.getByRole("button", { name: "Today", pressed: true })).toBeVisible({ timeout: 20_000 });
+
+    // The figure is compared as whole rupees, digits only, so the test does not depend on how
+    // this machine's Node and the browser each format a number.
+    const shown = page.getByTestId("sales-net");
+    for (const [label, netPaisa] of expected) {
+      await card.getByRole("button", { name: label }).click();
+      await expect(card.getByRole("button", { name: label, pressed: true })).toBeVisible();
+      await expect
+        .poll(async () => (await shown.textContent())?.replace(/\D/g, ""), {
+          message: `${label} should show that period's net sales`,
+          timeout: 20_000,
+        })
+        .toBe(String(Math.round(netPaisa / 100)));
+    }
+
     // Button-styled links present as buttons, so it is found by its words.
-    await page.getByRole("main").getByText("Daily Sales", { exact: true }).click();
+    await page.getByRole("main").getByText("Every detail in Daily Sales").click();
     await expect(page).toHaveURL(/\/app\/sales/);
     await expect(page.getByRole("heading", { name: "Daily Sales" })).toBeVisible();
     await expect(page.getByText("Net sales").first()).toBeVisible({ timeout: 20_000 });
