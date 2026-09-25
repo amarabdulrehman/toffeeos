@@ -3,7 +3,8 @@ import { auth } from "@/server/auth";
 import { tenantDb } from "@/server/db";
 import { reportClock, resolveReportBranchIds } from "@/server/reports";
 import { todayFor } from "@/lib/business-day";
-import { DailySalesView } from "@/components/sales/daily-sales-view";
+import { getBranchClock } from "@/server/branch-settings";
+import { DailySalesView, type SalesScope } from "@/components/sales/daily-sales-view";
 
 // The same permission as the Sales report: these are the same figures, a day at a time. Owners and
 // managers hold it; cashiers and waiters do not.
@@ -14,21 +15,36 @@ export default async function DailySalesPage() {
   if (!user.permissions.includes("reports.sales.view")) redirect("/app/dashboard");
 
   const branchIds = await resolveReportBranchIds(user, undefined);
+  const branches = await tenantDb(user.tenantId).branch.findMany({
+    where: { id: { in: branchIds } },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  const now = new Date();
+
+  // The first choice is everything this person may see, on the same clock the reports use.
   const clock = await reportClock(user.tenantId, branchIds);
-  let scopeLabel = user.branchName;
-  if (branchIds.length > 1) {
-    scopeLabel = `All ${branchIds.length} branches`;
-  } else if (branchIds[0] && branchIds[0] !== user.branchId) {
-    const branch = await tenantDb(user.tenantId).branch.findUnique({ where: { id: branchIds[0] }, select: { name: true } });
-    scopeLabel = branch?.name ?? scopeLabel;
+  const scopes: SalesScope[] = [
+    {
+      branchId: null,
+      label: branches.length > 1 ? `All ${branches.length} branches` : (branches[0]?.name ?? user.branchName),
+      today: todayFor(clock.timezone, now, clock.dayStartMinutes),
+      dayStartMinutes: clock.dayStartMinutes,
+    },
+  ];
+  // Then each branch on its own, for an owner with more than one — each on its own clock, since
+  // one may trade until 2am and another close at 11.
+  if (branches.length > 1) {
+    for (const b of branches) {
+      const own = await getBranchClock(user.tenantId, b.id);
+      scopes.push({
+        branchId: b.id,
+        label: b.name,
+        today: todayFor(own.timezone, now, own.dayStartMinutes),
+        dayStartMinutes: own.dayStartMinutes,
+      });
+    }
   }
 
-  return (
-    <DailySalesView
-      today={todayFor(clock.timezone, new Date(), clock.dayStartMinutes)}
-      dayStartMinutes={clock.dayStartMinutes}
-      tenantName={user.tenantName}
-      scopeLabel={scopeLabel}
-    />
-  );
+  return <DailySalesView scopes={scopes} tenantName={user.tenantName} />;
 }

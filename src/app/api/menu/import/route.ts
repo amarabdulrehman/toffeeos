@@ -27,13 +27,14 @@ export const POST = defineHandler(
     permission: "menu.manage",
     input: schema,
     audit: (input, result) => {
-      const r = result as { summary?: { itemsCreated: number; variantsCreated: number } };
+      const r = result as { summary?: { itemsCreated: number; variantsCreated: number; itemsUpdated?: unknown[] } };
       return {
         action: (input as { dryRun?: boolean }).dryRun ? "menu.import.preview" : "menu.import",
         entityType: "MenuItem",
         metadata: {
           itemsCreated: r.summary?.itemsCreated ?? 0,
           variantsCreated: r.summary?.variantsCreated ?? 0,
+          itemsUpdated: r.summary?.itemsUpdated?.length ?? 0,
         },
       };
     },

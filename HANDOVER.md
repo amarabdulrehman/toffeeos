@@ -153,6 +153,14 @@ migration ran, and there was nowhere to notice in between. One café can survive
 The fix is a second Supabase project and a Preview set of environment variables, so a branch deploys
 somewhere harmless first.
 
+### Nobody is told when the site goes down
+
+`https://toffeeos.com/api/health` answers 200 when the app is serving and the database responds,
+and 503 when the database does not. Point a free monitor at it — UptimeRobot, Better Stack or
+cron-job.org, checking every five minutes — with your phone number for alerts. It needs an account
+only you can create, and it is ten minutes' work. Until then, the first you hear of an outage is a
+café calling.
+
 ### Set the discount ceiling for every branch you onboard
 
 It defaults to 100%, which means no limit — deliberately, so that deploying it changed nothing for
@@ -250,29 +258,26 @@ Two came off that list this week: the discount ceiling and refunds both gate som
 test fails if the number grows again, so the decision gets made when a permission is written rather
 than when a client finds it.
 
-### Refund figures: two of the three fixes are untested
+### Refunds reach every figure
 
 Adding refunds left three screens still counting money that had been handed back — the P&L, staff
-performance, and customer lifetime spend. All three are fixed. Only the P&L is covered end to end
-and verified by breaking it again; the other two are one-line subtractions on the same pattern,
-reasoned but not separately tested.
+performance, and customer lifetime spend. All three are fixed and each has its own end-to-end test
+(`e2e/pnl.spec.ts`, `e2e/refund-consequences.spec.ts`). The WhatsApp daily summary now quotes net
+sales too, naming the refund when there was one, so it matches Daily Sales.
 
-One more is a decision rather than a defect: the daily summary message quotes the day's **gross**
-takings, so a day with refunds in it reads high. The Sales tab shows both gross and net. Whether
-that message should say net is a call about what an owner wants to read at closing time, so it has
-been left as it was rather than changed quietly.
+### Menu import updates prices, and never deletes
 
-### Menu setup imports, but does not edit
+A CSV import exists (Menu → Import a menu). One row per sellable line, repeated rows give an item
+its sizes, and it previews before it writes — a file with a bad row in it writes nothing at all.
+That takes onboarding a seventy-eight item menu from an evening to a few minutes.
 
-A CSV import now exists (Menu → Import a menu). One row per sellable line, repeated rows give an
-item its sizes, and it previews before it writes — a file with a bad row in it writes nothing at
-all, and re-running skips what is already there, so a run that dies halfway is fixed by running it
-again. That takes onboarding a seventy-eight item menu from an evening to a few minutes.
+Re-importing brings an updated price list in: a changed price, size price or description updates
+the item, and a new size is added. Nothing missing from the file is ever deleted. An item with sizes
+on the menu but a single price in the file is left alone and the preview says why, since whether
+that means "drop the sizes" or "the file is incomplete" is the owner's call.
 
-What it does not do is change anything that already exists. Sizes and add-ons can be created but
-not renamed or reordered without deleting and recreating them, and the import deliberately will not
-update an item it finds — it leaves it alone. A café that wants a price list changed still needs
-someone to do it by hand.
+Sizes and add-ons can be created but not renamed or reordered on the Menu screen without deleting
+and recreating them.
 
 ### Receipt printing goes through the browser
 
@@ -328,9 +333,10 @@ demo tenant has no second branch), against a clean production build:
   can no longer disagree with the Sales tab about the same range.
 - **Daily Sales** — today, yesterday, any day, and weekly and monthly closings with every day
   listed and a printable summary. Built on the Sales report's own definition of a sale, and tested
-  to agree with it to the paisa for a day and for a week. Owners and managers only. The
-  dashboard's sales card switches between today, yesterday, 7 days, 30 days and this month, each
-  against the period before it.
+  to agree with it to the paisa for a day and for a week. Owners and managers only; an owner with
+  several branches can look at one at a time, each on its own clock. The dashboard's sales card
+  switches between today, yesterday, 7 days, 30 days and this month, each against the period
+  before it.
 - **A café's day can end after midnight** — each branch sets when its day ends (midnight to 6am, on
   the Branches screen). A 1:30am sale then counts in tonight's takings, drawer and closing, and the
   Sales report, cash drawer, dashboard and WhatsApp summary all follow the same setting.

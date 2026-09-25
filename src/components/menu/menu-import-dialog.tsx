@@ -24,10 +24,25 @@ interface Summary {
   categoriesCreated: string[];
   itemsCreated: number;
   variantsCreated: number;
+  itemsUpdated: { category: string; name: string; changes: string[] }[];
   skipped: { category: string; name: string }[];
+  leftAlone: { category: string; name: string; reason: string }[];
   errors: { line: number; message: string }[];
-  items?: { category: string; name: string; pricePaisa: number; sizes: string[]; exists: boolean }[];
+  items?: {
+    category: string;
+    name: string;
+    pricePaisa: number;
+    sizes: string[];
+    status: "new" | "update" | "same" | "leftAlone";
+    notes: string[];
+  }[];
 }
+
+const STATUS_TEXT: Record<"update" | "same" | "leftAlone", string> = {
+  update: "will change",
+  same: "already up to date",
+  leftAlone: "left as it is",
+};
 
 const TEMPLATE = `Category,Item,Size,Price,Description
 Coffee,Latte,12oz,599,
@@ -69,10 +84,14 @@ export function MenuImportDialog({
       return;
     }
 
-    toast.success(
-      `Added ${summary.itemsCreated} item${summary.itemsCreated === 1 ? "" : "s"}` +
-        (summary.variantsCreated > 0 ? ` and ${summary.variantsCreated} sizes` : "")
-    );
+    const parts = [
+      summary.itemsCreated > 0 && `added ${summary.itemsCreated} item${summary.itemsCreated === 1 ? "" : "s"}`,
+      summary.itemsUpdated.length > 0 &&
+        `updated ${summary.itemsUpdated.length} item${summary.itemsUpdated.length === 1 ? "" : "s"}`,
+      summary.variantsCreated > 0 && `${summary.variantsCreated} new size${summary.variantsCreated === 1 ? "" : "s"}`,
+    ].filter(Boolean) as string[];
+    const text = parts.join(", ");
+    toast.success(text ? text[0].toUpperCase() + text.slice(1) : "Nothing to change");
     onImported();
     close();
   }
@@ -90,6 +109,7 @@ export function MenuImportDialog({
   }
 
   const hasErrors = (preview?.errors.length ?? 0) > 0;
+  const hasWork = !!preview && (preview.itemsCreated > 0 || preview.itemsUpdated.length > 0);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
@@ -110,7 +130,8 @@ export function MenuImportDialog({
             />
             <p className="text-xs text-muted-foreground">
               Columns: <code>Category, Item, Size, Price, Description</code>. Leave Size blank for a single
-              price; repeat an item with different sizes to give it a size picker. Prices in rupees.
+              price; repeat an item with different sizes to give it a size picker. Prices in rupees. Items
+              already on the menu take the file&apos;s prices and descriptions; nothing is ever deleted.
             </p>
           </div>
 
@@ -170,9 +191,19 @@ export function MenuImportDialog({
                       <b className="tabular-nums">{preview.categoriesCreated.length}</b> new categor
                       {preview.categoriesCreated.length === 1 ? "y" : "ies"}
                     </span>
+                    {preview.itemsUpdated.length > 0 && (
+                      <span>
+                        <b className="tabular-nums">{preview.itemsUpdated.length}</b> to update
+                      </span>
+                    )}
                     {preview.skipped.length > 0 && (
                       <span className="text-muted-foreground">
-                        <b className="tabular-nums">{preview.skipped.length}</b> already on the menu, left alone
+                        <b className="tabular-nums">{preview.skipped.length}</b> already up to date
+                      </span>
+                    )}
+                    {preview.leftAlone.length > 0 && (
+                      <span className="text-warning-foreground">
+                        <b className="tabular-nums">{preview.leftAlone.length}</b> left as they are — see below
                       </span>
                     )}
                   </div>
@@ -180,20 +211,22 @@ export function MenuImportDialog({
                   {preview.items && preview.items.length > 0 && (
                     <ul className="max-h-48 space-y-1 overflow-y-auto text-xs">
                       {preview.items.map((i) => (
-                        <li
-                          key={`${i.category}::${i.name}`}
-                          className={`flex items-baseline justify-between gap-3 ${i.exists ? "text-muted-foreground" : ""}`}
-                        >
-                          <span className="min-w-0">
-                            <span className="text-muted-foreground">{i.category} · </span>
-                            {i.name}
-                            {i.sizes.length > 0 && (
-                              <span className="text-muted-foreground"> ({i.sizes.join(", ")})</span>
-                            )}
-                          </span>
-                          <span className="shrink-0 tabular-nums">
-                            {i.exists ? "already here" : formatPkr(i.pricePaisa)}
-                          </span>
+                        <li key={`${i.category}::${i.name}`} className={i.status === "same" ? "text-muted-foreground" : ""}>
+                          <div className="flex items-baseline justify-between gap-3">
+                            <span className="min-w-0">
+                              <span className="text-muted-foreground">{i.category} · </span>
+                              {i.name}
+                              {i.sizes.length > 0 && (
+                                <span className="text-muted-foreground"> ({i.sizes.join(", ")})</span>
+                              )}
+                            </span>
+                            <span
+                              className={`shrink-0 tabular-nums ${i.status === "leftAlone" ? "text-warning-foreground" : ""}`}
+                            >
+                              {i.status === "new" ? formatPkr(i.pricePaisa) : STATUS_TEXT[i.status]}
+                            </span>
+                          </div>
+                          {i.notes.length > 0 && <div className="pl-3 text-muted-foreground">{i.notes.join(" · ")}</div>}
                         </li>
                       ))}
                     </ul>
@@ -212,14 +245,14 @@ export function MenuImportDialog({
             Check it
           </Button>
           <Button
-            disabled={busy || !preview || hasErrors || preview.itemsCreated === 0}
+            disabled={busy || !preview || hasErrors || !hasWork}
             title={
               !preview
                 ? "Check the file first"
                 : hasErrors
                   ? "Fix the rows listed above first"
-                  : preview.itemsCreated === 0
-                    ? "Every item in this file is already on the menu"
+                  : !hasWork
+                    ? "The menu already matches this file"
                     : undefined
             }
             onClick={() => send(false)}

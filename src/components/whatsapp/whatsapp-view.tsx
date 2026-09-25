@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { TEMPLATE_FIELDS } from "@/lib/whatsapp-templates";
 
 interface Settings {
   enabled: boolean;
@@ -510,6 +511,17 @@ export function WhatsAppView() {
               <p className="text-xs text-muted-foreground">
                 Use {"{{1}}"}, {"{{2}}"}, ... as placeholders — filled in when the message actually sends.
               </p>
+              {/* Meta rejects a message whose field count differs from the approved template, so
+                  the owner needs to know exactly which fields there are and what each becomes. */}
+              {TEMPLATE_FIELDS[editingTemplate.key] && (
+                <ul className="space-y-0.5 rounded-lg bg-muted/50 px-3 py-2 text-xs" aria-label="What each placeholder becomes">
+                  {TEMPLATE_FIELDS[editingTemplate.key].map((field, i) => (
+                    <li key={field}>
+                      <code className="font-mono">{`{{${i + 1}}}`}</code> — {field}
+                    </li>
+                  ))}
+                </ul>
+              )}
               <Textarea
                 rows={5}
                 value={editingTemplate.bodyText}

@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/ui/stat-card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -83,19 +84,22 @@ function useReport<T>(url: string, reloadKey: number) {
   return { data: current?.data, error: current?.error, refreshing: !!current && current.key !== reloadKey };
 }
 
-export function DailySalesView({
-  today,
-  dayStartMinutes,
-  tenantName,
-  scopeLabel,
-}: {
-  /** Today's business day, by the branch's clock. */
+/** One choice in the branch picker: all branches together, or one branch on its own clock. */
+export interface SalesScope {
+  /** Null asks the server for everything this person may see. */
+  branchId: string | null;
+  /** Whose sales these are: a branch name, or "All 2 branches". */
+  label: string;
+  /** Today's business day, by this scope's clock. */
   today: string;
   dayStartMinutes: number;
-  tenantName: string;
-  /** Whose sales these are: a branch name, or "All branches". */
-  scopeLabel: string;
-}) {
+}
+
+export function DailySalesView({ scopes, tenantName }: { scopes: SalesScope[]; tenantName: string }) {
+  const [scopeIndex, setScopeIndex] = useState(0);
+  const scope = scopes[scopeIndex] ?? scopes[0];
+  const { today, dayStartMinutes, label: scopeLabel } = scope;
+  const branchQuery = scope.branchId ? `&branchId=${scope.branchId}` : "";
   const [view, setView] = useState<View>({ kind: "day", day: today });
   const yesterday = addDays(today, -1);
   // Week and Month open on the one around whatever is on screen: pick last Tuesday, press Week, and
@@ -122,6 +126,22 @@ export function DailySalesView({
             {scopeLabel} · each day ends at {dayEndsLabel(dayStartMinutes)}
           </p>
         </div>
+        {/* Only for someone who can see more than one branch. Each branch keeps its own clock, so
+            "today" follows whichever is picked. */}
+        {scopes.length > 1 && (
+          <Select value={String(scopeIndex)} onValueChange={(v) => v != null && setScopeIndex(Number(v))}>
+            <SelectTrigger className="h-10 w-full sm:w-64" aria-label="Branch">
+              <SelectValue>{(v: string) => scopes[Number(v)]?.label ?? ""}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {scopes.map((s, i) => (
+                <SelectItem key={s.branchId ?? "all"} value={String(i)}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -158,8 +178,9 @@ export function DailySalesView({
       <div className="mt-6">
         {view.kind === "day" ? (
           <DayPanel
-            key={view.day}
+            key={`${scopeIndex}:${view.day}`}
             day={view.day}
+            branchQuery={branchQuery}
             today={today}
             tenantName={tenantName}
             scopeLabel={scopeLabel}
@@ -168,8 +189,9 @@ export function DailySalesView({
           />
         ) : (
           <PeriodPanel
-            key={`${view.kind}:${view.range.from}`}
+            key={`${scopeIndex}:${view.kind}:${view.range.from}`}
             kind={view.kind}
+            branchQuery={branchQuery}
             range={view.range}
             today={today}
             tenantName={tenantName}
@@ -289,6 +311,7 @@ function MoneyCard({ totals }: { totals: SalesTotals }) {
 
 function DayPanel({
   day,
+  branchQuery,
   today,
   tenantName,
   scopeLabel,
@@ -296,6 +319,8 @@ function DayPanel({
   backLabel,
 }: {
   day: string;
+  /** "&branchId=…" when one branch is picked, empty for everything in scope. */
+  branchQuery: string;
   today: string;
   tenantName: string;
   scopeLabel: string;
@@ -304,7 +329,7 @@ function DayPanel({
 }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [printing, setPrinting] = useState(false);
-  const { data, error, refreshing } = useReport<DayReport>(`/api/sales/day?date=${day}`, reloadKey);
+  const { data, error, refreshing } = useReport<DayReport>(`/api/sales/day?date=${day}${branchQuery}`, reloadKey);
 
   const header = (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -516,6 +541,7 @@ function DayPanel({
 
 function PeriodPanel({
   kind,
+  branchQuery,
   range,
   today,
   tenantName,
@@ -524,6 +550,7 @@ function PeriodPanel({
   onOpenDay,
 }: {
   kind: "week" | "month";
+  branchQuery: string;
   range: DayRange;
   today: string;
   tenantName: string;
@@ -533,7 +560,7 @@ function PeriodPanel({
 }) {
   const [printing, setPrinting] = useState(false);
   const shown = capAtToday(range, today);
-  const { data, error } = useReport<PeriodReport>(`/api/sales/period?from=${shown.from}&to=${shown.to}`, 0);
+  const { data, error } = useReport<PeriodReport>(`/api/sales/period?from=${shown.from}&to=${shown.to}${branchQuery}`, 0);
   const isCurrent = range.to >= today;
   const title = periodTitle(kind, range);
 

@@ -2,7 +2,7 @@ import "server-only";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
 import { tenantDb, rawDb } from "@/server/db";
-import { formatPkr } from "@/lib/money";
+import { summarySalesText } from "@/lib/whatsapp-templates";
 import { salesReport, itemWiseReport } from "@/server/reports";
 import { inactiveCustomers } from "@/server/crm";
 import { businessDayOf, businessDayRange } from "@/lib/business-day";
@@ -68,9 +68,12 @@ export async function sendDailySummaryForBranch(tenantId: string, branchId: stri
   ]);
   const topItems = items.slice(0, 3);
   const dayLabel = formatInTimeZone(from, branch.timezone, "MMM d");
+  // Net of refunds, as Daily Sales leads with; it quoted the gross figure until 25 September 2026,
+  // which read high on any day with a refund in it.
+  const salesText = summarySalesText(sales.totalPaisa, sales.refundedPaisa);
 
   const body = [
-    `${dayLabel} at ${branch.name}: ${sales.orderCount} orders, ${formatPkr(sales.totalPaisa)}.`,
+    `${dayLabel} at ${branch.name}: ${sales.orderCount} orders, ${salesText}.`,
     topItems.length > 0 ? `Top items: ${topItems.map((i) => i.name).join(", ")}.` : "",
   ]
     .filter(Boolean)
@@ -84,12 +87,21 @@ export async function sendDailySummaryForBranch(tenantId: string, branchId: stri
         branchId,
         toPhone: r.phone,
         templateKey: "daily_summary",
-        params: [dayLabel, branch.name, String(sales.orderCount), formatPkr(sales.totalPaisa), topItems.map((i) => i.name).join(", ") || "—"],
+        params: [dayLabel, branch.name, String(sales.orderCount), salesText, topItems.map((i) => i.name).join(", ") || "—"],
       })
     )
   );
 
-  return { branchId, branchName: branch.name, dayLabel, orderCount: sales.orderCount, totalPaisa: sales.totalPaisa, body, recipientCount: recipients.length };
+  return {
+    branchId,
+    branchName: branch.name,
+    dayLabel,
+    orderCount: sales.orderCount,
+    totalPaisa: sales.totalPaisa,
+    netPaisa: sales.netPaisa,
+    body,
+    recipientCount: recipients.length,
+  };
 }
 
 export async function sendDailySummaryForAllBranches(tenantId: string, forDate?: Date) {

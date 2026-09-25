@@ -117,6 +117,56 @@ test.describe("Menu import", () => {
     expect(items, "exactly one, not two").toHaveLength(1);
   });
 
+  test("a re-imported price list updates the menu, and deletes nothing", async ({ request }) => {
+    // A café's price list changes every few months. Before this, re-importing skipped everything
+    // already on the menu, so every new price had to be typed in by hand.
+    const category = `Import Update ${uniqueSuffix()}`;
+    const first = await importCsv(
+      request,
+      [HEADER, `${category},Flat Item,,500,`, `${category},Sized Item,Small,600,`, `${category},Sized Item,Large,800,`].join("\n")
+    );
+    expect(first.res.ok(), await first.res.text()).toBeTruthy();
+
+    // New prices for two lines, a new size, and "Large" left out of the file entirely.
+    const updated = [
+      HEADER,
+      `${category},Flat Item,,550,Now with extra`,
+      `${category},Sized Item,Small,650,`,
+      `${category},Sized Item,Huge,1000,`,
+    ].join("\n");
+
+    const preview = await importCsv(request, updated, true);
+    expect(preview.body.summary.itemsUpdated.map((u: { name: string }) => u.name).sort()).toEqual(["Flat Item", "Sized Item"]);
+    expect(preview.body.summary.itemsCreated).toBe(0);
+
+    const applied = await importCsv(request, updated);
+    expect(applied.res.ok(), await applied.res.text()).toBeTruthy();
+
+    const menu = await (await request.get("/api/menu")).json();
+    const items = (menu.categories as { name: string; items: { id: string; name: string; basePricePaisa: number }[] }[])
+      .filter((c) => c.name === category)
+      .flatMap((c) => c.items);
+    expect(items, "updated in place, not added a second time").toHaveLength(2);
+    expect(items.find((i) => i.name === "Flat Item")!.basePricePaisa).toBe(55_000);
+
+    const sized = items.find((i) => i.name === "Sized Item")!;
+    const variants = (await (await request.get(`/api/menu-items/${sized.id}/variants`)).json()).variants as {
+      name: string;
+      pricePaisa: number;
+    }[];
+    expect(Object.fromEntries(variants.map((v) => [v.name, v.pricePaisa]))).toEqual({
+      Small: 65_000,
+      // Not in the file: kept, and still at its own price even though the base price moved.
+      Large: 80_000,
+      Huge: 100_000,
+    });
+
+    // And the same file again changes nothing.
+    const again = await importCsv(request, updated, true);
+    expect(again.body.summary.itemsUpdated).toEqual([]);
+    expect(again.body.summary.skipped).toHaveLength(2);
+  });
+
   test("items go into an existing category rather than a second one with the same name", async ({ request }) => {
     const category = `Import Existing ${uniqueSuffix()}`;
     await importCsv(request, `${HEADER}\n${category},First,,549,`);

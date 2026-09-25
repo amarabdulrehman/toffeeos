@@ -156,6 +156,67 @@ test.describe("Daily Sales", () => {
     }
   });
 
+  test("the WhatsApp daily summary leads with net sales, and names the refund", async ({ request }) => {
+    // It quoted gross takings, so a day with a refund in it read high against Daily Sales.
+    const noon = "2024-03-05T07:00:00.000Z"; // noon in Karachi, on a day no other spec uses
+    const sale = await paidOrder(request, "CASH", noon);
+    const refunded = 5_000;
+    const refund = await request.post(`/api/orders/${sale.id}/refund`, {
+      data: { amountPaisa: refunded, method: "CASH", reason: "daily summary probe" },
+    });
+    expect(refund.ok(), await refund.text()).toBeTruthy();
+
+    const res = await request.post("/api/whatsapp/daily-summary", { data: { date: noon } });
+    expect(res.ok(), await res.text()).toBeTruthy();
+    const results = (await res.json()).results as { branchId: string; totalPaisa: number; netPaisa: number; body: string }[];
+    const mine = results.find((r) => r.totalPaisa > 0);
+    expect(mine, "the branch that made the sale should have a summary").toBeTruthy();
+
+    const report = await salesReport(request, "2024-03-05", "2024-03-05");
+    expect(mine!.netPaisa, "the same net figure as the Sales report").toBe(report.netPaisa);
+    expect(mine!.body).toMatch(/ net \(Rs [\d,]+ taken, Rs [\d,]+ refunded\)/);
+  });
+
+  test("an owner can pick one branch, and the branches add up to all of them", async ({ request, page }) => {
+    const listed = await request.get("/api/branches");
+    expect(listed.ok(), await listed.text()).toBeTruthy();
+    const branches = ((await listed.json()).branches as { id: string; name: string; isActive: boolean }[]).filter((b) => b.isActive);
+    test.skip(branches.length < 2, "the demo tenant needs a second branch for this");
+
+    const net = async (query: string) => {
+      const res = await request.get(`/api/sales/day?date=${QUIET_DAY}${query}`);
+      expect(res.ok(), await res.text()).toBeTruthy();
+      return (await res.json()).totals.netPaisa as number;
+    };
+    const all = await net("");
+    const perBranch = new Map<string, number>();
+    for (const b of branches) perBranch.set(b.id, await net(`&branchId=${b.id}`));
+    const sum = [...perBranch.values()].reduce((a, b) => a + b, 0);
+    expect(sum, "each branch on its own adds up to all of them together").toBe(all);
+    expect(all, "the quiet day has sales, or this proves nothing").toBeGreaterThan(0);
+
+    // On screen. The quiet day's sales all belong to the owner's own branch, so another branch
+    // shows nothing for it — which proves the figures really follow the picker, not just the label.
+    const empty = branches.find((b) => perBranch.get(b.id) === 0);
+    test.skip(!empty, "every branch has sales on the quiet day");
+
+    await page.goto("/app/sales");
+    const picker = page.getByRole("combobox", { name: "Branch" });
+    await expect(picker).toContainText(`All ${branches.length} branches`);
+    await page.getByLabel("Pick a day").fill(QUIET_DAY);
+
+    // The headline card's figure sits straight after its "Net sales" label.
+    const heroDigits = async () =>
+      (await page.getByText("Net sales", { exact: true }).first().locator("xpath=following-sibling::div[1]").textContent())?.replace(/\D/g, "");
+    await expect.poll(heroDigits, { timeout: 20_000 }).toBe(String(Math.round(all / 100)));
+
+    await picker.click();
+    await page.getByRole("option", { name: empty!.name }).click();
+    await expect(picker).toContainText(empty!.name);
+    await expect(page.getByText(new RegExp(`^${empty!.name} · each day ends at`))).toBeVisible();
+    await expect.poll(heroDigits, { message: "that branch sold nothing that day", timeout: 20_000 }).toBe("0");
+  });
+
   test("dates it cannot answer for are refused plainly", async ({ request }) => {
     expect((await request.get("/api/sales/day?date=2024-02-31")).status()).toBe(400);
     expect((await request.get("/api/sales/day?date=2999-01-01")).status()).toBe(400);
