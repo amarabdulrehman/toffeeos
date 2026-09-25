@@ -15,5 +15,18 @@ export default async function InventoryPage() {
     return <UpgradeRequired feature="Inventory & Stock Control" requiredTier="growth" />;
   }
 
-  return <InventoryView />;
+  const can = (p: string) => user.permissions.includes(p);
+  return (
+    <InventoryView
+      perms={{
+        orderStock: can("inventory.purchaseOrder.create"),
+        approveOrders: can("inventory.purchaseOrder.approve"),
+        receiveStock: can("inventory.grn.create"),
+        manageSuppliers: can("inventory.supplier.manage"),
+        approveTransfers: can("inventory.transfer.approve"),
+        undoAdjustments: can("inventory.adjustment.delete"),
+        setAlertLevels: can("inventory.lowStockAlert.configure"),
+      }}
+    />
+  );
 }

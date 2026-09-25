@@ -3,6 +3,7 @@ import { tenantDb, runInTenantTransaction } from "@/server/db";
 import { HttpError } from "@/server/handler";
 import { assertInt } from "@/lib/money";
 import type { PaymentMethodKey } from "@/lib/pricing";
+import { reverseForRefund } from "@/server/loyalty-ledger";
 
 /**
  * Giving money back.
@@ -132,6 +133,9 @@ export async function refundOrder(
         payload: { amountPaisa: input.amountPaisa, method: input.method, reason },
       },
     });
+
+    // Take back the points this share of the bill earned, in the same transaction as the refund.
+    await reverseForRefund(tx, tenantId, updated, actorId);
 
     return { refund, order: updated };
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { subDays } from "date-fns";
 import {
   BadgePercent,
@@ -147,7 +147,14 @@ function DateRangePicker({
   );
 }
 
-export function ReportsView({ enabledModules }: { enabledModules: string[] }) {
+/**
+ * reports.export: whether this person may download the figures, not only read them. Held as context
+ * because the download buttons sit deep inside every tab, and a prop threaded through all of them
+ * would be easy to miss on the next one added.
+ */
+const CanExport = createContext(false);
+
+export function ReportsView({ enabledModules, canExport = false }: { enabledModules: string[]; canExport?: boolean }) {
   const range = useDateRange();
   const has = (tab: string) => {
     const mod = TAB_MODULE[tab];
@@ -155,6 +162,7 @@ export function ReportsView({ enabledModules }: { enabledModules: string[] }) {
   };
 
   return (
+    <CanExport.Provider value={canExport}>
     <div className="p-8">
       <div className="flex items-center gap-3">
         <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -245,11 +253,13 @@ export function ReportsView({ enabledModules }: { enabledModules: string[] }) {
         )}
       </Tabs>
     </div>
+    </CanExport.Provider>
   );
 }
 
 
 function ExportButton<T extends object>({ rows, filename }: { rows: T[]; filename: string }) {
+  if (!useContext(CanExport)) return null;
   return (
     <Button
       size="sm"
@@ -1047,6 +1057,7 @@ function TransactionsTab({ qs }: { qs: string }) {
 }
 
 function PnlTab({ qs }: { qs: string }) {
+  const canExportPnl = useContext(CanExport);
   const { data, error, loading } = useReportFetch<PnlReportData>(`/api/reports/pnl?${qs}`);
 
   if (error) {
@@ -1111,6 +1122,7 @@ function PnlTab({ qs }: { qs: string }) {
       <Card className="shadow-md">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="font-heading">Profit &amp; loss statement</CardTitle>
+          {canExportPnl && (
           <Button
             size="sm"
             variant="outline"
@@ -1136,6 +1148,7 @@ function PnlTab({ qs }: { qs: string }) {
           >
             Export CSV
           </Button>
+          )}
         </CardHeader>
         <CardContent>
           <PnlRow label="Gross sales" amountPaisa={data.grossSalesPaisa} hint={`${data.orderCount} paid orders`} />

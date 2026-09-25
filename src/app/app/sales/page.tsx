@@ -46,5 +46,5 @@ export default async function DailySalesPage() {
     }
   }
 
-  return <DailySalesView scopes={scopes} tenantName={user.tenantName} />;
+  return <DailySalesView scopes={scopes} tenantName={user.tenantName} canExport={user.permissions.includes("reports.export")} />;
 }

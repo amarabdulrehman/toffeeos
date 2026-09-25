@@ -20,6 +20,7 @@ import {
   RefreshCw,
   UserPlus,
   Building2,
+  CreditCard,
   type LucideIcon,
 } from "lucide-react";
 interface NavItem {
@@ -79,6 +80,7 @@ const NAV: NavItem[] = [
     module: "hr",
   },
   { href: "/app/sync-conflicts", label: "Sync Conflicts", icon: RefreshCw, anyPermission: ["sync.conflict.resolve"] },
+  { href: "/app/billing", label: "Plan & Billing", icon: CreditCard, anyPermission: ["billing.view"] },
 ];
 
 export function AppSidebarNav({

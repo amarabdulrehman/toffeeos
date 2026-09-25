@@ -13,6 +13,8 @@ import {
   Trash2,
   TriangleAlert,
   Warehouse,
+  ClipboardList,
+  Truck,
 } from "lucide-react";
 import { StatCard } from "@/components/ui/stat-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,6 +33,27 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { PurchaseOrdersTab, RecentAdjustmentsCard, SuppliersTab, TransferRequestsCard } from "./purchasing";
+
+export interface InventoryPerms {
+  orderStock: boolean;
+  approveOrders: boolean;
+  receiveStock: boolean;
+  manageSuppliers: boolean;
+  approveTransfers: boolean;
+  undoAdjustments: boolean;
+  setAlertLevels: boolean;
+}
+
+const NO_PERMS: InventoryPerms = {
+  orderStock: false,
+  approveOrders: false,
+  receiveStock: false,
+  manageSuppliers: false,
+  approveTransfers: false,
+  undoAdjustments: false,
+  setAlertLevels: false,
+};
 
 interface Location {
   id: string;
@@ -75,7 +98,9 @@ function LoadError({ message }: { message: string }) {
   );
 }
 
-export function InventoryView() {
+export function InventoryView({ perms = NO_PERMS }: { perms?: InventoryPerms }) {
+  // Bumped after a change elsewhere on the screen, so the lists that depend on it load again.
+  const [changeKey, setChangeKey] = useState(0);
   const [locations, setLocations] = useState<Location[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [report, setReport] = useState<StockRow[]>([]);
@@ -145,6 +170,8 @@ export function InventoryView() {
             <TabsTrigger value="grn" className="gap-1.5"><PackagePlus className="size-3.5" />Receive stock</TabsTrigger>
             <TabsTrigger value="adjustment" className="gap-1.5"><SlidersHorizontal className="size-3.5" />Adjust</TabsTrigger>
             <TabsTrigger value="transfer" className="gap-1.5"><ArrowLeftRight className="size-3.5" />Transfer</TabsTrigger>
+            <TabsTrigger value="purchase-orders" className="gap-1.5"><ClipboardList className="size-3.5" />Purchase orders</TabsTrigger>
+            <TabsTrigger value="suppliers" className="gap-1.5"><Truck className="size-3.5" />Suppliers</TabsTrigger>
           </TabsList>
 
           <TabsContent value="report" className="mt-4 space-y-4">
@@ -219,19 +246,50 @@ export function InventoryView() {
           </TabsContent>
 
           <TabsContent value="items" className="mt-4">
-            <ItemsTab items={items} onChanged={loadAll} />
+            <ItemsTab items={items} onChanged={loadAll} canSetAlertLevels={perms.setAlertLevels} />
           </TabsContent>
 
           <TabsContent value="grn" className="mt-4">
             <GrnTab locations={locations} items={items} onChanged={loadReport} />
           </TabsContent>
 
-          <TabsContent value="adjustment" className="mt-4">
-            <AdjustmentTab locations={locations} items={items} onChanged={loadReport} />
+          <TabsContent value="adjustment" className="mt-4 space-y-4">
+            <AdjustmentTab
+              locations={locations}
+              items={items}
+              onChanged={() => {
+                loadReport();
+                setChangeKey((k) => k + 1);
+              }}
+            />
+            <RecentAdjustmentsCard canUndo={perms.undoAdjustments} reloadKey={changeKey} onUndone={loadReport} />
           </TabsContent>
 
-          <TabsContent value="transfer" className="mt-4">
-            <TransferTab locations={locations} items={items} onChanged={loadReport} />
+          <TabsContent value="transfer" className="mt-4 space-y-4">
+            <TransferTab
+              locations={locations}
+              items={items}
+              onChanged={() => {
+                loadReport();
+                setChangeKey((k) => k + 1);
+              }}
+            />
+            <TransferRequestsCard canApprove={perms.approveTransfers} reloadKey={changeKey} onDecided={loadReport} />
+          </TabsContent>
+
+          <TabsContent value="purchase-orders" className="mt-4">
+            <PurchaseOrdersTab
+              locations={locations}
+              items={items}
+              canCreate={perms.orderStock}
+              canApprove={perms.approveOrders}
+              canReceive={perms.receiveStock}
+              onReceived={loadReport}
+            />
+          </TabsContent>
+
+          <TabsContent value="suppliers" className="mt-4">
+            <SuppliersTab canManage={perms.manageSuppliers} />
           </TabsContent>
         </Tabs>
       )}
@@ -329,7 +387,26 @@ function DefaultConsumptionLocation({ locations }: { locations: Location[] }) {
   );
 }
 
-function ItemsTab({ items, onChanged }: { items: Item[]; onChanged: () => void }) {
+function ItemsTab({ items, onChanged, canSetAlertLevels }: { items: Item[]; onChanged: () => void; canSetAlertLevels: boolean }) {
+  const [editingLevel, setEditingLevel] = useState<{ item: Item; value: string } | null>(null);
+
+  async function saveLevel() {
+    if (!editingLevel) return;
+    const res = await fetch(`/api/inventory/items/${editingLevel.item.id}/threshold`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lowStockThresholdQty: Number(editingLevel.value) || 0 }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(data.error ?? "Could not save.");
+      return;
+    }
+    toast.success(`${editingLevel.item.name}: alert below ${Number(editingLevel.value) || 0} ${editingLevel.item.unitOfMeasure}.`);
+    setEditingLevel(null);
+    onChanged();
+  }
+
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("");
   const [threshold, setThreshold] = useState("0");
@@ -341,10 +418,11 @@ function ItemsTab({ items, onChanged }: { items: Item[]; onChanged: () => void }
     const res = await fetch("/api/inventory/items", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, unitOfMeasure: unit, lowStockThresholdQty: Number(threshold) || 0 }),
+      body: JSON.stringify({ name, unitOfMeasure: unit, lowStockThresholdQty: canSetAlertLevels ? Number(threshold) || 0 : 0 }),
     });
     if (!res.ok) {
-      toast.error("Could not create item.");
+      const data = await res.json().catch(() => ({}));
+      toast.error(data.error ?? "Could not create item.");
       return;
     }
     setName("");
@@ -380,12 +458,17 @@ function ItemsTab({ items, onChanged }: { items: Item[]; onChanged: () => void }
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
           <Input placeholder="Item name (e.g. Chicken)" value={name} onChange={(e) => setName(e.target.value)} />
           <Input placeholder="Unit (kg, ltr, pcs)" value={unit} onChange={(e) => setUnit(e.target.value)} />
-          <Input
-            type="number"
-            placeholder="Low-stock threshold"
-            value={threshold}
-            onChange={(e) => setThreshold(e.target.value)}
-          />
+          {canSetAlertLevels ? (
+            <Input
+              type="number"
+              placeholder="Low-stock threshold"
+              aria-label="Low-stock threshold"
+              value={threshold}
+              onChange={(e) => setThreshold(e.target.value)}
+            />
+          ) : (
+            <p className="self-center text-xs text-muted-foreground">Alert levels are set by a manager.</p>
+          )}
           <Button onClick={create}>Add item</Button>
         </div>
         <Table>
@@ -409,7 +492,24 @@ function ItemsTab({ items, onChanged }: { items: Item[]; onChanged: () => void }
               <TableRow key={i.id}>
                 <TableCell className="font-medium">{i.name}</TableCell>
                 <TableCell className="text-muted-foreground">{i.unitOfMeasure}</TableCell>
-                <TableCell className="tabular-nums">{i.lowStockThresholdQty}</TableCell>
+                <TableCell className="tabular-nums">
+                  {editingLevel?.item.id === i.id ? (
+                    <span className="flex items-center gap-1.5">
+                      <Input type="number" min={0} step="any" className="h-8 w-24" aria-label={`Alert level for ${i.name}`}
+                        value={editingLevel.value} onChange={(e) => setEditingLevel({ item: i, value: e.target.value })} />
+                      <Button size="sm" onClick={saveLevel}>Save</Button>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      {i.lowStockThresholdQty}
+                      {canSetAlertLevels && (
+                        <Button size="sm" variant="ghost" className="h-7" onClick={() => setEditingLevel({ item: i, value: String(i.lowStockThresholdQty) })}>
+                          Change
+                        </Button>
+                      )}
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell>
                   <Button
                     size="icon"
@@ -638,12 +738,13 @@ function TransferTab({ locations, items, onChanged }: { locations: Location[]; i
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fromLocationId, toLocationId, itemId, quantity: Number(quantity) }),
     });
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
       toast.error(data.error ?? "Could not record transfer.");
       return;
     }
-    toast.success("Transfer recorded.");
+    // Someone who can't approve transfers has asked for one; nothing has moved yet.
+    toast.success(data.requested ? "Transfer requested — it moves once a manager approves it." : "Transfer recorded.");
     setQuantity("");
     onChanged();
   }

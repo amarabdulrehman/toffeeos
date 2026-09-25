@@ -10,10 +10,10 @@ import path from "node:path";
  * believes they have denied "Issue a refund" and they have not. It is a promise the UI makes and
  * the server does not keep.
  *
- * This does not demand that the list be empty today — 21 keys are unenforced, all of them for
- * features not yet built, and deciding which to wire up, hide or delete is a product call. What it does is
- * stop the number growing: add a permission without enforcing it and this fails, so the decision
- * gets made at the moment the key is introduced rather than discovered by a client.
+ * Since 25 September 2026 every key is enforced, so the known-unenforced list below is empty — each
+ * was either built or retired. This keeps it that way: add a permission without enforcing it and
+ * the test fails, so the decision is made when the key is written rather than discovered by a
+ * client.
  *
  * Reads the files as text. src/server/** imports `server-only`, which throws under vitest.
  */
@@ -21,29 +21,8 @@ import path from "node:path";
 const SRC = path.join(__dirname, "..", "src");
 
 /** Keys the registry declares that nothing currently enforces. Shrink this list; never grow it. */
-const KNOWN_UNENFORCED = new Set([
-  // Features not built yet — the permission was written alongside the schema.
-  "billing.plan.change",
-  "billing.view",
-  "crm.allergen.manage",
-  "crm.loyalty.adjust",
-  "inventory.adjustment.delete",
-  "inventory.lowStockAlert.configure",
-  "inventory.purchaseOrder.approve",
-  "inventory.purchaseOrder.create",
-  "inventory.supplier.manage",
-  "inventory.transfer.approve",
-  "menu.priceOverride",
-  "online.menu.manage",
-  "online.qr.manage",
-  "orders.markPaid",
-  "pos.pin.bypassVerification",
-  "pos.shift.bypassTimeRestriction",
-  "pos.tax.edit",
-  "reports.export",
-  "reports.profit.view",
-  "settings.serviceCharge.manage",
-  "staff.roles.manage",
+const KNOWN_UNENFORCED = new Set<string>([
+  // Empty since 25 September 2026: every permission on the roles screen gates something. Keep it so.
 ]);
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

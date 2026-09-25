@@ -12,5 +12,11 @@ export default async function BranchesPage() {
 
   const info = await getTenantSubscriptionInfo(tenantDb(user.tenantId));
 
-  return <BranchesView planName={info?.planName ?? "Starter"} maxBranches={info?.maxBranches ?? 1} />;
+  return (
+    <BranchesView
+      planName={info?.planName ?? "Starter"}
+      maxBranches={info?.maxBranches ?? 1}
+      canManageServiceCharge={user.permissions.includes("settings.serviceCharge.manage")}
+    />
+  );
 }

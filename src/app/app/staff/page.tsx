@@ -6,9 +6,10 @@ export default async function StaffPage() {
   const session = await auth();
   const user = session?.user;
   if (!user || user.kind !== "tenant") redirect("/login");
-  if (!user.permissions.includes("staff.manage") && !user.permissions.includes("staff.invite")) {
+  const can = (p: string) => user.permissions.includes(p);
+  if (!can("staff.manage") && !can("staff.invite") && !can("staff.roles.manage")) {
     redirect("/app/dashboard");
   }
 
-  return <StaffView canInvite={user.permissions.includes("staff.invite")} canManage={user.permissions.includes("staff.manage")} />;
+  return <StaffView canInvite={can("staff.invite")} canManage={can("staff.manage")} canManageRoles={can("staff.roles.manage")} />;
 }

@@ -46,7 +46,8 @@ export async function getPublicMenu(tenantId: string, branchId: string) {
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     include: {
       items: {
-        where: { isActive: true },
+        // isAvailableOnline: an owner can keep a dish off the online and QR menus (online.menu.manage).
+        where: { isActive: true, isAvailableOnline: true },
         orderBy: { name: "asc" },
         include: {
           variants: { orderBy: [{ sortOrder: "asc" }, { name: "asc" }] },
@@ -100,10 +101,26 @@ export interface PlaceOnlineOrderInput {
  * functions, just with actorId=null and source="ONLINE" so staff can see where it came from), and
  * creates/matches a CRM customer by phone the same way a POS phone-lookup does.
  */
+/**
+ * Refuses an item the owner has kept off the online menu. The menu the customer sees already hides
+ * it; this is for a stale page, or a request made by hand, which would otherwise order it anyway.
+ */
+async function assertAllOnline(tenantId: string, lines: { menuItemId: string }[]) {
+  const ids = [...new Set(lines.map((l) => l.menuItemId))];
+  const hidden = await tenantDb(tenantId).menuItem.findMany({
+    where: { id: { in: ids }, isAvailableOnline: false },
+    select: { name: true },
+  });
+  if (hidden.length > 0) {
+    throw new HttpError(400, `${hidden.map((h) => h.name).join(", ")} can't be ordered online. Please order it at the counter.`);
+  }
+}
+
 export async function placeOnlineOrder(tenantId: string, input: PlaceOnlineOrderInput) {
   if (input.fulfillment === "DELIVERY" && !input.deliveryAddress?.trim()) {
     throw new HttpError(400, "A delivery address is required for delivery orders.");
   }
+  await assertAllOnline(tenantId, input.lines);
 
   const customer = await findOrCreateCustomer(tenantId, input.customerPhone, input.customerName);
 
@@ -149,6 +166,7 @@ export interface PlaceQrOrderInput {
  * at the table.
  */
 export async function placeQrOrder(tenantId: string, input: PlaceQrOrderInput) {
+  await assertAllOnline(tenantId, input.lines);
   const db = tenantDb(tenantId);
   const table = await db.restaurantTable.findUniqueOrThrow({ where: { id: input.tableId } });
 

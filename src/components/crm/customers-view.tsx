@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { CircleDollarSign, Lock, Search, Trophy, UserRound, Users } from "lucide-react";
 import { RankedBarChart } from "@/components/charts/ranked-bar-chart";
 import { formatPkr } from "@/lib/money";
+import { CustomerPoints, LoyaltySettingsCard, useLoyaltyProgram } from "./loyalty";
 
 interface CustomerRow {
   id: string;
@@ -36,7 +37,14 @@ interface CustomerOrder {
 }
 
 interface CustomerDetail {
-  customer: { id: string; name: string | null; phone: string | null; email: string | null; whatsappOptOut: boolean };
+  customer: {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    email: string | null;
+    whatsappOptOut: boolean;
+    loyaltyPoints: number;
+  };
   orders: CustomerOrder[];
   totalOrders: number;
   totalSpendPaisa: number;
@@ -61,7 +69,16 @@ const ORDER_STATUS_VARIANT: Record<string, "default" | "success" | "destructive"
   CANCELLED: "destructive",
 };
 
-export function CustomersView() {
+export function CustomersView({
+  canSetUpLoyalty = false,
+  canAdjustPoints = false,
+}: {
+  /** settings.general.manage — switch the loyalty scheme on and set its numbers. */
+  canSetUpLoyalty?: boolean;
+  /** crm.loyalty.adjust — correct a customer's points by hand. */
+  canAdjustPoints?: boolean;
+}) {
+  const { program } = useLoyaltyProgram();
   const [query, setQuery] = useState("");
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,7 +118,9 @@ export function CustomersView() {
         </span>
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight">Customers</h1>
-          <p className="text-sm text-muted-foreground">Auto-created on first order. Loyalty signal only — no points engine yet.</p>
+          <p className="text-sm text-muted-foreground">
+            Auto-created on first order.{program?.isEnabled ? " Loyalty points are on." : ""}
+          </p>
         </div>
       </div>
 
@@ -244,14 +263,32 @@ export function CustomersView() {
         </CardContent>
       </Card>
 
-      <CustomerDetailDialog customerId={selectedId} onClose={() => setSelectedId(null)} />
+      {canSetUpLoyalty && <LoyaltySettingsCard />}
+
+      <CustomerDetailDialog
+        customerId={selectedId}
+        onClose={() => setSelectedId(null)}
+        showPoints={!!program?.isEnabled}
+        canAdjustPoints={canAdjustPoints}
+      />
     </div>
   );
 }
 
-function CustomerDetailDialog({ customerId, onClose }: { customerId: string | null; onClose: () => void }) {
+function CustomerDetailDialog({
+  customerId,
+  onClose,
+  showPoints,
+  canAdjustPoints,
+}: {
+  customerId: string | null;
+  onClose: () => void;
+  showPoints: boolean;
+  canAdjustPoints: boolean;
+}) {
   const [detail, setDetail] = useState<CustomerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!customerId) return;
@@ -270,7 +307,7 @@ function CustomerDetailDialog({ customerId, onClose }: { customerId: string | nu
         setError("Could not load this customer.");
       }
     })();
-  }, [customerId]);
+  }, [customerId, reloadKey]);
 
   return (
     <Dialog open={!!customerId} onOpenChange={(o) => !o && onClose()}>
@@ -307,6 +344,15 @@ function CustomerDetailDialog({ customerId, onClose }: { customerId: string | nu
                 <div className="mt-0.5 font-semibold tabular-nums text-primary">{formatPkr(detail.totalSpendPaisa)}</div>
               </div>
             </div>
+
+            {showPoints && (
+              <CustomerPoints
+                customerId={detail.customer.id}
+                balance={detail.customer.loyaltyPoints}
+                canAdjust={canAdjustPoints}
+                onChanged={() => setReloadKey((k) => k + 1)}
+              />
+            )}
 
             <div className="flex items-center justify-between rounded-xl border p-3">
               <Label htmlFor="opt-out" className="flex items-center gap-2">

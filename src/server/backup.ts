@@ -84,6 +84,12 @@ const ALL_MODELS = [
   "RecurringExpense",
   "CashDrawerDay",
   "NoSaleOpening",
+  "Supplier",
+  "PurchaseOrder",
+  "PurchaseOrderLine",
+  "StockTransferRequest",
+  "LoyaltyProgram",
+  "LoyaltyTransaction",
 ] as const;
 
 function lowerFirst(s: string): string {

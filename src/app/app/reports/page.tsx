@@ -33,5 +33,5 @@ export default async function ReportsPage() {
   // wholesale, since most tenants can see *some* of this page regardless.
   const enabledModules = await getTenantModulesForTenant(user.tenantId);
 
-  return <ReportsView enabledModules={enabledModules} />;
+  return <ReportsView enabledModules={enabledModules} canExport={user.permissions.includes("reports.export")} />;
 }

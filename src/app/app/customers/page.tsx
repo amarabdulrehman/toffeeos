@@ -15,5 +15,10 @@ export default async function CustomersPage() {
     return <UpgradeRequired feature="CRM" requiredTier="growth" />;
   }
 
-  return <CustomersView />;
+  return (
+    <CustomersView
+      canSetUpLoyalty={user.permissions.includes("settings.general.manage")}
+      canAdjustPoints={user.permissions.includes("crm.loyalty.adjust")}
+    />
+  );
 }

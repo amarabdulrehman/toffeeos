@@ -26,6 +26,8 @@ interface Board {
   readyForPickup: BoardOrder[];
   inProgress: BoardOrder[];
   delivered: BoardOrder[];
+  /** Delivered cash-on-delivery orders whose cash hasn't been handed in yet. */
+  awaitingCash?: BoardOrder[];
 }
 interface Rider {
   userId: string;
@@ -37,7 +39,7 @@ interface Rider {
   activeDeliveryCount: number;
 }
 
-export function DeliveryView() {
+export function DeliveryView({ canSettleCash = false }: { canSettleCash?: boolean }) {
   return (
     <div className="p-8">
       <div className="flex items-center gap-3">
@@ -62,7 +64,7 @@ export function DeliveryView() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="board" className="mt-4">
-          <DeliveryBoard />
+          <DeliveryBoard canSettleCash={canSettleCash} />
         </TabsContent>
         <TabsContent value="riders" className="mt-4">
           <RidersTab />
@@ -72,8 +74,8 @@ export function DeliveryView() {
   );
 }
 
-function DeliveryBoard() {
-  const [board, setBoard] = useState<Board>({ readyForPickup: [], inProgress: [], delivered: [] });
+function DeliveryBoard({ canSettleCash }: { canSettleCash: boolean }) {
+  const [board, setBoard] = useState<Board>({ readyForPickup: [], inProgress: [], delivered: [], awaitingCash: [] });
   // null = riders haven't loaded yet, distinct from "loaded, zero riders". Unfiltered otherwise —
   // an order assigned before a rider was deactivated still needs their name to resolve in the
   // Select below (see activeRiders/assignedInactiveRider split in the render).
@@ -92,6 +94,18 @@ function DeliveryBoard() {
 
   useEffect(load, [load]);
 
+  /** The rider is back with the cash: record it as paid, in cash, in full. */
+  async function settle(order: BoardOrder) {
+    const res = await fetch(`/api/orders/${order.id}/settle-delivery`, { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(data.error ?? "Could not record the cash.");
+      return;
+    }
+    toast.success(`Order #${order.orderNumber}: cash received.`);
+    load();
+  }
+
   async function assign(orderId: string, riderId: string) {
     const res = await fetch(`/api/orders/${orderId}/assign-rider`, {
       method: "POST",
@@ -106,7 +120,36 @@ function DeliveryBoard() {
     load();
   }
 
+  const awaiting = board.awaitingCash ?? [];
+
   return (
+    <div className="space-y-6">
+    {awaiting.length > 0 && (
+      <Card className="border-warning/50">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between text-base">
+            Delivered — cash still with the rider
+            <Badge variant="warning">{awaiting.length}</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {awaiting.map((o) => (
+            <div key={o.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/20 p-3">
+              <span>
+                <span className="font-heading font-semibold">#{o.orderNumber}</span>
+                <span className="ml-2 text-sm tabular-nums">{formatPkr(o.totalPaisa)}</span>
+                {o.deliveryAddress && <span className="block text-xs text-muted-foreground">{o.deliveryAddress}</span>}
+              </span>
+              {canSettleCash && (
+                <Button size="sm" variant="success" onClick={() => settle(o)}>
+                  Cash received
+                </Button>
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    )}
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       <BoardColumn title="Ready for Pickup" orders={board.readyForPickup}>
         {(order) => {
@@ -156,6 +199,7 @@ function DeliveryBoard() {
           </Badge>
         )}
       </BoardColumn>
+    </div>
     </div>
   );
 }

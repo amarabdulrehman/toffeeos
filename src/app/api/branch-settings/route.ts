@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineHandler } from "@/server/handler";
+import { defineHandler, HttpError } from "@/server/handler";
 import { MAX_DAY_START_MINUTES } from "@/lib/business-day";
 
 export const GET = defineHandler({ permission: "settings.general.manage" }, async ({ session, db }) => {
@@ -44,6 +44,15 @@ export const PATCH = defineHandler(
     }),
   },
   async ({ session, db, input }) => {
+    // What customers are charged on top of their food is its own permission: someone trusted with
+    // the receipt header or the kitchen screen is not thereby trusted to change every bill.
+    const touchesServiceCharge =
+      input.serviceChargeBasisPoints !== undefined ||
+      input.serviceChargeAppliesTo !== undefined ||
+      input.serviceChargeTaxable !== undefined;
+    if (touchesServiceCharge && !session.permissions.includes("settings.serviceCharge.manage")) {
+      throw new HttpError(403, "Changing the service charge needs the \"Manage service charge\" permission.");
+    }
     const settings = await db.branchSettings.update({
       where: { branchId: session.branchId },
       data: {

@@ -15,5 +15,5 @@ export default async function OnlineOrderingPage() {
     return <UpgradeRequired feature="Online Ordering & QR Table Ordering" requiredTier="complete" />;
   }
 
-  return <OnlineOrderingView />;
+  return <OnlineOrderingView canManageOnlineMenu={user.permissions.includes("online.menu.manage")} />;
 }

@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatPkr } from "@/lib/money";
 import { ItemOptionsDialog, ModifierGroupsDialog } from "./menu-options-dialogs";
+import { BranchPricesDialog } from "./branch-prices-dialog";
 import { MenuImportDialog } from "./menu-import-dialog";
 
 interface MenuItemRow {
@@ -38,7 +39,8 @@ interface RecipeLine {
   inventoryItem: InventoryItem;
 }
 
-export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
+export function MenuView({ recipeEnabled, canPricePerBranch = false }: { recipeEnabled: boolean; canPricePerBranch?: boolean }) {
+  const [pricingItem, setPricingItem] = useState<{ id: string; name: string } | null>(null);
   const [items, setItems] = useState<MenuItemRow[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -198,6 +200,11 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
                           Edit recipe
                         </Button>
                       )}
+                      {canPricePerBranch && (
+                        <Button size="sm" variant="outline" onClick={() => setPricingItem({ id: item.id, name: item.name })}>
+                          Branch prices
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -225,6 +232,8 @@ export function MenuView({ recipeEnabled }: { recipeEnabled: boolean }) {
       />
 
       <ItemOptionsDialog item={optionsItem} onClose={() => setOptionsItem(null)} />
+
+      <BranchPricesDialog item={pricingItem} onClose={() => setPricingItem(null)} />
 
       <ModifierGroupsDialog open={groupsOpen} onClose={() => setGroupsOpen(false)} />
 

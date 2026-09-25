@@ -39,6 +39,7 @@ export const GET = defineHandler({ permission: "pos.access" }, async ({ session,
           imageUrl: item.imageUrl,
           basePricePaisa: override?.priceOverridePaisa ?? item.basePricePaisa,
           isAvailable: override?.isAvailable ?? true,
+          isAvailableOnline: item.isAvailableOnline,
           allergens: item.allergens,
           variants: item.variants.map((v) => ({
             id: v.id,

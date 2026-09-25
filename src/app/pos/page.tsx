@@ -77,6 +77,7 @@ export default async function PosPage() {
         canChangeType: user.permissions.includes("pos.order.changeType"),
         canMerge: user.permissions.includes("tables.merge"),
         canTaxExempt: user.permissions.includes("pos.tax.exempt"),
+        canRedeemPoints: user.permissions.includes("pos.payment.take"),
       }}
       canNoSale={user.permissions.includes("pos.cashDrawer.openNoSale")}
     />

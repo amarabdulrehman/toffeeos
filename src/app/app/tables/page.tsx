@@ -13,5 +13,10 @@ export default async function TablesSettingsPage() {
   if (!user.permissions.includes("tables.manage")) redirect("/app/dashboard");
 
   const enabledModules = await getTenantModulesForTenant(user.tenantId);
-  return <TablesSettingsView qrOrderingEnabled={enabledModules.includes("online")} />;
+  // QR codes need both the module and online.qr.manage: printing one puts ordering on a table.
+  return (
+    <TablesSettingsView
+      qrOrderingEnabled={enabledModules.includes("online") && user.permissions.includes("online.qr.manage")}
+    />
+  );
 }

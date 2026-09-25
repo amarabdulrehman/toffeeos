@@ -138,4 +138,7 @@ export interface OrderDto {
   payments?: { method: PaymentMethod; amountPaisa: number }[];
   /** Why this order is sold without tax (pos.tax.exempt); null or absent for every ordinary order. */
   taxExemptReason?: string | null;
+  /** Only on GET /api/orders/[orderId]. */
+  customer?: { id: string; name: string | null; phone: string | null; loyaltyPoints: number } | null;
+  discounts?: { type: "PERCENT" | "FIXED"; value: number; reason: string | null; loyaltyPointsRedeemed: number | null }[];
 }

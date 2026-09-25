@@ -40,11 +40,14 @@ function assertChangeable(order: StoredOrder, action: string) {
   }
 }
 
-/** Provisional totals for an order as its lines now stand — the figures createOrder would store. */
-async function totalsFor(
+/**
+ * Provisional totals for an order as its lines now stand — the figures createOrder would store.
+ * Exported for loyalty redemption, which prices an order with the discount it is about to add.
+ */
+export async function provisionalTotals(
   tenantId: string,
   branchId: string,
-  order: { type: StoredOrder["type"]; taxExemptReason: string | null; discounts: StoredOrder["discounts"] },
+  order: { type: StoredOrder["type"]; taxExemptReason: string | null; discounts: { type: "PERCENT" | "FIXED"; value: number }[] },
   lines: Parameters<typeof pricingLinesFromStored>[0]
 ) {
   const { settings, taxRules } = await getBranchPricingContext(tenantId, branchId, order.type, order.taxExemptReason !== null);
@@ -107,7 +110,7 @@ export async function voidOrderLine(
       { ...l, id: voidedLineId, quantity, isVoided: true },
     ];
   });
-  const totals = await totalsFor(tenantId, branchId, order, afterLines);
+  const totals = await provisionalTotals(tenantId, branchId, order, afterLines);
   const valuePaisa = line.unitPricePaisa * quantity;
 
   const updated = await runInTenantTransaction(tenantId, async (tx) => {
@@ -222,7 +225,7 @@ export async function changeOrderType(
   }
 
   const newType = input.type;
-  const totals = await totalsFor(tenantId, branchId, { ...order, type: newType }, order.lines);
+  const totals = await provisionalTotals(tenantId, branchId, { ...order, type: newType }, order.lines);
   const oldTableId = order.tableId;
   const newTableId = newType === "DINE_IN" ? input.tableId! : null;
 
@@ -288,7 +291,7 @@ export async function mergeOrders(
   }
 
   const merged = [...target.lines, ...source.lines];
-  const totals = await totalsFor(tenantId, branchId, target, merged);
+  const totals = await provisionalTotals(tenantId, branchId, target, merged);
 
   const sent = [target, source].filter((o) => o.sentToKitchenAt !== null);
   const kitchen = sent.length === 0
@@ -382,7 +385,7 @@ export async function setTaxExemption(
   const reason = input.reason?.trim() || null;
   if (order.taxExemptReason === reason) return order;
 
-  const totals = await totalsFor(tenantId, branchId, { ...order, taxExemptReason: reason }, order.lines);
+  const totals = await provisionalTotals(tenantId, branchId, { ...order, taxExemptReason: reason }, order.lines);
   const updated = await runInTenantTransaction(tenantId, async (tx) => {
     await guardVersion(tx, order);
     const saved = await tx.order.update({

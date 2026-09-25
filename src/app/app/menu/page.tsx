@@ -13,5 +13,10 @@ export default async function MenuManagementPage() {
   // editor is hidden rather than shown-and-403ing, same as every other gated feature in the nav.
   const enabledModules = await getTenantModulesForTenant(user.tenantId);
 
-  return <MenuView recipeEnabled={enabledModules.includes("recipe")} />;
+  return (
+    <MenuView
+      recipeEnabled={enabledModules.includes("recipe")}
+      canPricePerBranch={user.permissions.includes("menu.priceOverride")}
+    />
+  );
 }

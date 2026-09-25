@@ -512,18 +512,21 @@ model Category {
 }
 
 model MenuItem {
-  id             String   @id @default(uuid())
-  tenant         Tenant   @relation(fields: [tenantId], references: [id])
-  tenantId       String
-  category       Category @relation(fields: [categoryId], references: [id])
-  categoryId     String
-  name           String
-  description    String?
-  imageUrl       String?
-  basePricePaisa Int
-  allergens      String[] @default([])
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
+  id                String   @id @default(uuid())
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId          String
+  category          Category @relation(fields: [categoryId], references: [id])
+  categoryId        String
+  name              String
+  description       String?
+  imageUrl          String?
+  basePricePaisa    Int
+  allergens         String[] @default([])
+  isActive          Boolean  @default(true)
+  /// Shown on the online and QR menus. Off for a dish that doesn't travel, or one only served at
+  /// the counter; the till is unaffected. Governed by online.menu.manage.
+  isAvailableOnline Boolean  @default(true)
+  createdAt         DateTime @default(now())
 
   variants        ItemVariant[]
   modifierGroups  MenuItemModifierGroup[]
@@ -749,6 +752,11 @@ model StockMovement {
   reason          String? // required by the API for ADJUSTMENT, enforced there not in the schema
   transferGroupId String?
   actorId         String?
+  /// Set on the movement that undoes an adjustment, naming the adjustment. Unique, so one can only
+  /// ever be undone once - the ledger stays append-only, and a double tap can't double the undo.
+  reversalOfId    String?           @unique
+  /// Set on goods received against a purchase order.
+  purchaseOrderId String?
   createdAt       DateTime          @default(now())
 
   @@index([tenantId, branchId, createdAt])
@@ -1165,14 +1173,17 @@ model OrderLineModifier {
 }
 
 model OrderDiscount {
-  id          String       @id @default(uuid())
-  tenantId    String
-  order       Order        @relation(fields: [orderId], references: [id])
-  orderId     String
-  type        DiscountType
-  value       Int
-  reason      String?
-  appliedById String?
+  id                    String       @id @default(uuid())
+  tenantId              String
+  order                 Order        @relation(fields: [orderId], references: [id])
+  orderId               String
+  type                  DiscountType
+  value                 Int
+  reason                String?
+  appliedById           String?
+  /// Set when this discount is loyalty points spent: how many. Voiding or cancelling the order
+  /// gives them back; see src/server/loyalty.ts.
+  loyaltyPointsRedeemed Int?
 
   @@index([orderId])
   @@index([tenantId])
@@ -1439,6 +1450,140 @@ model NoSaleOpening {
   createdAt  DateTime @default(now())
 
   @@index([tenantId, branchId, createdAt])
+}
+
+/// Someone the café buys from. A purchase order is always to a supplier; a quick one-off delivery
+/// can still name its supplier in free text on the goods-received entry.
+model Supplier {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  phone     String?
+  email     String?
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  purchaseOrders PurchaseOrder[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  APPROVED
+  RECEIVED
+  CANCELLED
+}
+
+/// Stock ordered from a supplier: drafted by whoever may order (inventory.purchaseOrder.create),
+/// approved by whoever may spend (inventory.purchaseOrder.approve), and received into a stock
+/// location as goods-received movements when it arrives.
+model PurchaseOrder {
+  id            String              @id @default(uuid())
+  tenantId      String
+  branchId      String
+  supplier      Supplier            @relation(fields: [supplierId], references: [id])
+  supplierId    String
+  /// Where the goods go when they arrive.
+  locationId    String
+  /// Per-branch running number, as order numbers are.
+  number        Int
+  status        PurchaseOrderStatus @default(DRAFT)
+  notes         String?
+  createdById   String
+  approvedById  String?
+  approvedAt    DateTime?
+  receivedById  String?
+  receivedAt    DateTime?
+  cancelledById String?
+  cancelledAt   DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  lines PurchaseOrderLine[]
+
+  @@unique([branchId, number])
+  @@index([tenantId, branchId, status])
+}
+
+model PurchaseOrderLine {
+  id               String        @id @default(uuid())
+  tenantId         String
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  purchaseOrderId  String
+  itemId           String
+  quantity         Float
+  unitCostPaisa    Int
+  /// What actually arrived, set on receiving. Can differ from what was ordered.
+  receivedQuantity Float?
+
+  @@index([purchaseOrderId])
+  @@index([tenantId])
+}
+
+enum StockTransferStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// A transfer asked for by someone who may move stock but not approve it. Nothing moves until it is
+/// approved; approving runs the transfer itself, through the same code as a direct one.
+model StockTransferRequest {
+  id              String              @id @default(uuid())
+  tenantId        String
+  fromLocationId  String
+  toLocationId    String
+  itemId          String
+  quantity        Float
+  note            String?
+  status          StockTransferStatus @default(PENDING)
+  requestedById   String
+  decidedById     String?
+  decidedAt       DateTime?
+  rejectionReason String?
+  transferGroupId String?
+  createdAt       DateTime            @default(now())
+
+  @@index([tenantId, status])
+}
+
+/// A restaurant's loyalty scheme, one per restaurant. Off until an owner turns it on.
+model LoyaltyProgram {
+  tenantId               String   @id
+  isEnabled              Boolean  @default(false)
+  /// Points earned per Rs 100 of a paid bill.
+  pointsPerHundredRupees Int      @default(1)
+  /// What one point is worth when spent, in paisa.
+  paisaPerPoint          Int      @default(100)
+  updatedAt              DateTime @updatedAt
+}
+
+enum LoyaltyTransactionKind {
+  EARN
+  REDEEM
+  ADJUST
+  REVERSE
+}
+
+/// The ledger behind Customer.loyaltyPoints: every point earned, spent, adjusted or given back, and
+/// why. The balance on the customer is kept in step with this in the same transaction.
+model LoyaltyTransaction {
+  id         String                 @id @default(uuid())
+  tenantId   String
+  customerId String
+  orderId    String?
+  kind       LoyaltyTransactionKind
+  /// Positive earns or gives back; negative spends or takes away.
+  points     Int
+  reason     String?
+  actorId    String?
+  createdAt  DateTime               @default(now())
+
+  @@index([tenantId, customerId, createdAt])
+  @@index([orderId])
 }
 
 model CashDrawerDay {

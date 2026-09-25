@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Check, Copy, Users } from "lucide-react";
+import { RolesEditor } from "./roles-editor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,7 +54,16 @@ interface StaffData {
   branches: BranchOption[];
 }
 
-export function StaffView({ canInvite, canManage }: { canInvite: boolean; canManage: boolean }) {
+export function StaffView({
+  canInvite,
+  canManage,
+  canManageRoles = false,
+}: {
+  canInvite: boolean;
+  canManage: boolean;
+  /** staff.roles.manage: change who has which role, and what each role can do. */
+  canManageRoles?: boolean;
+}) {
   const [data, setData] = useState<StaffData | null>(null);
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -80,6 +90,22 @@ export function StaffView({ canInvite, canManage }: { canInvite: boolean; canMan
       toast.error(body.error ?? "Could not update.");
       return;
     }
+    load();
+  }
+
+  async function changeRole(member: Member, roleId: string) {
+    if (roleId === member.roleId) return;
+    const res = await fetch(`/api/staff/members/${member.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roleId }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(body.error ?? "Could not change the role.");
+      return;
+    }
+    toast.success(`${member.name} has a new role. They'll be asked to sign in again.`);
     load();
   }
 
@@ -182,7 +208,24 @@ export function StaffView({ canInvite, canManage }: { canInvite: boolean; canMan
                   <TableRow key={m.id}>
                     <TableCell className="font-medium">{m.name}</TableCell>
                     <TableCell className="text-muted-foreground">{m.email ?? m.phone ?? "—"}</TableCell>
-                    <TableCell>{m.roleName}</TableCell>
+                    <TableCell>
+                      {canManageRoles && data ? (
+                        <Select value={m.roleId} onValueChange={(v) => v && changeRole(m, v)}>
+                          <SelectTrigger className="h-8 w-44" aria-label={`Role for ${m.name}`}>
+                            <SelectValue>{(v: string) => data.roles.find((r) => r.id === v)?.name ?? m.roleName}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {data.roles.map((r) => (
+                              <SelectItem key={r.id} value={r.id}>
+                                {r.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        m.roleName
+                      )}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{m.branchName}</TableCell>
                     <TableCell>
                       <Badge variant={m.isActive ? "success" : "secondary"}>{m.isActive ? "Active" : "Inactive"}</Badge>
@@ -222,6 +265,13 @@ export function StaffView({ canInvite, canManage }: { canInvite: boolean; canMan
         />
       )}
       <InviteLinkDialog link={linkDialog?.link ?? null} onClose={() => setLinkDialog(null)} />
+
+      {canManageRoles && (
+        <section className="mt-8">
+          <h2 className="mb-3 font-heading text-lg font-semibold">Roles and what they can do</h2>
+          <RolesEditor />
+        </section>
+      )}
     </div>
   );
 }

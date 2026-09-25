@@ -94,7 +94,10 @@ export async function markDelivered(
       deliveredAt: new Date(),
       deliveryProofMethod: proof.method,
       deliveryProofUrl,
-      status: "DELIVERED",
+      // A paid order stays PAID: every sales figure counts status PAID, and overwriting it here used
+      // to take a prepaid delivery out of the takings the moment it arrived. An unpaid one becomes
+      // DELIVERED — cash on delivery, still to be handed in, which takePayment will accept.
+      ...(order.paidAt ? {} : { status: "DELIVERED" as const }),
     },
   });
   await db.orderEvent.create({
@@ -137,6 +140,8 @@ export async function listDeliveryBoard(tenantId: string, branchId: string) {
     readyForPickup: orders.filter((o) => !o.pickedUpAt && !o.deliveredAt),
     inProgress: orders.filter((o) => o.pickedUpAt && !o.deliveredAt),
     delivered: orders.filter((o) => o.deliveredAt),
+    // Delivered, and the rider still has the cash. Listed on its own so the counter can take it in.
+    awaitingCash: orders.filter((o) => o.deliveredAt && !o.paidAt),
   };
 }
 

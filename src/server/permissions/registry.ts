@@ -19,18 +19,22 @@ function perm(module: string, action: string, label: string): PermissionDef {
   return { key: `${module}.${action}`, label, module };
 }
 
+// Retired 25 September 2026, having never gated anything: pos.tax.edit (tax is exempted with a reason,
+// never hand-edited), pos.shift.bypassTimeRestriction and pos.pin.bypassVerification (the checks
+// they would bypass don't exist), crm.allergen.manage (allergens declined as a feature),
+// reports.profit.view (P&L is finance.pnl.view) and billing.plan.change (ToffeeOS changes plans).
+// Migration 20260925120000 took them off every role. Add a permission only with the thing it gates.
 export const PERMISSIONS: PermissionDef[] = [
   // ---- POS ----
   perm("pos", "access", "Access the POS terminal"),
   perm("pos", "order.create", "Create a new order"),
   perm("pos", "order.editItems", "Edit items on an open order"),
-  perm("pos", "order.changeType", "Change order type (dine-in/takeaway/delivery/service)"),
+  perm("pos", "order.changeType", "Switch an order between dine-in and takeaway"),
   perm("pos", "order.void", "Void an entire order"),
   perm("pos", "order.voidLine", "Void a single line item"),
   perm("pos", "discount.applyLine", "Apply a line-level discount"),
   perm("pos", "discount.applyOrder", "Apply an order-level discount"),
   perm("pos", "discount.exceedMax", "Apply a discount beyond the configured max"),
-  perm("pos", "tax.edit", "Manually edit tax on an order"),
   perm("pos", "tax.exempt", "Mark an order tax-exempt"),
   perm("pos", "payment.take", "Take payment on an order"),
   perm("pos", "payment.split", "Split payment across multiple methods"),
@@ -39,8 +43,6 @@ export const PERMISSIONS: PermissionDef[] = [
   perm("pos", "cashDrawer.correctClose", "Correct a closed cash drawer day's counted amount"),
   perm("pos", "shift.open", "Open a POS shift"),
   perm("pos", "shift.close", "Close a POS shift"),
-  perm("pos", "shift.bypassTimeRestriction", "Bypass shift time restriction"),
-  perm("pos", "pin.bypassVerification", "Bypass PIN verification"),
   perm("pos", "kot.print", "Print KOT (kitchen order ticket)"),
   perm("pos", "kot.reprint", "Reprint a KOT"),
   perm("pos", "receipt.print", "Print customer receipt"),
@@ -104,11 +106,9 @@ export const PERMISSIONS: PermissionDef[] = [
   perm("crm", "view", "View customer profiles"),
   perm("crm", "manage", "Edit customer profiles"),
   perm("crm", "loyalty.adjust", "Manually adjust loyalty points"),
-  perm("crm", "allergen.manage", "Manage customer allergen flags"),
 
   // ---- Reports ----
   perm("reports", "sales.view", "View sales reports"),
-  perm("reports", "profit.view", "View gross profit / P&L reports"),
   perm("reports", "cancellation.view", "View cancellation report"),
   perm("reports", "discountVoid.view", "View the discount & void audit report"),
   perm("reports", "inventoryValuation.view", "View the inventory valuation report"),
@@ -139,7 +139,6 @@ export const PERMISSIONS: PermissionDef[] = [
 
   // ---- Billing (tenant-facing) ----
   perm("billing", "view", "View subscription & billing"),
-  perm("billing", "plan.change", "Change subscription plan"),
 
   // ---- Online ordering & QR ----
   perm("online", "menu.manage", "Manage the online ordering menu"),

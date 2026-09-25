@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableSkeletonRows } from "@/components/ui/table-skeleton";
 import { formatPkr } from "@/lib/money";
+import { OnlineMenuCard } from "./online-menu-card";
 
 interface Branding {
   slug: string;
@@ -40,7 +41,7 @@ const STATUS_VARIANT: Record<string, "default" | "success" | "destructive" | "wa
   CANCELLED: "destructive",
 };
 
-export function OnlineOrderingView() {
+export function OnlineOrderingView({ canManageOnlineMenu = false }: { canManageOnlineMenu?: boolean }) {
   const [branding, setBranding] = useState<Branding | null>(null);
   const [logoUrl, setLogoUrl] = useState("");
   const [brandColor, setBrandColor] = useState("");
@@ -125,6 +126,8 @@ export function OnlineOrderingView() {
           </div>
         </CardContent>
       </Card>
+
+      {canManageOnlineMenu && <OnlineMenuCard />}
 
       <Card className="mb-6">
         <CardHeader>

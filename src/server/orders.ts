@@ -7,6 +7,7 @@ import { HttpError } from "@/server/handler";
 import { deductForOrder } from "@/server/recipes";
 import { recordConflict } from "@/server/sync-conflicts";
 import { notifyLowStock, notifyOrderThankYou } from "@/server/whatsapp/triggers";
+import { earnForPaidOrder, giveBackRedemption } from "@/server/loyalty-ledger";
 import type { TenantSessionUser } from "@/server/auth/types";
 import {
   DEFAULT_BRANCH_PRICING,
@@ -768,7 +769,10 @@ export async function takePayment(
       // happened before this transaction opened, so it can't be what decides whether this payment
       // is safe to apply.
       const fresh = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
-      const isTerminal = (TERMINAL_ORDER_STATUSES as readonly string[]).includes(fresh.status);
+      // DELIVERED is terminal for everything else, but a cash-on-delivery order is delivered before
+      // it is paid: the rider brings the cash back afterwards. That one payment is still owed.
+      const awaitingDeliveryCash = fresh.status === "DELIVERED" && fresh.paidAt === null;
+      const isTerminal = (TERMINAL_ORDER_STATUSES as readonly string[]).includes(fresh.status) && !awaitingDeliveryCash;
       const isStale = expectedVersion !== undefined && fresh.version !== expectedVersion;
 
       if (isTerminal || isStale) {
@@ -831,6 +835,9 @@ export async function takePayment(
       // "pay" action is offline, this only runs once the action replays and actually commits.
       const soldLines = order.lines.filter((l) => !l.isVoided).map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity }));
       const newAlerts = await deductForOrder(tx, tenantId, branchId, soldLines, actorId);
+
+      // In this transaction, so a payment that rolls back earns nothing.
+      await earnForPaidOrder(tx, tenantId, { id: orderId, customerId: updated.customerId, totalPaisa: updated.totalPaisa }, actorId);
 
       return { ok: true as const, order: updated, newAlerts };
     },
@@ -901,6 +908,8 @@ export async function voidOrder(
         data: { status: "VOIDED", voidedAt: new Date(), version: { increment: 1 } },
       });
       await tx.orderEvent.create({ data: { tenantId, orderId, type: "VOIDED", actorId, payload: { reason } } });
+      // Points spent on a bill that is no longer a sale go back to the customer.
+      await giveBackRedemption(tx, tenantId, orderId, actorId);
       if (updated.tableId) {
         await tx.restaurantTable.update({ where: { id: updated.tableId }, data: { status: "AVAILABLE" } });
       }
@@ -956,6 +965,7 @@ export async function cancelSentOrder(
       data: { status: "CANCELLED", cancelledAt: new Date(), version: { increment: 1 } },
     });
     await tx.orderEvent.create({ data: { tenantId, orderId, type: "CANCELLED", actorId, payload: { reason } } });
+    await giveBackRedemption(tx, tenantId, orderId, actorId);
     await tx.orderCancellation.create({ data: { tenantId, branchId, orderId, reason, cancelledById: actorId } });
     if (updated.tableId) {
       await tx.restaurantTable.update({ where: { id: updated.tableId, tenantId }, data: { status: "AVAILABLE" } });

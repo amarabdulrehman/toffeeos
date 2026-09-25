@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Ban, Merge, Receipt, Repeat } from "lucide-react";
+import { Ban, Gift, Merge, Receipt, Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,11 +16,13 @@ export interface ManagePermissions {
   canChangeType: boolean;
   canMerge: boolean;
   canTaxExempt: boolean;
+  /** Spend the customer's loyalty points on the bill — whoever takes payment. */
+  canRedeemPoints?: boolean;
 }
 
 /** True when the person can do anything in this dialog at all — otherwise the button isn't shown. */
 export function canManageAnything(p: ManagePermissions): boolean {
-  return p.canVoidLine || p.canChangeType || p.canMerge || p.canTaxExempt;
+  return p.canVoidLine || p.canChangeType || p.canMerge || p.canTaxExempt || !!p.canRedeemPoints;
 }
 
 async function send(url: string, method: string, body?: unknown): Promise<boolean> {
@@ -120,6 +122,7 @@ export function OrderManageDialog({
             )}
             {permissions.canMerge && current.type === "DINE_IN" && <MergeSection order={current} busy={busy} act={act} />}
             {permissions.canTaxExempt && <TaxSection order={current} busy={busy} act={act} />}
+            {permissions.canRedeemPoints && <PointsSection order={current} busy={busy} act={act} />}
             <div className="flex items-center justify-between border-t pt-3 font-heading font-semibold">
               <span>Total</span>
               <span className="tabular-nums" data-testid="manage-total">
@@ -406,6 +409,82 @@ function TaxSection({ order, busy, act }: { order: OrderDto; busy: boolean; act:
           >
             Make tax exempt
           </Button>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+/**
+ * Spending the customer's loyalty points as money off this bill. Shown only when the scheme is on;
+ * needs the customer on the order, because the points are theirs.
+ */
+function PointsSection({ order, busy, act }: { order: OrderDto; busy: boolean; act: Act }) {
+  const [program, setProgram] = useState<{ isEnabled: boolean; paisaPerPoint: number } | null>(null);
+  const [points, setPoints] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/loyalty")
+      .then((r) => r.json())
+      .then((d) => !cancelled && d.program && setProgram(d.program))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!program?.isEnabled) return null;
+  const spent = (order.discounts ?? []).find((d) => d.loyaltyPointsRedeemed);
+  const customer = order.customer;
+  const subtotal = order.lines.filter((l) => !l.isVoided).reduce((s, l) => s + l.lineTotalPaisa, 0);
+  const most = customer ? Math.min(customer.loyaltyPoints, Math.floor(subtotal / program.paisaPerPoint)) : 0;
+  const wanted = Number(points) || 0;
+
+  return (
+    <Section icon={Gift} title="Loyalty points">
+      {spent ? (
+        <p className="text-sm">
+          {spent.loyaltyPointsRedeemed} points used — {formatPkr(spent.value)} off.
+        </p>
+      ) : !customer ? (
+        <p className="text-sm text-muted-foreground">No customer on this order, so there are no points to use.</p>
+      ) : (order.discounts ?? []).length > 0 ? (
+        <p className="text-sm text-muted-foreground">This bill already has a discount, so points can&apos;t be added on top.</p>
+      ) : customer.loyaltyPoints <= 0 ? (
+        <p className="text-sm text-muted-foreground">{customer.name ?? "This customer"} has no points yet.</p>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-sm">
+            {customer.name ?? "This customer"} has <span className="font-semibold">{customer.loyaltyPoints}</span> points, worth{" "}
+            {formatPkr(customer.loyaltyPoints * program.paisaPerPoint)}.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              min={1}
+              max={most}
+              placeholder={`Up to ${most}`}
+              aria-label="Points to use"
+              value={points}
+              onChange={(e) => setPoints(e.target.value)}
+            />
+            <Button
+              variant="outline"
+              disabled={busy || wanted < 1 || wanted > most}
+              onClick={async () => {
+                const ok = await act(
+                  `/api/orders/${order.id}/redeem-points`,
+                  "POST",
+                  { points: wanted },
+                  `${wanted} points used — ${formatPkr(wanted * program.paisaPerPoint)} off`
+                );
+                if (ok) setPoints("");
+              }}
+            >
+              Use {wanted > 0 ? `${wanted} points (${formatPkr(wanted * program.paisaPerPoint)} off)` : "points"}
+            </Button>
+          </div>
         </div>
       )}
     </Section>

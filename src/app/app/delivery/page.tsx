@@ -15,5 +15,5 @@ export default async function DeliveryPage() {
     return <UpgradeRequired feature="Delivery & Rider Management" requiredTier="complete" />;
   }
 
-  return <DeliveryView />;
+  return <DeliveryView canSettleCash={user.permissions.includes("orders.markPaid")} />;
 }

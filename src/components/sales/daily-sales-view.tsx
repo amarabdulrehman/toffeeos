@@ -95,7 +95,16 @@ export interface SalesScope {
   dayStartMinutes: number;
 }
 
-export function DailySalesView({ scopes, tenantName }: { scopes: SalesScope[]; tenantName: string }) {
+export function DailySalesView({
+  scopes,
+  tenantName,
+  canExport = false,
+}: {
+  scopes: SalesScope[];
+  tenantName: string;
+  /** reports.export — may download the figures, not only read them. */
+  canExport?: boolean;
+}) {
   const [scopeIndex, setScopeIndex] = useState(0);
   const scope = scopes[scopeIndex] ?? scopes[0];
   const { today, dayStartMinutes, label: scopeLabel } = scope;
@@ -192,6 +201,7 @@ export function DailySalesView({ scopes, tenantName }: { scopes: SalesScope[]; t
             key={`${scopeIndex}:${view.kind}:${view.range.from}`}
             kind={view.kind}
             branchQuery={branchQuery}
+            canExport={canExport}
             range={view.range}
             today={today}
             tenantName={tenantName}
@@ -553,6 +563,7 @@ function DayPanel({
 function PeriodPanel({
   kind,
   branchQuery,
+  canExport,
   range,
   today,
   tenantName,
@@ -562,6 +573,7 @@ function PeriodPanel({
 }: {
   kind: "week" | "month";
   branchQuery: string;
+  canExport: boolean;
   range: DayRange;
   today: string;
   tenantName: string;
@@ -592,6 +604,7 @@ function PeriodPanel({
         </Button>
       </div>
       <div className="flex flex-wrap gap-2">
+        {canExport && (
         <Button
           variant="outline"
           className="h-10"
@@ -617,6 +630,7 @@ function PeriodPanel({
           <Download className="size-4" />
           Download
         </Button>
+        )}
         <Button className="h-10" disabled={!data} onClick={() => setPrinting(true)}>
           <Printer className="size-4" />
           Print {kind === "week" ? "weekly" : "monthly"} closing

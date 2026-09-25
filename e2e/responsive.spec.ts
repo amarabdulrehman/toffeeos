@@ -70,6 +70,7 @@ const SCREENS = [
   "/app/branches",
   "/app/cash-drawer",
   "/app/sales",
+  "/app/billing",
   "/app/online-ordering",
   "/app/whatsapp",
   "/app/sync-conflicts",

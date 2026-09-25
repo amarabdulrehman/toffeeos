@@ -42,7 +42,16 @@ interface Branch {
   createdAt: string;
 }
 
-export function BranchesView({ planName, maxBranches }: { planName: string; maxBranches: number | null }) {
+export function BranchesView({
+  planName,
+  maxBranches,
+  canManageServiceCharge = true,
+}: {
+  planName: string;
+  maxBranches: number | null;
+  /** settings.serviceCharge.manage — without it the service charge is shown but locked. */
+  canManageServiceCharge?: boolean;
+}) {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -187,7 +196,7 @@ export function BranchesView({ planName, maxBranches }: { planName: string; maxB
           ))}
       </div>
 
-      <OrderSettingsCard />
+      <OrderSettingsCard canManageServiceCharge={canManageServiceCharge} />
       <ReceiptBrandingCard />
       <KitchenDisplayCard />
       <TaxRulesCard />
@@ -222,9 +231,10 @@ const DAY_END_OPTIONS: { minutes: number; label: string }[] = [
  * no tenant could ever turn a service charge on. Scoped to the signed-in admin's own branch, same
  * as Inventory's "Recipe consumption location" setting above — not a per-branch picker across the
  * whole tenant, since /api/branch-settings itself is scoped to session.branchId. */
-function OrderSettingsCard() {
+function OrderSettingsCard({ canManageServiceCharge }: { canManageServiceCharge: boolean }) {
   const [settings, setSettings] = useState<BranchSettingsDto | null>(null);
   const [saving, setSaving] = useState(false);
+  const scLocked = !canManageServiceCharge;
   // Uncontrolled input's live DOM value doubles as "the last rate the owner set" — read on demand
   // (switch turned back on after being off) rather than mirrored into React state, so there's no
   // effect needed to keep the two in sync. Disabling the input (service charge off) doesn't clear
@@ -279,11 +289,16 @@ function OrderSettingsCard() {
         <div className="flex items-center justify-between rounded-xl border bg-muted/20 px-3.5 py-3">
           <div>
             <div className="text-sm font-medium">Charge a service fee</div>
-            <p className="text-xs text-muted-foreground">Off means no service charge on any order, regardless of the rate below.</p>
+            <p className="text-xs text-muted-foreground">
+              {scLocked
+                ? "Only someone allowed to manage the service charge can change it."
+                : "Off means no service charge on any order, regardless of the rate below."}
+            </p>
           </div>
           <Switch
             checked={settings.serviceChargeBasisPoints > 0}
-            disabled={saving}
+            disabled={saving || scLocked}
+            aria-label="Charge a service fee"
             onCheckedChange={(checked) => {
               if (!checked) {
                 save({ serviceChargeBasisPoints: 0 });
@@ -304,7 +319,7 @@ function OrderSettingsCard() {
               min={0}
               max={100}
               step={0.5}
-              disabled={saving || settings.serviceChargeBasisPoints === 0}
+              disabled={saving || scLocked || settings.serviceChargeBasisPoints === 0}
               defaultValue={settings.serviceChargeBasisPoints > 0 ? settings.serviceChargeBasisPoints / 100 : 5}
               onBlur={(e) => {
                 const pct = Number(e.target.value);
@@ -397,7 +412,7 @@ function OrderSettingsCard() {
                 <button
                   key={t}
                   type="button"
-                  disabled={saving}
+                  disabled={saving || scLocked}
                   onClick={() => {
                     const next = active
                       ? settings.serviceChargeAppliesTo.filter((x) => x !== t)
@@ -424,7 +439,7 @@ function OrderSettingsCard() {
           </div>
           <Switch
             checked={settings.serviceChargeTaxable}
-            disabled={saving}
+            disabled={saving || scLocked}
             onCheckedChange={(checked) => save({ serviceChargeTaxable: checked })}
           />
         </div>

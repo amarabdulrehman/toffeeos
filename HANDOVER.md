@@ -58,12 +58,23 @@ If the password contains `@ # / ?`, percent-encode those characters in the URL (
 While you are there: the password currently in use has been typed into a chat window and a shell
 history, so it should be rotated regardless.
 
-### Migrations: all applied
+### Migrations: three waiting for the next push
 
-Every migration in the repository is on production. The latest two —
-`20260924212601_lowercase_login_identifiers` and `20260924223305_business_day_start` — were applied
-by the deployment of 25 September 2026, and the build log confirms both. The first would have
-refused if two staff in one restaurant had emails differing only by capitals; production had none.
+```
+20260925093913_till_actions
+20260925101500_role_defaults_for_till_actions
+20260925120000_purchasing_loyalty_online
+```
+
+Everything before them is on production (confirmed from the build log of 25 September 2026). These
+three come with the till and back-office work and have run only against development. The third
+does two things beyond adding tables, both deliberate:
+
+- It puts any delivery order that was **paid and then delivered** back to PAID. Marking an order
+  delivered used to overwrite PAID with DELIVERED, which took it out of every sales figure. A
+  delivered order with no payment stays DELIVERED — cash on delivery still to be handed in — and the
+  Delivery screen now lists those with a "Cash received" button.
+- It removes six retired permission keys from every role (see "Every permission" below).
 
 The build script runs `prisma migrate deploy` before `next build`, so each push applies its own
 migrations: the schema moves with the code that needs it. If a migration fails, the build fails and
@@ -225,41 +236,35 @@ payload shape, the timeout, Meta's rejections, non-JSON responses and the access
 reaching a tenant-readable log. `e2e/whatsapp-connection.spec.ts` pins the honest logging. What
 nobody can test until step 4 is a real delivery.
 
-### Twenty-one permissions gate nothing
+### Every permission on the roles screen does something
 
-Ninety-four are declared, seventy-three enforced. The roles screen renders from the registry, so an
-owner can toggle twenty-one switches that change no behaviour. "Reprint KOT" and "Print receipt"
-came off the list earlier. Six more came off on 25 September 2026, each now a working till
-feature: voiding one item (`pos.order.voidLine`), switching dine-in and takeaway
-(`pos.order.changeType`), merging tables (`tables.merge`), tax-exempt orders (`pos.tax.exempt`),
-recording a no-sale drawer opening (`pos.cashDrawer.openNoSale`), and the kitchen recalling a bumped
-order (`kds.order.recall`). Kitchen staff and cashiers gained recall and merge by migration; anyone
-signed in before that deploy has to sign out and back in to pick them up, since a session carries
-its permissions from sign-in.
+Eighty-eight are declared and all eighty-eight gate something; a test fails if a new one is added
+without. It was twenty-seven switches that did nothing at the start of 25 September 2026. Each was
+either built or retired:
 
-The rest each correspond to a feature that was scoped and never built: no branch price override
-screen, no purchase orders, no role editor.
+- **Built** — voiding one item, switching dine-in and takeaway, merging tables, tax-exempt orders,
+  no-sale drawer openings, kitchen recall (the till); purchase orders and suppliers, transfer
+  approval, undoing a stock adjustment, low-stock alert levels (inventory); per-branch menu prices;
+  the role editor; loyalty points; an online-menu switch per dish and table QR codes; service
+  charge and report downloads as their own permissions; Plan & billing; and "mark paid" for the
+  rider's cash on a cash-on-delivery order.
+- **Retired**, never having gated anything and with nothing sensible to gate — hand-editing tax,
+  bypassing PIN and shift-time checks that don't exist, allergens (declined), a duplicate "profit"
+  view, and self-service plan changes. Migration `20260925120000` took them off every role.
 
-Worth singling out one, because a café is likely to ask and the schema would suggest otherwise:
-**allergens are not tracked.** `MenuItem.allergens` exists, and both menu endpoints return it, but
-nothing writes it and no screen shows it. It is always empty. Do not tell a client the system
-records allergens. So the risk is an owner believing a capability is controlled when the
-capability does not exist — confusing, not dangerous. Nothing on that list leaves a working feature
-ungoverned.
+**Roles can now be edited** (Staff → Roles and what they can do), and a person's role changed from
+the staff list. The Owner role is locked — it always has everything, this screen included. Editing
+a standard role makes it the owner's own, so `db:sync-roles` will never overwrite it. A change
+applies at each person's next sign-in, or at once if the owner ticks "sign everyone in this role
+out"; changing one person's role always signs them out, so it applies immediately.
 
-I checked the other direction too, which is the one that would actually matter: of 134 API route
-files, 33 declare no permission. All 33 are deliberate — the public ones (login, signup, invite
-acceptance, online ordering, tenant status), the two cron jobs (Bearer `CRON_SECRET`, and they fail
-closed if it is unset), the platform-admin routes (a separate handler with its own auth), and
-`clock-out`, which only ever touches the caller's own record. No tenant-facing route is unguarded.
+**Allergens are still not tracked.** `MenuItem.allergens` exists, and both menu endpoints return it,
+but nothing writes it and no screen shows it. Do not tell a client the system records allergens.
 
-Worth stating plainly: there is no screen or endpoint anywhere that edits a role's permissions.
-Roles are created at signup and changed only by `db:sync-roles`. That is why "Manage roles" is
-itself on the unenforced list.
-
-Two came off that list this week: the discount ceiling and refunds both gate something real now. A
-test fails if the number grows again, so the decision gets made when a permission is written rather
-than when a client finds it.
+I checked the other direction too: every API route either declares a permission or is deliberately
+public — login, signup, invite acceptance, online ordering, tenant status, the health check, the
+two cron jobs (Bearer `CRON_SECRET`, failing closed if unset), the platform-admin routes (their own
+handler and auth), and `clock-out`, which only touches the caller's own record.
 
 ### Refunds reach every figure
 
@@ -354,6 +359,17 @@ demo tenant has no second branch), against a clean production build:
   remaining items would; the tests compare against the live price, and each was broken on purpose
   to prove it. Item voids show on the kitchen screen and in the voids report; the kitchen can take
   back a mis-tapped "Ready"; a no-sale drawer opening is recorded against the day's drawer.
+- **Buying stock** — suppliers, and purchase orders that go draft → approved → received, each step
+  its own permission; what arrived (not what was ordered) is counted into stock and the P&L's stock
+  purchases. A transfer asked for by someone who can't approve waits until someone can. A stock
+  adjustment made in error is undone by an opposite one — nothing deleted, and only once.
+- **Loyalty points** — off until an owner switches it on (Customers). Earned inside payment's own
+  transaction, spent at the till as money off, given back if that bill is voided, and taken back in
+  proportion when a bill is refunded, so the scheme can't be gamed by earn-spend-refund.
+- **Per-branch prices, the online menu, and delivery cash** — a dish can cost more at one branch;
+  a dish can be kept off the online and QR menus while the till still sells it; and the rider's cash
+  on a cash-on-delivery order is marked received from the Delivery screen, which is what finally
+  puts those orders into the sales figures.
 
 Every fix in this period was verified by deliberately breaking it and watching the right test fail,
 then restoring it. Three times that caught a test that passed for the wrong reason, including one
