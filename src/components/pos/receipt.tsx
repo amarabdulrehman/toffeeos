@@ -93,7 +93,8 @@ export function Receipt({
       </div>
       <div className="my-2 border-t border-dashed border-black" />
       <div className="space-y-0.5">
-        {order.lines.map((l) => (
+        {/* A voided item was never charged, so it is not on anything the customer is handed. */}
+        {order.lines.filter((l) => !l.isVoided).map((l) => (
           <div key={l.id}>
             <div className="flex justify-between gap-2">
               <span className="flex-1">
@@ -143,6 +144,9 @@ export function Receipt({
             <span className="tabular-nums">{formatPkr(tax, { showPaisa: true })}</span>
           </div>
         )}
+        {/* On the paper itself, receipt and bill alike: a bill with no tax on it has to say why, or it
+            reads as a mistake to the customer and as an omission to a tax inspector. */}
+        {order.taxExemptReason && <div>Tax exempt: {order.taxExemptReason}</div>}
         {!bill && rounding !== 0 && (
           <div className="flex justify-between">
             <span>Rounding</span>

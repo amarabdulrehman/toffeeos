@@ -133,8 +133,12 @@ export async function dayReport(tenantId: string, branchIds: string[], requested
     paidOrdersIn(tenantId, branchIds, range),
     db.order.findMany({ where: paidOrdersWhere(branchIds, compareRange), select: { totalPaisa: true, refundedPaisa: true } }),
     db.orderEvent.findMany({
-      where: { type: "VOIDED", createdAt: { gte: range.from, lte: range.to }, order: { branchId: { in: branchIds } } },
-      select: { order: { select: { totalPaisa: true } } },
+      where: {
+        type: { in: ["VOIDED", "LINE_VOIDED"] },
+        createdAt: { gte: range.from, lte: range.to },
+        order: { branchId: { in: branchIds } },
+      },
+      select: { type: true, payload: true, order: { select: { totalPaisa: true } } },
     }),
     db.order.findMany({
       where: {
@@ -171,6 +175,9 @@ export async function dayReport(tenantId: string, branchIds: string[], requested
     byStaffMap.set(staffId, s);
   }
 
+  const orderVoids = voidEvents.filter((v) => v.type === "VOIDED");
+  const itemVoids = voidEvents.filter((v) => v.type === "LINE_VOIDED");
+
   const staffIds = [...byStaffMap.keys()].filter((id) => id !== "unknown");
   const users = staffIds.length
     ? await db.user.findMany({ where: { id: { in: staffIds } }, select: { id: true, name: true } })
@@ -194,8 +201,12 @@ export async function dayReport(tenantId: string, branchIds: string[], requested
       .map(([id, v]) => ({ name: nameOf.get(id) ?? "Unknown", ...v }))
       .sort((a, b) => b.netPaisa - a.netPaisa),
     voids: {
-      count: voidEvents.length,
-      valuePaisa: voidEvents.reduce((sum, v) => sum + v.order.totalPaisa, 0),
+      count: orderVoids.length,
+      valuePaisa: orderVoids.reduce((sum, v) => sum + v.order.totalPaisa, 0),
+    },
+    itemVoids: {
+      count: itemVoids.reduce((sum, v) => sum + ((v.payload as { quantity?: number } | null)?.quantity ?? 1), 0),
+      valuePaisa: itemVoids.reduce((sum, v) => sum + ((v.payload as { valuePaisa?: number } | null)?.valuePaisa ?? 0), 0),
     },
     openOrders: { count: openOrders.length, valuePaisa: openOrders.reduce((sum, o) => sum + o.totalPaisa, 0) },
     compare: {

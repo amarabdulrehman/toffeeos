@@ -14,6 +14,11 @@ const STATUS_VARIANT: Record<string, "secondary" | "outline" | "info" | "success
   PAID: "secondary",
 };
 
+/** Items still on the order — a voided one is kept for the record but is no longer on the bill. */
+function liveCount(o: OrderDto): number {
+  return o.lines.filter((l) => !l.isVoided).length;
+}
+
 export function OrderQueuePanel({
   orders,
   onPay,
@@ -24,6 +29,7 @@ export function OrderQueuePanel({
   onReprintReceipt,
   onReprintKot,
   onPrintBill,
+  onManage,
   canRefund,
   onRefund,
   onClose,
@@ -48,6 +54,9 @@ export function OrderQueuePanel({
   onReprintKot?: (order: OrderDto) => void;
   /** Omit to hide it — gated by pos.receipt.print. The bill a table asks for before paying. */
   onPrintBill?: (order: OrderDto) => void;
+  /** Omit to hide it — shown when the role allows any of voiding an item, changing type, merging
+   * tables or tax exemption. */
+  onManage?: (order: OrderDto) => void;
   /** pos.payment.refund. Absent for a cashier whose role does not grant it. */
   canRefund?: boolean;
   onRefund?: (order: OrderDto) => void;
@@ -81,7 +90,8 @@ export function OrderQueuePanel({
             </div>
             <div className="mt-1 flex items-baseline justify-between">
               <span className="text-sm text-muted-foreground">
-                {o.lines.length} item{o.lines.length !== 1 ? "s" : ""}
+                {liveCount(o)} item{liveCount(o) !== 1 ? "s" : ""}
+                {o.taxExemptReason && <span className="ml-1.5 text-warning-foreground">· tax exempt</span>}
               </span>
               <span className="font-heading text-sm font-semibold tabular-nums">{formatPkr(o.totalPaisa)}</span>
             </div>
@@ -95,6 +105,11 @@ export function OrderQueuePanel({
                 {onPrintBill && (
                   <Button variant="outline" onClick={() => onPrintBill(o)}>
                     Bill
+                  </Button>
+                )}
+                {onManage && (
+                  <Button variant="outline" onClick={() => onManage(o)}>
+                    Manage
                   </Button>
                 )}
                 {onReprintKot && o.status !== "OPEN" && (

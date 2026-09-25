@@ -5,6 +5,7 @@ interface TicketLine {
   notes: string | null;
   /** What was added to this line. The kitchen has to see these or it makes the wrong thing. */
   modifiers?: { id: string; nameSnapshot: string }[];
+  isVoided?: boolean;
 }
 
 interface TicketOrder {
@@ -39,7 +40,8 @@ export function KitchenTicket({ order, branchName }: { order: TicketOrder; branc
       </div>
       <div className="my-2 border-t-2 border-dashed border-black" />
       <div className="space-y-1.5">
-        {order.lines.map((l) => (
+        {/* What to make: a voided item is struck through on the kitchen screen, and left off paper. */}
+        {order.lines.filter((l) => !l.isVoided).map((l) => (
           <div key={l.id}>
             <div className="font-bold">
               {l.quantity}× {l.nameSnapshot}

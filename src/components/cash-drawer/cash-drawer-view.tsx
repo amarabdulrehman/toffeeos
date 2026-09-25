@@ -34,6 +34,8 @@ interface DrawerDay {
   correctedByName: string | null;
   correctedAt: string | null;
   note: string | null;
+  /** The drawer opened with no sale this day — who, when, why. Absent from the history list. */
+  noSales?: { at: string; byName: string | null; reason: string }[];
 }
 
 /** Over, short, or exact — the three things a variance can be, and the only number anyone acts on. */
@@ -268,6 +270,24 @@ export function CashDrawerView({ canClose, canCorrect }: { canClose: boolean; ca
               <span className="text-sm text-muted-foreground">Difference</span>
               <VarianceBadge paisa={today.variancePaisa} />
               {today.note && <span className="text-sm text-muted-foreground">· {today.note}</span>}
+            </div>
+          )}
+
+          {/* Next to the count, because an opening with no sale is the first thing to rule out when
+              the drawer comes up short. */}
+          {today.noSales && today.noSales.length > 0 && (
+            <div className="mt-5 rounded-xl border bg-muted/20 px-3.5 py-3">
+              <div className="text-sm font-medium">
+                Opened with no sale: {today.noSales.length} time{today.noSales.length === 1 ? "" : "s"}
+              </div>
+              <ul className="mt-1.5 space-y-0.5 text-sm text-muted-foreground">
+                {today.noSales.map((n) => (
+                  <li key={n.at}>
+                    {new Date(n.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · {n.byName ?? "Unknown"} ·{" "}
+                    {n.reason}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </CardContent>

@@ -131,11 +131,14 @@ function ClosingSlip({ tenantName, scopeLabel, report }: { tenantName: string; s
 
       {report.kind === "day" && (
         <>
-          {(report.data.voids.count > 0 || report.data.openOrders.count > 0) && (
+          {(report.data.voids.count > 0 || report.data.itemVoids.count > 0 || report.data.openOrders.count > 0) && (
             <>
               <Rule />
               {report.data.voids.count > 0 && (
                 <Row label={`Voided orders (${report.data.voids.count})`} value={formatPkr(report.data.voids.valuePaisa)} />
+              )}
+              {report.data.itemVoids.count > 0 && (
+                <Row label={`Voided items (${report.data.itemVoids.count})`} value={formatPkr(report.data.itemVoids.valuePaisa)} />
               )}
               {report.data.openOrders.count > 0 && (
                 <Row label={`Still open (${report.data.openOrders.count})`} value={formatPkr(report.data.openOrders.valuePaisa)} />

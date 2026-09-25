@@ -39,6 +39,8 @@ export interface CashDrawerDayView {
   correctedByName: string | null;
   correctedAt: string | null;
   note: string | null;
+  /** Every time the drawer was opened with no sale this day: who, when, and why. */
+  noSales: { at: string; byName: string | null; reason: string }[];
 }
 
 async function branchOrThrow(tenantId: string, branchId: string) {
@@ -109,12 +111,14 @@ export async function getDrawerDay(tenantId: string, branchId: string, day?: str
   if (!isBusinessDay(businessDate)) throw new HttpError(400, "That isn't a valid date.");
 
   const db = tenantDb(tenantId);
-  const [row, movement] = await Promise.all([
+  const { from, to } = businessDayRange(businessDate, branch.timezone, branch.dayStartMinutes);
+  const [row, movement, noSales] = await Promise.all([
     db.cashDrawerDay.findUnique({ where: { branchId_businessDate: { branchId, businessDate } } }),
     cashMovement(tenantId, branchId, businessDate, branch.timezone, branch.dayStartMinutes),
+    db.noSaleOpening.findMany({ where: { branchId, createdAt: { gte: from, lte: to } }, orderBy: { createdAt: "asc" } }),
   ]);
 
-  const names = await resolveNames(tenantId, [row?.openedById, row?.closedById, row?.correctedById]);
+  const names = await resolveNames(tenantId, [row?.openedById, row?.closedById, row?.correctedById, ...noSales.map((n) => n.openedById)]);
   const expectedClosingPaisa =
     row == null
       ? null
@@ -141,7 +145,21 @@ export async function getDrawerDay(tenantId: string, branchId: string, day?: str
     correctedByName: row?.correctedById ? (names.get(row.correctedById) ?? null) : null,
     correctedAt: row?.correctedAt?.toISOString() ?? null,
     note: row?.note ?? null,
+    noSales: noSales.map((n) => ({ at: n.createdAt.toISOString(), byName: names.get(n.openedById) ?? null, reason: n.reason })),
   };
+}
+
+/**
+ * The drawer was opened with no sale. There is no hardware to open from a browser, so what this
+ * does is put it on record — who, when and why — against the day's drawer, where whoever counts the
+ * drawer tonight will see it. The POS then offers a slip to print, which opens the drawer on
+ * printers set to kick it with every print.
+ */
+export async function recordNoSale(tenantId: string, branchId: string, actorId: string, reason: string) {
+  await branchOrThrow(tenantId, branchId);
+  return tenantDb(tenantId).noSaleOpening.create({
+    data: { tenantId, branchId, openedById: actorId, reason: reason.trim() },
+  });
 }
 
 export async function openDrawerDay(

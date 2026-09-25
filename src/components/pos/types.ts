@@ -116,6 +116,9 @@ export interface OrderDto {
     kitchenReady: boolean;
     notes?: string | null;
     modifiers?: { id: string; nameSnapshot: string; priceDeltaPaisa: number }[];
+    /** Taken off the order (pos.order.voidLine). Kept, not deleted, so the kitchen and the voids
+     * report can see it — but never charged, counted, or printed on a bill or receipt. */
+    isVoided?: boolean;
   }[];
   /** The rest of these are already returned by GET /api/orders (no `select`, so every scalar
    * column comes back) — just never modeled on the client before there was a reason to read them.
@@ -133,4 +136,6 @@ export interface OrderDto {
    * reached the kitchen, which is what a cook reads first to know how long it has been waiting. */
   sentToKitchenAt?: string | null;
   payments?: { method: PaymentMethod; amountPaisa: number }[];
+  /** Why this order is sold without tax (pos.tax.exempt); null or absent for every ordinary order. */
+  taxExemptReason?: string | null;
 }

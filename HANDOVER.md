@@ -225,17 +225,20 @@ payload shape, the timeout, Meta's rejections, non-JSON responses and the access
 reaching a tenant-readable log. `e2e/whatsapp-connection.spec.ts` pins the honest logging. What
 nobody can test until step 4 is a real delivery.
 
-### Twenty-seven permissions gate nothing
+### Twenty-one permissions gate nothing
 
-Ninety-four are declared, sixty-seven enforced. The roles screen renders from the registry, so an
-owner can toggle twenty-seven switches that change no behaviour. "Reprint KOT" used to be among
-them and no longer is: printing a kitchen ticket from the till now gates on `pos.kot.print`, and
-reprinting one from the Order Queue on `pos.kot.reprint`. "Print receipt" came off too: it now
-decides who can print a bill for a table before it pays, which the seeded Waiter role cannot.
+Ninety-four are declared, seventy-three enforced. The roles screen renders from the registry, so an
+owner can toggle twenty-one switches that change no behaviour. "Reprint KOT" and "Print receipt"
+came off the list earlier. Six more came off on 25 September 2026, each now a working till
+feature: voiding one item (`pos.order.voidLine`), switching dine-in and takeaway
+(`pos.order.changeType`), merging tables (`tables.merge`), tax-exempt orders (`pos.tax.exempt`),
+recording a no-sale drawer opening (`pos.cashDrawer.openNoSale`), and the kitchen recalling a bumped
+order (`kds.order.recall`). Kitchen staff and cashiers gained recall and merge by migration; anyone
+signed in before that deploy has to sign out and back in to pick them up, since a session carries
+its permissions from sign-in.
 
-I went through the rest. Every one corresponds to a feature that was scoped and never built:
-there is no line-void, no no-sale drawer open, no tax-exempt flag, no table merge, no branch price
-override, no purchase orders.
+The rest each correspond to a feature that was scoped and never built: no branch price override
+screen, no purchase orders, no role editor.
 
 Worth singling out one, because a café is likely to ask and the schema would suggest otherwise:
 **allergens are not tracked.** `MenuItem.allergens` exists, and both menu endpoints return it, but
@@ -345,6 +348,12 @@ demo tenant has no second branch), against a clean production build:
 - **Sign-in ignores capitals and stray spaces** in the email and restaurant code.
 - **The till on tablets and phones** — the menu and the order sit side by side on a tablet; on a
   phone the order opens as a sheet from a bar at the bottom.
+- **Changing an order after it is punched** — void one item (or some of a quantity) with a reason,
+  switch dine-in and takeaway, merge two tables onto one bill, or sell an order without tax with
+  the reason printed on the bill. After each, the order costs exactly what a fresh order of its
+  remaining items would; the tests compare against the live price, and each was broken on purpose
+  to prove it. Item voids show on the kitchen screen and in the voids report; the kitchen can take
+  back a mis-tapped "Ready"; a no-sale drawer opening is recorded against the day's drawer.
 
 Every fix in this period was verified by deliberately breaking it and watching the right test fail,
 then restoring it. Three times that caught a test that passed for the wrong reason, including one

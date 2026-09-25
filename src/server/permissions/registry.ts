@@ -208,6 +208,9 @@ export const SEED_ROLES: Record<string, { name: string; permissions: string[] }>
       "pos.receipt.reprint",
       "tables.view",
       "tables.changeStatus",
+      // Two tables pushed together is a front-of-house job, and nothing is lost by it: the merged
+      // bill is priced again from its items. Added with migration 20260925101500.
+      "tables.merge",
       "orders.view",
       "orders.markPaid",
       "crm.view",
@@ -230,7 +233,8 @@ export const SEED_ROLES: Record<string, { name: string; permissions: string[] }>
   },
   kitchen: {
     name: "Kitchen Staff",
-    permissions: ["kds.access", "kds.item.markReady", "kds.order.markReady"],
+    // Recall lets a cook take back a mis-tapped "Ready" — without it, only a manager could.
+    permissions: ["kds.access", "kds.item.markReady", "kds.order.markReady", "kds.order.recall"],
   },
   rider: {
     name: "Rider",

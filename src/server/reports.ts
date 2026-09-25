@@ -395,7 +395,7 @@ export async function staffPerformanceReport(tenantId: string, branchIds: string
     db.orderEvent.findMany({
       where: {
         tenantId,
-        type: "VOIDED",
+        type: { in: ["VOIDED", "LINE_VOIDED"] },
         createdAt: { gte: range.from, lte: range.to },
         order: { branchId: { in: branchIds } },
       },
@@ -467,7 +467,9 @@ export async function discountVoidReport(tenantId: string, branchIds: string[], 
     db.orderEvent.findMany({
       where: {
         tenantId,
-        type: "VOIDED",
+        // A whole order voided, or one item taken off it. The second is the likelier way a till
+        // loses money quietly, so it belongs in the same list.
+        type: { in: ["VOIDED", "LINE_VOIDED"] },
         createdAt: { gte: range.from, lte: range.to },
         order: { branchId: { in: branchIds } },
       },
@@ -489,14 +491,21 @@ export async function discountVoidReport(tenantId: string, branchIds: string[], 
       createdAt: d.order.createdAt,
     }));
 
-  const voidRows = voidEvents.map((e) => ({
-    kind: "void" as const,
-    orderNumber: e.order.orderNumber,
-    actorName: e.actorId ? (userName.get(e.actorId) ?? "Unknown") : "Unknown",
-    detail: `Rs ${(e.order.totalPaisa / 100).toFixed(0)} order voided`,
-    reason: (e.payload as { reason?: string } | null)?.reason ?? null,
-    createdAt: e.createdAt,
-  }));
+  const voidRows = voidEvents.map((e) => {
+    const payload = e.payload as { reason?: string; name?: string; quantity?: number; valuePaisa?: number; afterKitchen?: boolean } | null;
+    return {
+      kind: "void" as const,
+      orderNumber: e.order.orderNumber,
+      actorName: e.actorId ? (userName.get(e.actorId) ?? "Unknown") : "Unknown",
+      detail:
+        e.type === "LINE_VOIDED"
+          ? `${payload?.quantity ?? 1}× ${payload?.name ?? "item"} voided (Rs ${((payload?.valuePaisa ?? 0) / 100).toFixed(0)})` +
+            (payload?.afterKitchen ? " after the kitchen had it" : "")
+          : `Rs ${(e.order.totalPaisa / 100).toFixed(0)} order voided`,
+      reason: payload?.reason ?? null,
+      createdAt: e.createdAt,
+    };
+  });
 
   return [...discountRows, ...voidRows].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 }

@@ -70,7 +70,7 @@ model Tenant {
   auditLogs            AuditLog[]
   orders               Order[]
   inventoryItems       InventoryItem[]
-  refunds Refund[]
+  refunds              Refund[]
 }
 
 enum SubscriptionStatus {
@@ -114,6 +114,7 @@ model Subscription {
   updatedAt               DateTime           @updatedAt
 
   payments SubscriptionPayment[]
+
   @@index([planId])
 }
 
@@ -398,11 +399,11 @@ model User {
   staffPin      StaffPin?
   ordersCreated Order[]      @relation("OrderCreatedBy")
   ordersAsRider Order[]      @relation("OrderAssignedRider")
+  refundsIssued Refund[]     @relation("RefundedBy")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
   @@index([tenantId])
-  refundsIssued Refund[] @relation("RefundedBy")
 }
 
 /// Roles are per-tenant so owners can define their own; the 7 standard roles from the brief
@@ -878,22 +879,22 @@ enum WhatsAppTemplateStatus {
 /// assuming free-text sending will work. sendWhatsApp() in src/server/whatsapp/send.ts refuses to
 /// send against anything but an APPROVED template.
 model WhatsAppTemplate {
-  id              String                 @id @default(uuid())
-  tenantId        String
-  key             String // "low_stock_alert" | "daily_summary" | "win_back_30d" | "delivery_picked_up" | "delivery_delivered"
-  name            String
-  language        String                 @default("en")
-  bodyText        String // Meta template syntax: {{1}}, {{2}}, ... placeholders
+  id               String                 @id @default(uuid())
+  tenantId         String
+  key              String // "low_stock_alert" | "daily_summary" | "win_back_30d" | "delivery_picked_up" | "delivery_delivered"
+  name             String
+  language         String                 @default("en")
+  bodyText         String // Meta template syntax: {{1}}, {{2}}, ... placeholders
   /// The name this template is registered under in Meta's own template manager. Meta requires
   /// lowercase letters, digits and underscores, which `key` already satisfies, so this is only
   /// needed when a restaurant registered it under a different name. Null falls back to `key`.
   metaTemplateName String?
-  status          WhatsAppTemplateStatus @default(DRAFT)
-  submittedAt     DateTime?
-  approvedAt      DateTime?
-  rejectionReason String?
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+  status           WhatsAppTemplateStatus @default(DRAFT)
+  submittedAt      DateTime?
+  approvedAt       DateTime?
+  rejectionReason  String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
   @@unique([tenantId, key])
 }
@@ -915,19 +916,19 @@ enum WhatsAppMessageStatus {
 /// Append-only send log — every attempt, sent or skipped, with the reason, so "did the win-back
 /// batch actually go out" is answerable without checking Meta's dashboard.
 model WhatsAppMessageLog {
-  id           String                @id @default(uuid())
-  tenantId     String
-  branchId     String?
-  customerId   String?
-  toPhone      String
-  templateKey  String
-  renderedBody String?
-  status       WhatsAppMessageStatus
+  id                String                @id @default(uuid())
+  tenantId          String
+  branchId          String?
+  customerId        String?
+  toPhone           String
+  templateKey       String
+  renderedBody      String?
+  status            WhatsAppMessageStatus
   /// Meta's own id for the message (wamid...), the only handle support can trace a delivery by.
   providerMessageId String?
   /// Why it failed, kept short and never containing the access token. Null unless status is FAILED.
-  error        String?
-  createdAt    DateTime              @default(now())
+  error             String?
+  createdAt         DateTime              @default(now())
 
   @@index([tenantId, createdAt])
 }
@@ -1019,19 +1020,25 @@ model Order {
   deliveryOtpCode     String?
   deliveryAddress     String?
 
-  subtotalPaisa           Int @default(0)
-  discountedSubtotalPaisa Int @default(0)
-  serviceChargePaisa      Int @default(0)
-  taxPaisa                Int @default(0)
-  deliveryFeePaisa        Int @default(0)
-  roundingAdjustmentPaisa Int @default(0)
-  totalPaisa              Int @default(0)
-  paidPaisa               Int @default(0)
+  subtotalPaisa           Int     @default(0)
+  discountedSubtotalPaisa Int     @default(0)
+  serviceChargePaisa      Int     @default(0)
+  taxPaisa                Int     @default(0)
+  deliveryFeePaisa        Int     @default(0)
+  roundingAdjustmentPaisa Int     @default(0)
+  totalPaisa              Int     @default(0)
+  paidPaisa               Int     @default(0)
   /// Money handed back to the customer against this order. Kept alongside paidPaisa rather than
   /// deducted from it: what was taken and what was returned are different facts, and a report that
   /// cannot tell "sold Rs 900" from "sold Rs 1,000 and refunded Rs 100" cannot explain itself to
   /// an owner. Net revenue is totalPaisa - refundedPaisa.
-  refundedPaisa           Int @default(0)
+  refundedPaisa           Int     @default(0)
+  /// Set when an order is sold without tax (a diplomat, a registered exempt body), holding the
+  /// reason the cashier gave; null for every ordinary order. While set, tax on the whole order is
+  /// worked out as zero - see src/server/order-changes.ts. Who did it is kept beside it, because an
+  /// exemption is exactly the kind of thing an owner asks about afterwards.
+  taxExemptReason         String?
+  taxExemptById           String?
 
   fiscalInvoiceNumber String?
   fiscalPushedAt      DateTime?
@@ -1199,19 +1206,19 @@ model Payment {
 /// would quietly change the meaning of every sum over that table. A separate model makes each
 /// place that cares subtract refunds explicitly, which is the point.
 model Refund {
-  id          String        @id @default(uuid())
-  tenant      Tenant        @relation(fields: [tenantId], references: [id])
-  tenantId    String
-  order       Order         @relation(fields: [orderId], references: [id])
-  orderId     String
-  amountPaisa Int
+  id           String        @id @default(uuid())
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  order        Order         @relation(fields: [orderId], references: [id])
+  orderId      String
+  amountPaisa  Int
   /// How the money went back. Usually the way it came in, but not always — a card sale refunded in
   /// cash is a real thing, and the drawer needs to know which it was.
-  method      PaymentMethod
-  reason      String
-  refundedBy  User?         @relation("RefundedBy", fields: [refundedById], references: [id])
+  method       PaymentMethod
+  reason       String
+  refundedBy   User?         @relation("RefundedBy", fields: [refundedById], references: [id])
   refundedById String?
-  createdAt   DateTime      @default(now())
+  createdAt    DateTime      @default(now())
 
   @@index([orderId])
   @@index([tenantId, createdAt])
@@ -1419,6 +1426,21 @@ model RecurringExpense {
 /// The expected closing balance is never stored — it is derived on read from opening + cash taken
 /// - cash spent. Storing it would let it drift the moment a late payment or expense lands on a day
 /// already closed, and a stale expectation is worse than none: the variance is the whole point.
+/// The drawer opened with no sale - for change, or to fix a jam. Browsers cannot open a cash drawer, so
+/// the cashier does it by hand or by printing the no-sale slip (many receipt printers kick the drawer
+/// on every print); what the system does is make sure every such opening is on record, with who,
+/// when and why, beside that day's drawer.
+model NoSaleOpening {
+  id         String   @id @default(uuid())
+  tenantId   String
+  branchId   String
+  openedById String
+  reason     String
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, branchId, createdAt])
+}
+
 model CashDrawerDay {
   id                  String    @id @default(uuid())
   tenantId            String

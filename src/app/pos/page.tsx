@@ -72,6 +72,13 @@ export default async function PosPage() {
       canPrintKot={user.permissions.includes("pos.kot.print")}
       canReprintKot={user.permissions.includes("pos.kot.reprint")}
       canPrintBill={user.permissions.includes("pos.receipt.print")}
+      managePermissions={{
+        canVoidLine: user.permissions.includes("pos.order.voidLine"),
+        canChangeType: user.permissions.includes("pos.order.changeType"),
+        canMerge: user.permissions.includes("tables.merge"),
+        canTaxExempt: user.permissions.includes("pos.tax.exempt"),
+      }}
+      canNoSale={user.permissions.includes("pos.cashDrawer.openNoSale")}
     />
   );
 }

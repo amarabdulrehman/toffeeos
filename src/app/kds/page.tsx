@@ -14,6 +14,7 @@ export default async function KdsPage() {
       branchId={user.branchId}
       branchName={user.branchName}
       canMarkReady={user.permissions.includes("kds.item.markReady")}
+      canRecall={user.permissions.includes("kds.order.recall")}
     />
   );
 }

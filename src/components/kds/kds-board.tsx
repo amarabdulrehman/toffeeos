@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { RotateCcw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChannel } from "@/lib/realtime-client";
 import { topic } from "@/lib/realtime-topics";
@@ -23,6 +24,9 @@ interface KdsLine {
   /** Already sent by /api/kds/orders, which includes them deliberately — and was rendered nowhere,
    * so the screen showed "Latte" for a latte ordered with an extra shot. */
   modifiers?: { id: string; nameSnapshot: string }[];
+  /** Taken off the order after the kitchen had it. Shown struck through, not hidden — the cook may
+   * already be making it and needs to see that it's no longer wanted. */
+  isVoided?: boolean;
 }
 
 interface KdsOrder {
@@ -63,14 +67,28 @@ function useElapsedSeconds(since: string | null, until: string | null): number {
 }
 
 
+/** Brings a bumped order back onto the board (kds.order.recall). */
+async function recall(orderId: string, orderNumber: number): Promise<boolean> {
+  const res = await fetch(`/api/orders/${orderId}/recall`, { method: "POST" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    toast.error(data.error ?? "Could not bring that order back.");
+    return false;
+  }
+  toast.success(`Order #${orderNumber} is back on the board.`);
+  return true;
+}
+
 function OrderCard({
   order,
   canMarkReady,
+  canRecall,
   onChanged,
   onPrint,
 }: {
   order: KdsOrder;
   canMarkReady: boolean;
+  canRecall: boolean;
   onChanged: () => void;
   onPrint: (order: KdsOrder) => void;
 }) {
@@ -128,7 +146,15 @@ function OrderCard({
         </div>
       </div>
       <div className="flex-1 space-y-1 px-3 pb-3">
-        {order.lines.map((line) => (
+        {order.lines.map((line) =>
+          line.isVoided ? (
+            <div key={line.id} className="flex items-start gap-3 rounded-lg px-1.5 py-2 text-base">
+              <span className="mt-0.5 rounded bg-destructive/20 px-1.5 text-xs font-bold text-destructive">VOID</span>
+              <span className="min-w-0 text-destructive/80 line-through">
+                {line.quantity}× {line.nameSnapshot}
+              </span>
+            </div>
+          ) : (
           <label
             key={line.id}
             className="flex items-start gap-3 rounded-lg px-1.5 py-2 text-base transition-colors hover:bg-muted/60"
@@ -152,16 +178,31 @@ function OrderCard({
               {line.notes && <span className="block pl-1 text-sm italic opacity-80">— {line.notes}</span>}
             </span>
           </label>
-        ))}
+          )
+        )}
       </div>
       {canMarkReady && (
         <div className="flex gap-2 border-t border-border/60 p-3">
           <Button size="lg" variant="secondary" className="flex-1" onClick={() => onPrint(order)}>
             Print
           </Button>
-          <Button size="lg" variant="success" className="flex-1" onClick={markOrderReady} disabled={isReady}>
-            {isReady ? "Ready" : "Mark Ready"}
-          </Button>
+          {/* A ready order can be taken back — a mis-tap, or the pass sent it back — by whoever may
+              recall. Without that, "Ready" was a one-way door. */}
+          {isReady && canRecall ? (
+            <Button
+              size="lg"
+              variant="outline"
+              className="flex-1"
+              onClick={async () => (await recall(order.id, order.orderNumber)) && onChanged()}
+            >
+              <RotateCcw className="size-4" />
+              Not ready
+            </Button>
+          ) : (
+            <Button size="lg" variant="success" className="flex-1" onClick={markOrderReady} disabled={isReady}>
+              {isReady ? "Ready" : "Mark Ready"}
+            </Button>
+          )}
         </div>
       )}
     </div>
@@ -194,22 +235,94 @@ function OrderCardSkeleton() {
   );
 }
 
+interface BumpedOrder {
+  id: string;
+  orderNumber: number;
+  type: KdsOrder["type"];
+  readyAt: string;
+  table: { label: string } | null;
+  lines: { nameSnapshot: string; quantity: number }[];
+}
+
+/** Orders already off the board — served, or paid and done — that the kitchen can bring back. */
+function RecallDialog({ open, onClose, onRecalled }: { open: boolean; onClose: () => void; onRecalled: () => void }) {
+  const [orders, setOrders] = useState<BumpedOrder[] | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetch("/api/kds/recent")
+      .then((r) => r.json())
+      .then((d) => !cancelled && setOrders(d.orders ?? []))
+      .catch(() => !cancelled && setOrders([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-heading">Bring an order back</DialogTitle>
+        </DialogHeader>
+        {orders === null ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : orders.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nothing has been cleared in the last three hours.</p>
+        ) : (
+          <ul className="max-h-[60vh] space-y-2 overflow-y-auto">
+            {orders.map((o) => (
+              <li key={o.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="min-w-0 text-sm">
+                  <div className="font-heading font-semibold">
+                    #{o.orderNumber} · {o.type.replace("_", " ")}
+                    {o.table ? ` · ${o.table.label}` : ""}
+                  </div>
+                  <div className="truncate text-muted-foreground">
+                    {o.lines.map((l) => `${l.quantity}× ${l.nameSnapshot}`).join(", ")}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (await recall(o.id, o.orderNumber)) {
+                      setOrders((prev) => (prev ?? []).filter((x) => x.id !== o.id));
+                      onRecalled();
+                    }
+                  }}
+                >
+                  Bring back
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function KdsBoard({
   tenantId,
   branchId,
   branchName,
   canMarkReady,
+  canRecall = false,
 }: {
   tenantId: string;
   branchId: string;
   branchName: string;
   canMarkReady: boolean;
+  /** kds.order.recall — undo a "ready", or bring back an order already cleared. */
+  canRecall?: boolean;
 }) {
   const [orders, setOrders] = useState<KdsOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<KdsOrder["type"] | "ALL">("ALL");
   const [printingOrder, setPrintingOrder] = useState<KdsOrder | null>(null);
+  const [recallOpen, setRecallOpen] = useState(false);
 
   const load = useCallback(() => {
     fetch("/api/kds/orders")
@@ -276,6 +389,12 @@ export function KdsBoard({
             {g.label}
           </button>
         ))}
+        {canRecall && (
+          <Button variant="outline" className="ml-auto h-10 rounded-full bg-card" onClick={() => setRecallOpen(true)}>
+            <RotateCcw className="size-4" />
+            Recall
+          </Button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -290,13 +409,21 @@ export function KdsBoard({
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
             {filtered.map((o) => (
-              <OrderCard key={o.id} order={o} canMarkReady={canMarkReady} onChanged={load} onPrint={setPrintingOrder} />
+              <OrderCard
+                key={o.id}
+                order={o}
+                canMarkReady={canMarkReady}
+                canRecall={canRecall}
+                onChanged={load}
+                onPrint={setPrintingOrder}
+              />
             ))}
           </div>
         )}
       </div>
 
       <KotDialog order={printingOrder} branchName={branchName} onClose={() => setPrintingOrder(null)} />
+      {canRecall && <RecallDialog open={recallOpen} onClose={() => setRecallOpen(false)} onRecalled={load} />}
     </div>
   );
 }

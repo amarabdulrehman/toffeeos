@@ -389,7 +389,7 @@ function DayPanel({
         {data.compare.orderCount} {data.compare.orderCount === 1 ? "order" : "orders"}.
       </p>
 
-      {(data.openOrders.count > 0 || data.voids.count > 0) && (
+      {(data.openOrders.count > 0 || data.voids.count > 0 || data.itemVoids.count > 0) && (
         <div className="mt-4 space-y-2">
           {data.openOrders.count > 0 && (
             <div className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
@@ -411,6 +411,17 @@ function DayPanel({
                   {data.voids.count} {data.voids.count === 1 ? "order was" : "orders were"} voided
                 </strong>{" "}
                 ({formatPkr(data.voids.valuePaisa)}). Voided orders are not in the sales above.
+              </span>
+            </div>
+          )}
+          {data.itemVoids.count > 0 && (
+            <div className="flex items-start gap-2 rounded-xl border bg-muted/40 px-4 py-3 text-sm">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <span>
+                <strong>
+                  {data.itemVoids.count} {data.itemVoids.count === 1 ? "item was" : "items were"} taken off orders
+                </strong>{" "}
+                ({formatPkr(data.itemVoids.valuePaisa)}). Who and why are in Reports → Discounts &amp; Voids.
               </span>
             </div>
           )}

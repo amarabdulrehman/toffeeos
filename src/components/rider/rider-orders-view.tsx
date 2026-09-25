@@ -14,7 +14,7 @@ interface RiderOrder {
   totalPaisa: number;
   pickedUpAt: string | null;
   deliveryAddress: string | null;
-  lines: { id: string; nameSnapshot: string; quantity: number }[];
+  lines: { id: string; nameSnapshot: string; quantity: number; isVoided?: boolean }[];
   customer: { name: string | null; phone: string | null } | null;
 }
 
@@ -149,7 +149,7 @@ function OrderCard({ order, onChanged }: { order: RiderOrder; onChanged: () => v
         </div>
       )}
       <div className="mt-2.5 space-y-0.5 text-sm text-muted-foreground">
-        {order.lines.map((l) => (
+        {order.lines.filter((l) => !l.isVoided).map((l) => (
           <div key={l.id}>
             {l.quantity}× {l.nameSnapshot}
           </div>

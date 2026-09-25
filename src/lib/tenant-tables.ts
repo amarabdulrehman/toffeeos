@@ -34,6 +34,7 @@ export const TENANT_OWNED_TABLES = [
   "RecurringExpense",
   "Expense",
   "CashDrawerDay",
+  "NoSaleOpening",
   "ExpenseCategory",
   "Order",
   "RestaurantTable",

@@ -34,6 +34,8 @@ export interface DayReport {
   topItems: { name: string; quantity: number; revenuePaisa: number }[];
   byStaff: { name: string; orderCount: number; netPaisa: number }[];
   voids: { count: number; valuePaisa: number };
+  /** Single items taken off orders, counted by quantity — three samosas voided is three. */
+  itemVoids: { count: number; valuePaisa: number };
   /** Orders started this day and not yet paid — a table still sitting, or one never settled. */
   openOrders: { count: number; valuePaisa: number };
   compare: { label: string; orderCount: number; netPaisa: number };

@@ -138,7 +138,13 @@ export interface CreateOrderInput {
 export async function getBranchPricingContext(
   tenantId: string,
   branchId: string,
-  orderType: CreateOrderInput["type"]
+  orderType: CreateOrderInput["type"],
+  /**
+   * The order carries a tax exemption (Order.taxExemptReason). Priced with no tax rules at all,
+   * which the engine already reads as zero tax — so an exempt order goes through exactly the same
+   * arithmetic as every other order, with one input different, rather than a parallel path.
+   */
+  taxExempt = false
 ): Promise<{ settings: PricingSettings; taxRules: TaxRuleInput[]; maxDiscountBasisPoints: number }> {
   const db = tenantDb(tenantId);
   const [branchSettings, taxRules] = await Promise.all([
@@ -162,11 +168,13 @@ export async function getBranchPricingContext(
     settings,
     maxDiscountBasisPoints:
       branchSettings?.maxDiscountBasisPoints ?? DEFAULT_BRANCH_PRICING.maxDiscountBasisPoints,
-    taxRules: taxRules.map((r) => ({
-      paymentMethods: r.paymentMethods as PaymentMethodKey[],
-      rateBasisPoints: r.rateBasisPoints,
-      isActive: r.isActive,
-    })),
+    taxRules: taxExempt
+      ? []
+      : taxRules.map((r) => ({
+          paymentMethods: r.paymentMethods as PaymentMethodKey[],
+          rateBasisPoints: r.rateBasisPoints,
+          isActive: r.isActive,
+        })),
   };
 }
 
@@ -556,7 +564,12 @@ export async function addLinesToOrder(
   }
 
   const resolvedNewLines = await resolveLines(tenantId, branchId, newLines);
-  const { settings, taxRules, maxDiscountBasisPoints } = await getBranchPricingContext(tenantId, branchId, order.type);
+  const { settings, taxRules, maxDiscountBasisPoints } = await getBranchPricingContext(
+    tenantId,
+    branchId,
+    order.type,
+    order.taxExemptReason !== null
+  );
   assertDiscountsWithinCap(resolvedNewLines, undefined, maxDiscountBasisPoints, mayExceedDiscountCap);
   const orderDiscount: DiscountInput | undefined = order.discounts[0]
     ? { type: order.discounts[0].type, value: order.discounts[0].value }
@@ -727,7 +740,7 @@ export async function takePayment(
     include: { lines: true, discounts: true },
   });
 
-  const { settings, taxRules } = await getBranchPricingContext(tenantId, branchId, order.type);
+  const { settings, taxRules } = await getBranchPricingContext(tenantId, branchId, order.type, order.taxExemptReason !== null);
   const pricingLines = pricingLinesFromStored(order.lines);
   const orderDiscount: DiscountInput | undefined = order.discounts[0]
     ? { type: order.discounts[0].type, value: order.discounts[0].value }

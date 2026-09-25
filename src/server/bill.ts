@@ -39,7 +39,7 @@ export async function getOrderBill(tenantId: string, branchId: string, orderId: 
     throw new HttpError(400, "This order was voided, so there is nothing to bill.");
   }
 
-  const { settings, taxRules } = await getBranchPricingContext(tenantId, branchId, order.type);
+  const { settings, taxRules } = await getBranchPricingContext(tenantId, branchId, order.type, order.taxExemptReason !== null);
   const lines = pricingLinesFromStored(order.lines);
   const orderDiscount: DiscountInput | undefined = order.discounts[0]
     ? { type: order.discounts[0].type, value: order.discounts[0].value }

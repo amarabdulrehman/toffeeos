@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ClipboardList, ShoppingBag } from "lucide-react";
+import { ChevronDown, ClipboardList, Lock, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ProductGrid } from "./product-grid";
@@ -16,6 +16,8 @@ import { BillDialog } from "./bill-dialog";
 import { KotDialog } from "@/components/kds/kot-dialog";
 import { OrderQueuePanel } from "./order-queue-panel";
 import { CancelOrderDialog } from "./cancel-order-dialog";
+import { OrderManageDialog, canManageAnything, type ManagePermissions } from "./order-manage-dialog";
+import { NoSaleDialog } from "./no-sale-dialog";
 import { TablesDialog, ResumedOrderPanel, AddItemsPanel } from "./tables-dialog";
 import { OfflineBanner } from "./offline-banner";
 import { useSync } from "@/lib/offline/use-sync";
@@ -63,6 +65,8 @@ export function PosTerminal({
   canReprintKot,
   canPrintBill,
   canRefund,
+  managePermissions,
+  canNoSale,
 }: {
   tenantId: string;
   branchId: string;
@@ -81,6 +85,10 @@ export function PosTerminal({
   canReprintKot: boolean;
   canPrintBill: boolean;
   canRefund: boolean;
+  /** Voiding one item, switching type, merging tables, tax exemption — see OrderManageDialog. */
+  managePermissions: ManagePermissions;
+  /** pos.cashDrawer.openNoSale. */
+  canNoSale: boolean;
 }) {
   const sync = useSync();
   const [categories, setCategories] = useState<MenuCategoryDto[]>([]);
@@ -119,6 +127,9 @@ export function PosTerminal({
   const [kotOrder, setKotOrder] = useState<OrderDto | null>(null);
   const [billOrderId, setBillOrderId] = useState<string | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState<OrderDto | null>(null);
+  const [managingOrderId, setManagingOrderId] = useState<string | null>(null);
+  const [noSaleOpen, setNoSaleOpen] = useState(false);
+  const canManage = canManageAnything(managePermissions);
   const idempotencyKey = useRef(crypto.randomUUID());
   const localOrderCounter = useRef(-1);
 
@@ -634,19 +645,33 @@ export function PosTerminal({
               loading={menuLoading}
               onSelectItem={handleSelectItem}
               headerAction={
-                canTakePayment && (
-                  <Button
-                    variant="outline"
-                    className="h-11 rounded-full border-none bg-card shadow-sm"
-                    onClick={() => {
-                      const next = !showQueue;
-                      setShowQueue(next);
-                      setPaneOpen(next);
-                    }}
-                  >
-                    <ClipboardList className="size-4" />
-                    <span className="max-sm:sr-only">Order Queue</span>
-                  </Button>
+                (canTakePayment || canNoSale) && (
+                  <div className="flex gap-2">
+                    {canNoSale && (
+                      <Button
+                        variant="outline"
+                        className="h-11 rounded-full border-none bg-card shadow-sm"
+                        onClick={() => setNoSaleOpen(true)}
+                      >
+                        <Lock className="size-4" />
+                        <span className="max-sm:sr-only">No sale</span>
+                      </Button>
+                    )}
+                    {canTakePayment && (
+                      <Button
+                        variant="outline"
+                        className="h-11 rounded-full border-none bg-card shadow-sm"
+                        onClick={() => {
+                          const next = !showQueue;
+                          setShowQueue(next);
+                          setPaneOpen(next);
+                        }}
+                      >
+                        <ClipboardList className="size-4" />
+                        <span className="max-sm:sr-only">Order Queue</span>
+                      </Button>
+                    )}
+                  </div>
                 )
               }
             />
@@ -736,6 +761,7 @@ export function PosTerminal({
               }}
               onTakePayment={() => setPayingOrder(resumed.order)}
               onPrintBill={canPrintBill ? () => setBillOrderId(resumed.order.id) : undefined}
+              onManage={canManage ? () => setManagingOrderId(resumed.order.id) : undefined}
               onAddItems={() => {
                 setLines([]);
                 setAddingItemsToOrder(true);
@@ -753,6 +779,7 @@ export function PosTerminal({
             onReprintReceipt={canReprintReceipt ? (o) => openReceiptFor(o.id) : undefined}
             onReprintKot={canReprintKot ? (o) => setKotOrder(o) : undefined}
             onPrintBill={canPrintBill ? (o) => setBillOrderId(o.id) : undefined}
+            onManage={canManage ? (o) => setManagingOrderId(o.id) : undefined}
             canRefund={canRefund}
             onRefund={(o) => setRefundingOrder(o)}
             onClose={() => {
@@ -806,6 +833,24 @@ export function PosTerminal({
           }}
         />
 
+        <OrderManageDialog
+          orderId={managingOrderId}
+          permissions={managePermissions}
+          onClose={() => setManagingOrderId(null)}
+          onChanged={(changed) => {
+            void loadQueue();
+            // The table panel follows the order — unless it has left that table (made takeaway, or
+            // merged into another bill), in which case the panel for this table has nothing to show.
+            setResumed((prev) => {
+              if (!prev || prev.order.id !== changed.id) return prev;
+              if (changed.tableId !== prev.table.id || changed.status === "CANCELLED") return null;
+              return { ...prev, order: changed };
+            });
+          }}
+        />
+
+        <NoSaleDialog open={noSaleOpen} branchName={branchName} onClose={() => setNoSaleOpen(false)} />
+
         <RefundDialog
           order={refundingOrder}
           onClose={() => setRefundingOrder(null)}
@@ -849,6 +894,7 @@ export function PosTerminal({
                     quantity: l.quantity,
                     notes: l.notes ?? null,
                     modifiers: l.modifiers,
+                    isVoided: l.isVoided,
                   })),
                 }
               : null

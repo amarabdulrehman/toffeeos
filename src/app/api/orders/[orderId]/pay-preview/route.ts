@@ -23,7 +23,12 @@ export const POST = defineHandler(
       include: { lines: true, discounts: true },
     });
 
-    const { settings, taxRules } = await getBranchPricingContext(session.tenantId, session.branchId, order.type);
+    const { settings, taxRules } = await getBranchPricingContext(
+      session.tenantId,
+      session.branchId,
+      order.type,
+      order.taxExemptReason !== null
+    );
     const pricingLines = pricingLinesFromStored(order.lines);
     const orderDiscount: DiscountInput | undefined = order.discounts[0]
       ? { type: order.discounts[0].type, value: order.discounts[0].value }

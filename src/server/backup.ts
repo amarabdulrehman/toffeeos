@@ -83,6 +83,7 @@ const ALL_MODELS = [
   "Expense",
   "RecurringExpense",
   "CashDrawerDay",
+  "NoSaleOpening",
 ] as const;
 
 function lowerFirst(s: string): string {

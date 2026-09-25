@@ -194,6 +194,7 @@ export function ResumedOrderPanel({
   onTakePayment,
   onAddItems,
   onPrintBill,
+  onManage,
 }: {
   table: RestaurantTableDto;
   order: OrderDto;
@@ -202,6 +203,8 @@ export function ResumedOrderPanel({
   onAddItems: () => void;
   /** Omit to hide it — gated by pos.receipt.print. */
   onPrintBill?: () => void;
+  /** Omit to hide it — void an item, switch to takeaway, merge a table, tax exemption. */
+  onManage?: () => void;
 }) {
   return (
     <div className="space-y-4 rounded-xl border bg-card p-4 shadow-xs">
@@ -218,13 +221,14 @@ export function ResumedOrderPanel({
       </div>
       <div className="space-y-1 text-sm">
         {order.lines.map((l) => (
-          <div key={l.id} className="flex justify-between">
+          <div key={l.id} className={`flex justify-between ${l.isVoided ? "text-muted-foreground line-through" : ""}`}>
             <span>
               {l.quantity}× {l.nameSnapshot}
             </span>
             <span className="tabular-nums">{formatPkr(l.lineTotalPaisa)}</span>
           </div>
         ))}
+        {order.taxExemptReason && <div className="text-xs text-warning-foreground">Tax exempt: {order.taxExemptReason}</div>}
       </div>
       <div className="flex items-center justify-between border-t pt-3 font-heading font-semibold">
         <span>Total</span>
@@ -238,6 +242,11 @@ export function ResumedOrderPanel({
           {onPrintBill && (
             <Button variant="outline" size="lg" className="w-full" onClick={onPrintBill}>
               Print bill
+            </Button>
+          )}
+          {onManage && (
+            <Button variant="outline" size="lg" className="w-full" onClick={onManage}>
+              Change order
             </Button>
           )}
           <Button variant="success" size="lg" className="w-full" onClick={onTakePayment}>
