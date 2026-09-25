@@ -6,6 +6,7 @@ import { formatPkr } from "@/lib/money";
 import { salesReport, itemWiseReport } from "@/server/reports";
 import { inactiveCustomers } from "@/server/crm";
 import { businessDayOf, businessDayRange } from "@/lib/business-day";
+import { getBranchClock } from "@/server/branch-settings";
 import { notifyWhatsApp } from "./send";
 import type { NewLowStockAlert } from "@/server/inventory";
 
@@ -56,13 +57,14 @@ export async function sendDailySummaryForBranch(tenantId: string, branchId: stri
   const db = tenantDb(tenantId);
   const branch = await db.branch.findUniqueOrThrow({ where: { id: branchId } });
 
+  const { dayStartMinutes } = await getBranchClock(tenantId, branchId);
   const targetInstant = forDate ?? subDays(new Date(), 1);
-  const dayString = businessDayOf(targetInstant, branch.timezone);
-  const { from, to } = businessDayRange(dayString, branch.timezone);
+  const dayString = businessDayOf(targetInstant, branch.timezone, dayStartMinutes);
+  const { from, to } = businessDayRange(dayString, branch.timezone, dayStartMinutes);
 
   const [sales, items] = await Promise.all([
-    salesReport(tenantId, [branchId], { from, to, timezone: branch.timezone }),
-    itemWiseReport(tenantId, [branchId], { from, to, timezone: branch.timezone }),
+    salesReport(tenantId, [branchId], { from, to, timezone: branch.timezone, dayStartMinutes }),
+    itemWiseReport(tenantId, [branchId], { from, to, timezone: branch.timezone, dayStartMinutes }),
   ]);
   const topItems = items.slice(0, 3);
   const dayLabel = formatInTimeZone(from, branch.timezone, "MMM d");

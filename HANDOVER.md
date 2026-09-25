@@ -58,39 +58,29 @@ If the password contains `@ # / ?`, percent-encode those characters in the URL (
 While you are there: the password currently in use has been typed into a chat window and a shell
 history, so it should be rotated regardless.
 
-### Three migrations are pending on production — and the next push now applies them
+### Two migrations are pending on production — and the next push applies them
 
 ```
-20260914211549_index_unindexed_foreign_keys
-20260919174041_add_max_discount_cap
-20260919183131_add_refunds
+20260924212601_lowercase_login_identifiers
+20260924223305_business_day_start
 ```
 
-This section said the opposite a week ago, and the correction matters more than the original
-warning did. The build script now reads:
+The three from the week before (index foreign keys, discount cap, refunds) were pushed and confirmed
+on 20 September 2026. These two came with the tablet, bill and Daily Sales work and have run only
+against development.
 
-```
-prisma generate && prisma migrate deploy && next build
-```
+The build script runs `prisma migrate deploy` before `next build`, so the deployment applies its own
+migrations: the schema moves with the code that needs it. If a migration fails, the build fails and
+Vercel keeps serving the previous deployment — a red build, not a dead till.
 
-Vercel already holds `DIRECT_URL`, so the deployment applies its own migrations. That inverts the
-risk. Previously, pushing code that expected columns the database did not have broke signup and
-every order path — which is exactly what the production incident was. Now the schema moves with the
-code that needs it, in the same step, and cannot be forgotten.
+**One of the two can refuse on purpose.** `lowercase_login_identifiers` stores every email and
+restaurant code in lowercase, because sign-in now ignores capitals. If two staff in one restaurant
+have emails that differ only by capitals (`Ali@x.com` and `ali@x.com`), they would become the same
+login, and there is no safe way to pick one. So the migration stops with a message naming how many
+clashes there are, instead of guessing. Development has none. If production does, the build goes
+red and nothing changes until someone renames one of the pair.
 
-The failure mode is also the right way round: if a migration fails, the build fails, and Vercel
-keeps serving the previous deployment. A broken migration costs you a red build, not a dead till.
-
-So the practical position today:
-
-- The discount ceiling and refunds are built and tested but **dormant** on production. They do not
-  exist for a client until the migration runs.
-- **The next push to `main` is what runs it.** Production is serving a build from before all of
-  this; pushing rebuilds from `main`, applies the three migrations, and brings the two back into
-  step. Pushing is the fix, not the hazard.
-
-Nothing here has been pushed. Verify the build once on Vercel rather than assuming it, and watch
-the deployment log for `prisma migrate deploy` reporting three applied migrations.
+Watch the deployment log for `prisma migrate deploy` reporting two applied migrations.
 
 If you ever need to apply them by hand instead — a rollback, or a database the build cannot reach —
 use the **session pooler** on port 5432. The direct host is IPv6-only now and will not resolve from
@@ -99,7 +89,7 @@ most connections; the transaction pooler on 6543 cannot hold the session lock a 
 ```powershell
 $env:DIRECT_URL = "postgresql://postgres.<project-ref>:<password>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
 $env:DATABASE_URL = $env:DIRECT_URL
-npx prisma migrate status   # must say 3 pending
+npx prisma migrate status   # must say 2 pending
 npx prisma migrate deploy
 ```
 
@@ -240,12 +230,13 @@ payload shape, the timeout, Meta's rejections, non-JSON responses and the access
 reaching a tenant-readable log. `e2e/whatsapp-connection.spec.ts` pins the honest logging. What
 nobody can test until step 4 is a real delivery.
 
-### Twenty-eight permissions gate nothing
+### Twenty-seven permissions gate nothing
 
-Ninety-four are declared, sixty-six enforced. The roles screen renders from the registry, so an
-owner can toggle twenty-eight switches that change no behaviour. "Reprint KOT" used to be among
+Ninety-four are declared, sixty-seven enforced. The roles screen renders from the registry, so an
+owner can toggle twenty-seven switches that change no behaviour. "Reprint KOT" used to be among
 them and no longer is: printing a kitchen ticket from the till now gates on `pos.kot.print`, and
-reprinting one from the Order Queue on `pos.kot.reprint`.
+reprinting one from the Order Queue on `pos.kot.reprint`. "Print receipt" came off too: it now
+decides who can print a bill for a table before it pays, which the seeded Waiter role cannot.
 
 I went through the rest. Every one corresponds to a feature that was scoped and never built:
 there is no line-void, no no-sale drawer open, no tax-exempt flag, no table merge, no branch price
@@ -348,6 +339,17 @@ demo tenant has no second branch), against a clean production build:
   add-ons entirely, undercharging without an error anywhere.
 - **Refunds reach the reports** — the P&L nets refunds and the tax that went back with them, so it
   can no longer disagree with the Sales tab about the same range.
+- **Daily Sales** — today, yesterday, any day, and weekly and monthly closings with every day
+  listed and a printable summary. Built on the Sales report's own definition of a sale, and tested
+  to agree with it to the paisa for a day and for a week. Owners and managers only.
+- **A café's day can end after midnight** — each branch sets when its day ends (midnight to 6am, on
+  the Branches screen). A 1:30am sale then counts in tonight's takings, drawer and closing, and the
+  Sales report, cash drawer, dashboard and WhatsApp summary all follow the same setting.
+- **A bill before payment** — priced once per way of paying, so a PRA branch prints the cash and the
+  card total, each exactly what payment then charges. The kitchen ticket is unchanged.
+- **Sign-in ignores capitals and stray spaces** in the email and restaurant code.
+- **The till on tablets and phones** — the menu and the order sit side by side on a tablet; on a
+  phone the order opens as a sheet from a bar at the bottom.
 
 Every fix in this period was verified by deliberately breaking it and watching the right test fail,
 then restoring it. Three times that caught a test that passed for the wrong reason, including one
@@ -365,8 +367,8 @@ would have seen its menu tabs reorder themselves between page loads.
 ## The short version
 
 Upgrade the plan, recover the database password, rehearse a restore against a production dump, and
-set up email DNS. The migrations are applied — pushed and confirmed on 20 September 2026. That is the difference between software that works and a business you can invoice
-from.
+set up email DNS. The next push applies two migrations; watch that build go green (section 1). That is the
+difference between software that works and a business you can invoice from.
 
 Everything in section 3 is a conversation to have with a café before they sign, not a reason to
 wait.

@@ -14,6 +14,7 @@ import {
   MessageCircle,
   Globe,
   BarChart3,
+  CalendarDays,
   Receipt,
   Wallet,
   RefreshCw,
@@ -36,6 +37,8 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  // Straight under the Dashboard: what today took is the first thing an owner checks.
+  { href: "/app/sales", label: "Daily Sales", icon: CalendarDays, anyPermission: ["reports.sales.view"] },
   { href: "/pos", label: "POS", icon: UtensilsCrossed, anyPermission: ["pos.access"] },
   { href: "/kds", label: "KDS", icon: ChefHat, anyPermission: ["kds.access"] },
   { href: "/app/tables", label: "Tables", icon: LayoutGrid, anyPermission: ["tables.view"] },

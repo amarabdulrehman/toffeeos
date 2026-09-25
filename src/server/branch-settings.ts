@@ -11,3 +11,28 @@ export async function getBranchKdsEnabled(tenantId: string, branchId: string): P
   const settings = await tenantDb(tenantId).branchSettings.findUnique({ where: { branchId }, select: { kdsEnabled: true } });
   return settings?.kdsEnabled ?? true;
 }
+
+/** How a branch tells the time for business purposes: its timezone, and when its day starts. */
+export interface BranchClock {
+  timezone: string;
+  /** Minutes after midnight the business day starts. 0 is plain calendar days. */
+  dayStartMinutes: number;
+}
+
+const DEFAULT_TIMEZONE = "Asia/Karachi";
+
+/**
+ * The clock every "which day is this?" question for a branch should use — the cash drawer, the
+ * reports, the daily summary. Read together so no caller can take the timezone and forget the day
+ * start, which would put a 1:30am sale on tomorrow in one screen and tonight in another.
+ */
+export async function getBranchClock(tenantId: string, branchId: string): Promise<BranchClock> {
+  const branch = await tenantDb(tenantId).branch.findUnique({
+    where: { id: branchId },
+    select: { timezone: true, settings: { select: { dayStartMinutes: true } } },
+  });
+  return {
+    timezone: branch?.timezone ?? DEFAULT_TIMEZONE,
+    dayStartMinutes: branch?.settings?.dayStartMinutes ?? 0,
+  };
+}

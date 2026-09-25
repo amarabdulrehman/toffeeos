@@ -44,10 +44,11 @@ export interface CashDrawerDayView {
 async function branchOrThrow(tenantId: string, branchId: string) {
   const branch = await tenantDb(tenantId).branch.findUnique({
     where: { id: branchId },
-    select: { id: true, name: true, timezone: true },
+    select: { id: true, name: true, timezone: true, settings: { select: { dayStartMinutes: true } } },
   });
   if (!branch) throw new HttpError(404, "That branch doesn't exist.");
-  return branch;
+  // A drawer opened at 6pm and counted at 1:30am is one day's drawer, not two.
+  return { ...branch, dayStartMinutes: branch.settings?.dayStartMinutes ?? 0 };
 }
 
 async function resolveNames(tenantId: string, ids: (string | null | undefined)[]) {
@@ -61,9 +62,9 @@ async function resolveNames(tenantId: string, ids: (string | null | undefined)[]
 }
 
 /** Cash that physically entered and left the drawer on a business day, in the branch's timezone. */
-async function cashMovement(tenantId: string, branchId: string, day: string, timezone: string) {
+async function cashMovement(tenantId: string, branchId: string, day: string, timezone: string, dayStartMinutes: number) {
   const db = tenantDb(tenantId);
-  const { from, to } = businessDayRange(day, timezone);
+  const { from, to } = businessDayRange(day, timezone, dayStartMinutes);
 
   const [payments, expenses, refunds] = await Promise.all([
     // Joined through the order so a cancelled order's takings don't count as cash on hand. Dated by
@@ -104,13 +105,13 @@ async function cashMovement(tenantId: string, branchId: string, day: string, tim
  */
 export async function getDrawerDay(tenantId: string, branchId: string, day?: string): Promise<CashDrawerDayView> {
   const branch = await branchOrThrow(tenantId, branchId);
-  const businessDate = day ?? todayFor(branch.timezone);
+  const businessDate = day ?? todayFor(branch.timezone, new Date(), branch.dayStartMinutes);
   if (!isBusinessDay(businessDate)) throw new HttpError(400, "That isn't a valid date.");
 
   const db = tenantDb(tenantId);
   const [row, movement] = await Promise.all([
     db.cashDrawerDay.findUnique({ where: { branchId_businessDate: { branchId, businessDate } } }),
-    cashMovement(tenantId, branchId, businessDate, branch.timezone),
+    cashMovement(tenantId, branchId, businessDate, branch.timezone, branch.dayStartMinutes),
   ]);
 
   const names = await resolveNames(tenantId, [row?.openedById, row?.closedById, row?.correctedById]);
@@ -150,7 +151,7 @@ export async function openDrawerDay(
   input: { openingBalancePaisa: number; businessDate?: string; note?: string | null }
 ): Promise<CashDrawerDayView> {
   const branch = await branchOrThrow(tenantId, branchId);
-  const businessDate = input.businessDate ?? todayFor(branch.timezone);
+  const businessDate = input.businessDate ?? todayFor(branch.timezone, new Date(), branch.dayStartMinutes);
   if (!isBusinessDay(businessDate)) throw new HttpError(400, "That isn't a valid date.");
   if (!Number.isInteger(input.openingBalancePaisa) || input.openingBalancePaisa < 0) {
     throw new HttpError(400, "The opening balance can't be negative.");
@@ -193,7 +194,7 @@ export async function closeDrawerDay(
   input: { closingCountedPaisa: number; businessDate?: string; note?: string | null }
 ): Promise<CloseDrawerDayResult> {
   const branch = await branchOrThrow(tenantId, branchId);
-  const businessDate = input.businessDate ?? todayFor(branch.timezone);
+  const businessDate = input.businessDate ?? todayFor(branch.timezone, new Date(), branch.dayStartMinutes);
   if (!isBusinessDay(businessDate)) throw new HttpError(400, "That isn't a valid date.");
   if (!Number.isInteger(input.closingCountedPaisa) || input.closingCountedPaisa < 0) {
     throw new HttpError(400, "The counted amount can't be negative.");

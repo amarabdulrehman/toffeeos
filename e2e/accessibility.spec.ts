@@ -27,7 +27,7 @@ const RULES = [
   "form-field-multiple-labels",
 ];
 
-const SCREENS = ["/app/dashboard", "/app/menu", "/app/reports", "/app/staff", "/app/inventory", "/pos", "/kds"];
+const SCREENS = ["/app/dashboard", "/app/sales", "/app/menu", "/app/reports", "/app/staff", "/app/inventory", "/pos", "/kds"];
 
 test.describe("Accessibility", () => {
   test.use({ storageState: authFile("owner") });

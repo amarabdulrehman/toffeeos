@@ -85,3 +85,45 @@ describe("todayFor", () => {
     expect(todayFor("UTC", now)).toBe("2026-09-06");
   });
 });
+
+describe("a business day that ends after midnight", () => {
+  // A café whose day ends at 4am. Karachi is UTC+5 all year.
+  const TZ = "Asia/Karachi";
+  const FOUR_AM = 4 * 60;
+
+  it("keeps a 1:30am sale on the night it belongs to", () => {
+    // 01:30 on the 11th in Karachi, which is 20:30 UTC on the 10th.
+    const lateSale = new Date("2025-03-10T20:30:00Z");
+    expect(businessDayOf(lateSale, TZ), "as a calendar day it is the 11th").toBe("2025-03-11");
+    expect(businessDayOf(lateSale, TZ, FOUR_AM), "but the café is still trading the 10th").toBe("2025-03-10");
+  });
+
+  it("starts the new day at the configured hour, not a minute before", () => {
+    expect(businessDayOf(new Date("2025-03-10T22:59:00Z"), TZ, FOUR_AM), "03:59 local").toBe("2025-03-10");
+    expect(businessDayOf(new Date("2025-03-10T23:00:00Z"), TZ, FOUR_AM), "04:00 local").toBe("2025-03-11");
+  });
+
+  it("runs the day's range from 4am to just before the next 4am", () => {
+    const { from, to } = businessDayRange("2025-03-10", TZ, FOUR_AM);
+    expect(from.toISOString()).toBe("2025-03-09T23:00:00.000Z");
+    expect(to.toISOString()).toBe("2025-03-10T22:59:59.999Z");
+  });
+
+  it("is exactly the calendar day when the day starts at midnight", () => {
+    const { from, to } = businessDayRange("2025-03-10", TZ, 0);
+    expect(from.toISOString()).toBe("2025-03-09T19:00:00.000Z");
+    expect(to.toISOString()).toBe("2025-03-10T18:59:59.999Z");
+  });
+
+  it("stays right across a daylight-saving change", () => {
+    // London springs forward at 01:00 UTC on 30 March 2025. With the day starting at 3am, 02:30
+    // local on the 30th must still count as the 29th — subtracting three hours from the instant
+    // would get this wrong on exactly that night.
+    expect(businessDayOf(new Date("2025-03-30T01:30:00Z"), "Europe/London", 3 * 60)).toBe("2025-03-29");
+    expect(businessDayOf(new Date("2025-03-30T02:00:00Z"), "Europe/London", 3 * 60)).toBe("2025-03-30");
+  });
+
+  it("carries today across midnight too", () => {
+    expect(todayFor(TZ, new Date("2025-03-10T20:30:00Z"), FOUR_AM)).toBe("2025-03-10");
+  });
+});

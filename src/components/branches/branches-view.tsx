@@ -201,7 +201,19 @@ interface BranchSettingsDto {
   serviceChargeTaxable: boolean;
   roundingMode: "NONE" | "NEAREST_1" | "NEAREST_5";
   maxDiscountBasisPoints: number;
+  dayStartMinutes: number;
 }
+
+/** When a business day ends, as an owner would say it. Stored as the next day's start. */
+const DAY_END_OPTIONS: { minutes: number; label: string }[] = [
+  { minutes: 0, label: "Midnight (12am)" },
+  { minutes: 60, label: "1am" },
+  { minutes: 120, label: "2am" },
+  { minutes: 180, label: "3am" },
+  { minutes: 240, label: "4am" },
+  { minutes: 300, label: "5am" },
+  { minutes: 360, label: "6am" },
+];
 
 /** Order-level pricing settings — service charge %, which order types it applies to, whether it's
  * taxable, and cash rounding. These were previously stuck at their schema defaults (service charge
@@ -319,6 +331,33 @@ function OrderSettingsCard() {
               </SelectContent>
             </Select>
           </div>
+        </div>
+
+        {/* Asked as "when does your day end?" because that is how an owner thinks about it; stored as
+            when the next one starts. A café open until 2am wants 1:30am counted as tonight. */}
+        <div className="space-y-1.5 border-t pt-4">
+          <Label>Business day ends at</Label>
+          <Select
+            value={String(settings.dayStartMinutes)}
+            onValueChange={(v) => v != null && save({ dayStartMinutes: Number(v) })}
+          >
+            <SelectTrigger className="w-full sm:w-64" disabled={saving}>
+              <SelectValue>
+                {(v: string) => DAY_END_OPTIONS.find((o) => String(o.minutes) === v)?.label ?? v}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {DAY_END_OPTIONS.map((o) => (
+                <SelectItem key={o.minutes} value={String(o.minutes)}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Sales made after midnight but before this time count toward the previous day — in Daily Sales,
+            the reports and the cash drawer. Leave it at midnight if you close before then.
+          </p>
         </div>
 
         {/* The discount ceiling lives with the other money settings rather than on the roles screen,

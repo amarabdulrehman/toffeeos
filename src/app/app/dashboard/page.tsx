@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { subDays } from "date-fns";
 import { ArrowRight, BarChart3, ChefHat, ShieldCheck, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
+import { dayReport } from "@/server/daily-sales";
+import { METHOD_LABEL, changePct } from "@/lib/daily-sales";
 import { auth } from "@/server/auth";
-import { reportTimezone, resolveReportBranchIds, salesReport } from "@/server/reports";
+import { reportClock, resolveReportBranchIds, salesReport } from "@/server/reports";
 import type { TenantSessionUser } from "@/server/auth/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,8 +29,8 @@ async function RevenueTrendCard({ user }: { user: TenantSessionUser }) {
   const from = subDays(to, 7);
   // The chart groups by day, so it needs the café's clock rather than UTC's — otherwise a sale at
   // 1am lands on yesterday's bar. Same choice of branch as resolveReportRange makes.
-  const timezone = await reportTimezone(user.tenantId, branchIds);
-  const report = await salesReport(user.tenantId, branchIds, { from, to, timezone });
+  const clock = await reportClock(user.tenantId, branchIds);
+  const report = await salesReport(user.tenantId, branchIds, { from, to, ...clock });
   const trend = report.previousPeriod.changePct;
 
   return (
@@ -63,6 +65,69 @@ async function RevenueTrendCard({ user }: { user: TenantSessionUser }) {
   );
 }
 
+/**
+ * What today has taken so far, against the same point yesterday — the number an owner opens the app
+ * for. The same figures as the Daily Sales screen, which it links to for the rest.
+ */
+async function TodaySoFarCard({ user }: { user: TenantSessionUser }) {
+  const branchIds = await resolveReportBranchIds(user, undefined);
+  const today = await dayReport(user.tenantId, branchIds);
+  const t = today.totals;
+  const trend = changePct(t.netPaisa, today.compare.netPaisa);
+
+  return (
+    <Card className="shadow-sm">
+      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-4">
+        <div>
+          <CardTitle className="font-heading">Today so far</CardTitle>
+          <CardDescription>
+            {t.orderCount} {t.orderCount === 1 ? "order" : "orders"} · {formatPkr(today.compare.netPaisa)} by this time yesterday
+          </CardDescription>
+        </div>
+        <div className="text-right">
+          <div className="font-heading text-3xl font-bold tabular-nums text-primary">{formatPkr(t.netPaisa)}</div>
+          {trend !== null && (
+            <div
+              className={`mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-semibold ${trend >= 0 ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}
+            >
+              {trend >= 0 ? <TrendingUp className="size-3.5" /> : <TrendingDown className="size-3.5" />}
+              {trend >= 0 ? "+" : ""}
+              {trend.toFixed(1)}%
+            </div>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
+          {t.byPaymentMethod.length === 0 && <span>No payments yet.</span>}
+          {t.byPaymentMethod.map((p) => (
+            <span key={p.method}>
+              {METHOD_LABEL[p.method] ?? p.method}{" "}
+              <span className="font-medium text-foreground tabular-nums">{formatPkr(p.amountPaisa)}</span>
+            </span>
+          ))}
+          {/* Without this, cash plus card is more than the figure above whenever something was
+              refunded, and the card looks wrong. */}
+          {t.refundedPaisa > 0 && (
+            <span>
+              Refunds <span className="font-medium text-foreground tabular-nums">−{formatPkr(t.refundedPaisa)}</span>
+            </span>
+          )}
+          {today.openOrders.count > 0 && (
+            <span>
+              Open orders <span className="font-medium text-foreground tabular-nums">{today.openOrders.count}</span>
+            </span>
+          )}
+        </div>
+        <Button render={<Link href="/app/sales" />} nativeButton={false} variant="outline" className="group/btn">
+          Daily Sales
+          <ArrowRight className="size-4 transition-transform group-hover/btn:translate-x-0.5" />
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default async function DashboardPage() {
   const session = await auth();
   const user = session?.user;
@@ -82,7 +147,8 @@ export default async function DashboardPage() {
       {canReviewCancellations && <CancellationBanner />}
 
       {canViewSales && (
-        <div className="mt-8">
+        <div className="mt-8 space-y-4">
+          <TodaySoFarCard user={user} />
           <RevenueTrendCard user={user} />
         </div>
       )}

@@ -69,6 +69,7 @@ const SCREENS = [
   "/app/delivery",
   "/app/branches",
   "/app/cash-drawer",
+  "/app/sales",
   "/app/online-ordering",
   "/app/whatsapp",
   "/app/sync-conflicts",

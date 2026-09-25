@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineHandler } from "@/server/handler";
+import { MAX_DAY_START_MINUTES } from "@/lib/business-day";
 
 export const GET = defineHandler({ permission: "settings.general.manage" }, async ({ session, db }) => {
   const settings = await db.branchSettings.findUnique({ where: { branchId: session.branchId } });
@@ -28,6 +29,8 @@ const schema = z.object({
   // Basis points of the amount being discounted. 10000 = 100% = no cap, which is the default and
   // what every branch had before this field existed.
   maxDiscountBasisPoints: z.number().int().min(0).max(10000).optional(),
+  // Whole quarter-hours between midnight and 6am, matching the database CHECK constraint.
+  dayStartMinutes: z.number().int().min(0).max(MAX_DAY_START_MINUTES).multipleOf(15).optional(),
 });
 
 export const PATCH = defineHandler(
