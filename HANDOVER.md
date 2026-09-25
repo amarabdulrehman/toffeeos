@@ -58,38 +58,25 @@ If the password contains `@ # / ?`, percent-encode those characters in the URL (
 While you are there: the password currently in use has been typed into a chat window and a shell
 history, so it should be rotated regardless.
 
-### Two migrations are pending on production — and the next push applies them
+### Migrations: all applied
 
-```
-20260924212601_lowercase_login_identifiers
-20260924223305_business_day_start
-```
+Every migration in the repository is on production. The latest two —
+`20260924212601_lowercase_login_identifiers` and `20260924223305_business_day_start` — were applied
+by the deployment of 25 September 2026, and the build log confirms both. The first would have
+refused if two staff in one restaurant had emails differing only by capitals; production had none.
 
-The three from the week before (index foreign keys, discount cap, refunds) were pushed and confirmed
-on 20 September 2026. These two came with the tablet, bill and Daily Sales work and have run only
-against development.
-
-The build script runs `prisma migrate deploy` before `next build`, so the deployment applies its own
+The build script runs `prisma migrate deploy` before `next build`, so each push applies its own
 migrations: the schema moves with the code that needs it. If a migration fails, the build fails and
 Vercel keeps serving the previous deployment — a red build, not a dead till.
 
-**One of the two can refuse on purpose.** `lowercase_login_identifiers` stores every email and
-restaurant code in lowercase, because sign-in now ignores capitals. If two staff in one restaurant
-have emails that differ only by capitals (`Ali@x.com` and `ali@x.com`), they would become the same
-login, and there is no safe way to pick one. So the migration stops with a message naming how many
-clashes there are, instead of guessing. Development has none. If production does, the build goes
-red and nothing changes until someone renames one of the pair.
-
-Watch the deployment log for `prisma migrate deploy` reporting two applied migrations.
-
-If you ever need to apply them by hand instead — a rollback, or a database the build cannot reach —
-use the **session pooler** on port 5432. The direct host is IPv6-only now and will not resolve from
-most connections; the transaction pooler on 6543 cannot hold the session lock a migration needs.
+If you ever need to apply one by hand — a rollback, or a database the build cannot reach — use the
+**session pooler** on port 5432. The direct host is IPv6-only now and will not resolve from most
+connections; the transaction pooler on 6543 cannot hold the session lock a migration needs.
 
 ```powershell
 $env:DIRECT_URL = "postgresql://postgres.<project-ref>:<password>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
 $env:DATABASE_URL = $env:DIRECT_URL
-npx prisma migrate status   # must say 2 pending
+npx prisma migrate status
 npx prisma migrate deploy
 ```
 
@@ -369,8 +356,8 @@ would have seen its menu tabs reorder themselves between page loads.
 ## The short version
 
 Upgrade the plan, recover the database password, rehearse a restore against a production dump, and
-set up email DNS. The next push applies two migrations; watch that build go green (section 1). That is the
-difference between software that works and a business you can invoice from.
+set up email DNS. The migrations are all applied (section 1). That is the difference between software that
+works and a business you can invoice from.
 
 Everything in section 3 is a conversation to have with a café before they sign, not a reason to
 wait.
