@@ -246,8 +246,9 @@ either built or retired:
   no-sale drawer openings, kitchen recall (the till); purchase orders and suppliers, transfer
   approval, undoing a stock adjustment, low-stock alert levels (inventory); per-branch menu prices;
   the role editor; loyalty points; an online-menu switch per dish and table QR codes; service
-  charge and report downloads as their own permissions; Plan & billing; and "mark paid" for the
-  rider's cash on a cash-on-delivery order.
+  charge and report downloads as their own permissions; Plan & billing (plan, status and payment
+  dates only — no prices or amounts, by the owner's decision, since rates are agreed directly);
+  and "mark paid" for the rider's cash on a cash-on-delivery order.
 - **Retired**, never having gated anything and with nothing sensible to gate — hand-editing tax,
   bypassing PIN and shift-time checks that don't exist, allergens (declined), a duplicate "profit"
   view, and self-service plan changes. Migration `20260925120000` took them off every role.

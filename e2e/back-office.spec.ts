@@ -320,9 +320,12 @@ test.describe("Back office", () => {
     await expect(page.getByRole("tab", { name: "Suppliers" })).toBeVisible();
   });
 
-  test("the owner can see their plan and payments", async ({ page }) => {
+  test("the owner can see their plan and status, and no money figures", async ({ page }) => {
     await page.goto("/app/billing");
     await expect(page.getByRole("heading", { name: "Plan & billing" })).toBeVisible();
-    await expect(page.getByText("Monthly cost")).toBeVisible();
+    await expect(page.getByText("Status", { exact: true })).toBeVisible();
+    // By the owner's decision: prices are agreed with ToffeeOS directly, not shown here.
+    await expect(page.getByText("Monthly cost")).toHaveCount(0);
+    await expect(page.getByRole("main").getByText(/Rs\s?[\d,]+/)).toHaveCount(0);
   });
 });

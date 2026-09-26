@@ -4,8 +4,7 @@ import { auth } from "@/server/auth";
 import { rawDb, tenantDb } from "@/server/db";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { effectiveMonthlyRatePaisa, getBillingStatus, PAYMENT_METHODS } from "@/lib/billing";
-import { formatPkr } from "@/lib/money";
+import { getBillingStatus, PAYMENT_METHODS, type BillingStatus } from "@/lib/billing";
 
 /** The status's colour, as a dot beside dark text. */
 const DOT: Record<string, string> = {
@@ -16,8 +15,22 @@ const DOT: Record<string, string> = {
   outline: "bg-muted-foreground",
 };
 
+/** One line under the status, saying what it means for the restaurant. */
+function statusNote(status: BillingStatus): string {
+  if (status.state === "inactive") return "Your account is paused. Please contact ToffeeOS support.";
+  if (status.isOverdue) return "Payment is overdue. Please pay and send the reference to ToffeeOS support.";
+  // Nothing recorded is not the same as paid up — it used to say "Thank you — you are paid up".
+  if (status.state === "unbilled") return "No billing period is on record yet.";
+  if (status.isTrial) return "You are on a free trial.";
+  return "Thank you — you are paid up.";
+}
+
 /**
- * Plan & billing — what the restaurant is on, what it costs, and what it has paid.
+ * Plan & billing — what the restaurant is on, whether it is paid up, and when it paid.
+ *
+ * No money figures, by the owner's decision: prices are agreed with ToffeeOS directly, so the page
+ * shows the plan, the status and the dates each payment covered, and neither the rate nor the
+ * amounts. They are not even read from the database, so they can't reach the page by accident.
  *
  * Read-only. Billing is handled by hand: the platform records each payment as it arrives by bank
  * transfer, JazzCash and so on, so there is nothing here to change or pay online. What an owner
@@ -34,11 +47,18 @@ export default async function BillingPage() {
 
   const db = tenantDb(user.tenantId);
   const [subscription, payments, activeBranches, tenant] = await Promise.all([
-    db.subscription.findFirst({ include: { plan: true } }),
+    db.subscription.findFirst({
+      select: {
+        trialEndsAt: true,
+        currentPeriodEnd: true,
+        plan: { select: { name: true, maxBranches: true } },
+      },
+    }),
     db.subscriptionPayment.findMany({
       where: { voidedAt: null },
       orderBy: [{ periodEnd: "desc" }, { createdAt: "desc" }],
       take: 24,
+      select: { id: true, periodStart: true, periodEnd: true, method: true },
     }),
     db.branch.count({ where: { isActive: true } }),
     rawDb.tenant.findUnique({ where: { id: user.tenantId }, select: { status: true } }),
@@ -51,13 +71,6 @@ export default async function BillingPage() {
         currentPeriodEnd: subscription.currentPeriodEnd,
       })
     : null;
-  const monthly = subscription
-    ? effectiveMonthlyRatePaisa({
-        customMonthlyPricePaisa: subscription.customMonthlyPricePaisa,
-        activeBranchCount: activeBranches,
-        pricePaisaPerBranchMonth: subscription.plan.pricePaisaPerBranchMonth,
-      })
-    : null;
   const methodLabel = (m: string) => PAYMENT_METHODS.find((p) => p.value === m)?.label ?? m;
 
   return (
@@ -68,7 +81,7 @@ export default async function BillingPage() {
         </span>
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight">Plan &amp; billing</h1>
-          <p className="text-sm text-muted-foreground">Your plan, what it costs, and what you have paid.</p>
+          <p className="text-sm text-muted-foreground">Your plan, whether you are paid up, and your payments.</p>
         </div>
       </div>
 
@@ -80,7 +93,7 @@ export default async function BillingPage() {
         </Card>
       ) : (
         <>
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
                 <CardDescription>Plan</CardDescription>
@@ -96,17 +109,6 @@ export default async function BillingPage() {
             </Card>
             <Card>
               <CardHeader>
-                <CardDescription>Monthly cost</CardDescription>
-                <CardTitle className="font-heading text-xl tabular-nums">{formatPkr(monthly ?? 0)}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
-                {subscription.customMonthlyPricePaisa != null
-                  ? "Your agreed monthly rate"
-                  : `${formatPkr(subscription.plan.pricePaisaPerBranchMonth)} per branch per month`}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
                 <CardDescription>Status</CardDescription>
                 {/* Dark text beside a coloured dot rather than the tinted badge: the badge's green on
                     pale green is below the contrast a status this important should have (2.8:1). */}
@@ -115,20 +117,14 @@ export default async function BillingPage() {
                   {status.state === "inactive" ? "Account paused" : status.label}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
-                {status.isOverdue
-                  ? "Payment is overdue. Please pay and send the reference to ToffeeOS support."
-                  : status.isTrial
-                    ? "You are on a free trial."
-                    : "Thank you — you are paid up."}
-              </CardContent>
+              <CardContent className="text-sm text-muted-foreground">{statusNote(status)}</CardContent>
             </Card>
           </div>
 
           <Card className="mt-6">
             <CardHeader>
               <CardTitle className="font-heading text-base">Payments</CardTitle>
-              <CardDescription>Every payment recorded for this restaurant, newest first</CardDescription>
+              <CardDescription>The period each payment covered, newest first</CardDescription>
             </CardHeader>
             <CardContent>
               {payments.length === 0 ? (
@@ -139,7 +135,6 @@ export default async function BillingPage() {
                     <TableRow>
                       <TableHead>Covers</TableHead>
                       <TableHead>Paid by</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -150,7 +145,6 @@ export default async function BillingPage() {
                           {p.periodEnd.toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })}
                         </TableCell>
                         <TableCell>{methodLabel(p.method)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatPkr(p.amountPaisa)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
