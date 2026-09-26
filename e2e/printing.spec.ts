@@ -61,6 +61,8 @@ function expectOneTicketSizedPage(printed: Awaited<ReturnType<typeof whatPrints>
   expect(size, "the page size is declared").toBeTruthy();
   expect(Number(size![1]), "as the paper's width").toBe(paperMm);
   const heightMm = Number(size![2]);
+  // Longer than wide: a wider-than-long page is landscape, and the printer turns the ticket sideways.
+  expect(heightMm, "a portrait page, so the ticket prints the right way up").toBeGreaterThan(paperMm);
   expect(heightMm, "a ticket's length, not metres of roll").toBeLessThan(600);
   expect(heightMm).toBeGreaterThan(20);
   expect(printed.everythingElseGone, "nothing but the ticket is laid out").toBe(true);
@@ -117,6 +119,9 @@ test.describe("Printing a ticket", () => {
     const printed = await whatPrints(page);
     expectOneTicketSizedPage(printed);
     expect(printed.rootText, "and it is this order's bill").toContain(`Order #${order.orderNumber}`);
+    // The printer's own paper size is the till's to set; the steps are beside the Print button.
+    await dialog.getByText("Printer keeps feeding blank paper?").click();
+    await expect(dialog.getByText("Printing preferences")).toBeVisible();
   });
 
   test("a kitchen ticket prints the same way", async ({ page }) => {

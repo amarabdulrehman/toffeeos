@@ -310,9 +310,20 @@ ticket: 5mm unprinted each side, type scaled down on narrow rolls to about a 58m
 with more on each line, the ticket capped at 104mm wide. The dialog's preview wraps where the paper
 will. Default 80mm, so nothing changes for a device until someone picks another width.
 
-One thing only a real printer can settle: if a driver still feeds extra, its paper size should be
-set to the roll's width with "cut after each page" (in the driver's printing preferences), not a
-fixed-length page.
+**Still feeding on a real printer (reported 27 September 2026), and a kitchen slip printed sideways.**
+Sideways was ours: a short kitchen ticket made a page wider than long (80 x 49mm), which Chrome
+sends as landscape. Every page is now at least 10mm longer than wide.
+
+The feeding is not something the page can stop. Chrome and Edge lay the page out at the declared
+size but print on the paper size selected for the printer, and a receipt printer's usual default is
+a roll "page" about 3.3 metres long (e.g. "80 x 3276 mm"), fed to the end unless the driver trims
+blank paper. The fix is per till, once: in the print window, More settings → Paper size → the
+roll's shortest length (e.g. 80 x 297 mm), Margins None (remembered per printer); and in Windows,
+the printer's Printing preferences → the blank-trimming option (named Paper saving, Paper
+reduction (bottom margin), Blank skip…, depending on the driver). The steps are in every print
+dialog ("Printer keeps feeding blank paper?"). The one fix that removes the driver from the picture
+entirely is printing raw ESC/POS (QZ Tray, or Web Serial where the printer has a COM port) — a
+bigger job, not started.
 
 ---
 

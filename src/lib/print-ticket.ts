@@ -20,6 +20,17 @@
  * dialogs and remembered per device (see src/lib/paper-width.ts). The copy is laid out and scaled
  * to that paper's printable width, and measured there, since a narrower ticket is a longer one.
  *
+ * The page is always longer than it is wide. A short kitchen ticket measured, say, 80mm wide by
+ * 60mm long, and a page wider than it is long is a landscape page: the browser told the printer
+ * "landscape" and the ticket came out turned on its side. Such a ticket gets a little more paper
+ * below it instead.
+ *
+ * What the browser cannot do is choose the printer's paper. Chrome and Edge lay the page out at
+ * the size declared here but print it on whatever paper size is selected for the printer — and a
+ * receipt printer's usual default is a roll "page" about three metres long, which it feeds to the
+ * end unless the driver trims blank paper. That is a setting on each till, done once; the steps
+ * are in every print dialog (PrinterSetupHelp in src/components/print/ticket-preview.tsx).
+ *
  * The same preparation runs on the browser's own Print (Ctrl+P / the share sheet), via the
  * beforeprint event, so there is no way to print a ticket that skips it.
  */
@@ -28,6 +39,8 @@ import { paperLayout, readPaperWidth, type PaperKind } from "@/lib/paper-width";
 
 /** Paper left under the last line, so the cutter doesn't slice through it. */
 const TAIL_MM = 8;
+/** How much longer than wide a page always is — clearly portrait, whatever rounding a driver does. */
+const PORTRAIT_MARGIN_MM = 10;
 const PX_TO_MM = 25.4 / 96;
 
 const ROOT_ID = "print-root";
@@ -50,9 +63,13 @@ export function clearPreparedTicket(): void {
   document.getElementById(PAGE_STYLE_ID)?.remove();
 }
 
-/** The page length, in whole millimetres, for a ticket this tall as laid out for print. */
-export function ticketPageHeightMm(heightPx: number): number {
-  return Math.ceil(heightPx * PX_TO_MM) + TAIL_MM;
+/**
+ * The page length, in whole millimetres, for a ticket this tall as laid out for print, on paper
+ * this wide: the ticket plus room for the cutter, and always longer than the paper is wide, so the
+ * page is portrait and the ticket prints the right way up.
+ */
+export function ticketPageHeightMm(heightPx: number, paperMm: number): number {
+  return Math.max(Math.ceil(heightPx * PX_TO_MM) + TAIL_MM, paperMm + PORTRAIT_MARGIN_MM);
 }
 
 /** Which paper a ticket goes on: kitchen tickets say so (data-paper="kitchen"); the rest are receipts. */
@@ -94,7 +111,7 @@ function prepare(ticket: HTMLElement): void {
   // shown for a moment off-screen, measured, and hidden again. getBoundingClientRect is its full
   // height whatever scrolls or clips on screen.
   root.style.cssText = `display: block; position: absolute; left: -10000px; top: 0; width: ${paper.pageMm}mm; visibility: hidden;`;
-  const heightMm = ticketPageHeightMm(sheet.getBoundingClientRect().height);
+  const heightMm = ticketPageHeightMm(sheet.getBoundingClientRect().height, paper.pageMm);
   root.removeAttribute("style");
 
   style.textContent = `@page { size: ${paper.pageMm}mm ${heightMm}mm; margin: 0; }\n${layoutRules}`;
