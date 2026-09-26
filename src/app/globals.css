@@ -197,10 +197,10 @@
 }
 
 /* Printing a ticket (receipt, bill, kitchen ticket, closing summary, no-sale slip) — see
-   src/lib/print-ticket.ts, which copies the ticket into #print-root and sets the page to exactly its
-   size. While printing, everything else is taken out of the layout with display: none. The rule this
-   replaced used visibility: hidden, which left the whole app's height in the printed document — and
-   with no page size declared, a roll printer kept feeding paper long after the ticket ended.
+   src/lib/print-ticket.ts, which copies the ticket into #print-root and sets a portrait page with no
+   margins, the ticket at the top of the paper. While printing, everything else is taken out of the
+   layout with display: none. The rule this replaced used visibility: hidden, which left the whole
+   app's height in the printed document.
    Scoped with :has() so an ordinary print of a page with no ticket prepared prints normally. */
 #print-root {
   display: none;

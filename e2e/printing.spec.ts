@@ -9,10 +9,14 @@ import { getMenuItemId } from "./fixtures/api";
  * declared a size, so the printer's driver used its default "page", several metres of roll; and the
  * rest of the app was only made invisible for printing, so it still filled the printed document.
  *
- * A test can't listen to a printer, so this checks the two things the printer is actually given:
- * the page size (the paper's width by the ticket's length, not metres), and the printed document
- * (the ticket alone, inside the paper's printable width, fitting on that one page, with the rest of
- * the app out of the layout).
+ * A test can't listen to a printer, so this checks what the printer is given: a page rule that
+ * leaves the page the paper selected for the printer (portrait, no margins, so no browser header or
+ * footer at the far end of the roll), and a printed document that is the ticket alone, at the top,
+ * inside the paper's printable width, with the rest of the app out of the layout.
+ *
+ * An earlier version declared a page the ticket's exact length and checked that it did. On a real
+ * printer Chrome ignored the length, centred the ticket on the printer's paper and printed its footer
+ * at the far end of a three-metre roll — so the rule now checked is the one that survives that.
  *
  * The paper can be any width — 58mm, 80mm, or whatever is typed — chosen in the print dialog and
  * remembered on the device, separately for receipts and kitchen tickets.
@@ -34,7 +38,7 @@ async function interceptPrint(page: Page) {
 async function whatPrints(page: Page) {
   await page.emulateMedia({ media: "print" });
   const printed = await page.evaluate(() => {
-    const pageRule = document.getElementById("print-page-size")?.textContent ?? null;
+    const pageRule = document.getElementById("print-page-size")?.textContent?.split("\n")[0] ?? null;
     const root = document.getElementById("print-root");
     const sheet = root?.querySelector<HTMLElement>(".print-sheet") ?? null;
     const ticket = sheet?.querySelector<HTMLElement>(".print-area") ?? null;
@@ -44,6 +48,7 @@ async function whatPrints(page: Page) {
       rootText: root?.innerText ?? null,
       // How wide the ticket prints, and whether anything in it runs past that.
       sheetWidthPx: sheet ? sheet.getBoundingClientRect().width : null,
+      sheetTopPx: sheet ? sheet.getBoundingClientRect().top + window.scrollY : null,
       overflows:
         ticket && sheet ? ticket.scrollWidth > ticket.clientWidth + 1 || sheet.scrollWidth > sheet.clientWidth + 1 : null,
       // The printed content's height. (The document itself is never shorter than the test window
@@ -57,23 +62,22 @@ async function whatPrints(page: Page) {
 }
 
 function expectOneTicketSizedPage(printed: Awaited<ReturnType<typeof whatPrints>>, paperMm = 80) {
-  const size = printed.pageRule?.match(/@page \{ size: (\d+)mm (\d+)mm; margin: 0; \}/);
-  expect(size, "the page size is declared").toBeTruthy();
-  expect(Number(size![1]), "as the paper's width").toBe(paperMm);
-  const heightMm = Number(size![2]);
-  // Longer than wide: a wider-than-long page is landscape, and the printer turns the ticket sideways.
-  expect(heightMm, "a portrait page, so the ticket prints the right way up").toBeGreaterThan(paperMm);
-  expect(heightMm, "a ticket's length, not metres of roll").toBeLessThan(600);
-  expect(heightMm).toBeGreaterThan(20);
+  // No declared size: Chrome prints on the paper selected for the printer whatever the page says,
+  // and a declared size is centred on that paper with the browser's header and footer around it —
+  // the footer three metres down a roll printer's default paper, which the printer feeds to reach.
+  // No margins, so there is nowhere for that header and footer; portrait, so never sideways.
+  expect(printed.pageRule, "the paper is the page: portrait, no margins, no declared size").toBe(
+    "@page { size: portrait; margin: 0; }"
+  );
   expect(printed.everythingElseGone, "nothing but the ticket is laid out").toBe(true);
   expect(printed.printedHeightPx, "the ticket is laid out for print").toBeGreaterThan(0);
-  expect(printed.printedHeightPx! * PX_TO_MM, "and fits on that one page").toBeLessThanOrEqual(heightMm);
+  expect(printed.sheetTopPx, "at the very top of the paper").toBe(0);
   // Inside the paper, clear of the edges a roll printer can't reach, and nothing running past it.
   const printedWidthMm = printed.sheetWidthPx! * PX_TO_MM;
   expect(printedWidthMm, "the ticket fits the paper's printable width").toBeLessThanOrEqual(paperMm - 9.9);
   expect(printedWidthMm, "and uses it").toBeGreaterThan(Math.min(paperMm - 10, 104) - 0.5);
   expect(printed.overflows, "nothing in the ticket runs off the paper").toBe(false);
-  return heightMm;
+  return printed.printedHeightPx! * PX_TO_MM;
 }
 
 async function queuedOrder(page: Page) {
@@ -205,7 +209,7 @@ test.describe("Printing a ticket", () => {
     await width.fill("112");
     await dialog.getByRole("button", { name: "Print bill" }).click();
     const wide = expectOneTicketSizedPage(await whatPrints(page), 112);
-    expect(wide, "no more paper than on an 80mm roll").toBeLessThanOrEqual(at80);
+    expect(wide, "no more paper than on an 80mm roll (to within a line's rounding)").toBeLessThanOrEqual(at80 + 1);
 
     // Something no printer takes is refused, and printing stays on the last good width.
     await width.fill("7");

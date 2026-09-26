@@ -57,32 +57,35 @@ export function TicketPreview({
 }
 
 /**
- * What to set on the till, once, when the printer feeds blank paper after the ticket.
+ * What to set on the till, once, so the printer stops after the ticket.
  *
- * The page cannot fix this itself: Chrome and Edge print on the paper size selected for the
- * printer, whatever the page declares, and a receipt printer's usual default is a roll "page"
- * about three metres long. So the fix is where the paper size lives — the browser's print window
- * (remembered per printer) and the printer's own preferences (the option that trims the blank
- * paper after the last line). Here, beside the Print button, because that is where someone is
- * standing when the paper starts pouring out.
+ * The page can't do all of it: Chrome and Edge print on the paper size selected for the printer,
+ * and a receipt printer's usual default is a roll "page" about three metres long. The page does its
+ * part — no margins, so no browser header and footer to print at the far end of that roll, and the
+ * ticket at the top — and the rest is where the paper size lives: the browser's print window
+ * (remembered per printer) and the printer's own preferences. Here, beside the Print button,
+ * because that is where someone is standing when the paper starts pouring out.
  */
 function PrinterSetupHelp() {
   return (
     <details className="rounded-lg border px-3 py-2 text-sm">
       <summary className="cursor-pointer font-medium">Printer keeps feeding blank paper?</summary>
-      <p className="mt-2 text-muted-foreground">Set up each till once:</p>
+      <p className="mt-2 text-muted-foreground">Set up each till once, in the print window&apos;s More settings:</p>
       <ol className="mt-1 list-decimal space-y-1.5 pl-5 text-muted-foreground">
         <li>
-          In the print window, open <strong className="text-foreground">More settings</strong>. Set{" "}
-          <strong className="text-foreground">Paper size</strong> to your roll&apos;s size with the shortest length
-          listed — for example <strong className="text-foreground">80 x 297 mm</strong>, not 80 x 3276 mm — and{" "}
-          <strong className="text-foreground">Margins</strong> to None. The browser remembers this for the printer.
+          <strong className="text-foreground">Margins</strong>: None. Untick{" "}
+          <strong className="text-foreground">Headers and footers</strong> — they print the date and web address at
+          the far end of the paper, and the printer feeds all the way there. Scale: Default.
         </li>
         <li>
-          To stop right after the ticket: in Windows, open Settings → Printers &amp; scanners → your receipt printer
-          → <strong className="text-foreground">Printing preferences</strong>, and turn on the option called something
-          like <strong className="text-foreground">Paper saving</strong>,{" "}
-          <strong className="text-foreground">Paper reduction (bottom margin)</strong> or{" "}
+          <strong className="text-foreground">Paper size</strong>: your roll&apos;s width. Try the longest length
+          (e.g. 80 x 3276 mm) first — many printers stop right after the ticket. If yours keeps feeding, pick the
+          shortest length listed instead (e.g. 80 x 210 mm). The browser remembers this for the printer.
+        </li>
+        <li>
+          Still feeding? In Windows: Settings → Printers &amp; scanners → your receipt printer →{" "}
+          <strong className="text-foreground">Printing preferences</strong>, and turn on the option called something
+          like <strong className="text-foreground">Paper saving</strong> or{" "}
           <strong className="text-foreground">Blank skip</strong>.
         </li>
         <li>Check that Paper, above, matches the roll: 58 mm or 80 mm.</li>

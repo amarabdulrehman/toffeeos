@@ -294,13 +294,31 @@ Every ticket — receipt, bill, kitchen ticket, closing summary, no-sale slip �
 browser and the operating system's printer driver. That means a print dialog each time rather than
 one-tap silent printing.
 
-**Fixed 26 September 2026: the printer kept feeding paper after every ticket.** The page never
-declared a paper size, so a roll printer's driver used its default "page" — often 80mm by more than
-three metres — and the rest of the app, only made invisible for printing, still filled the printed
-document. Now `src/lib/print-ticket.ts` prints the ticket alone, on a page declared as exactly the
-paper's width by the ticket's length plus a little to clear the cutter, and the browser's own Print
-goes through the same path. `e2e/printing.spec.ts` checks what the printer is given, in Chrome and
-in Safari's engine.
+**The printer kept feeding paper after every ticket — fixed 27 September 2026, second attempt.**
+The first fix (26 September) declared a page exactly the ticket's size (`@page { size: 80mm Hmm }`)
+and its tests checked that the rule was declared. On the owner's real printer (a Black Copper 80,
+from Chrome) it made no difference, and the owner's photo of the print window showed why: Chrome
+prints on the paper selected for the printer whatever the page declares. It centred the declared
+page on that paper and printed its own header and footer (date, title, web address, page number) on
+the paper's edges — so on a receipt printer's usual paper, a roll "page" about 3.3 metres long, the
+footer sat 3.3 metres down and the printer fed blank paper all the way there. A short kitchen ticket
+also declared a page wider than long, which Chrome sends as landscape: it printed sideways.
+
+Now `src/lib/print-ticket.ts` declares `@page { size: portrait; margin: 0; }`: the page is the
+printer's paper, the ticket at its top, no margins for a header or footer, never landscape. It still
+prints the ticket alone (everything else display: none) at the device's paper width. A headless
+Chrome print onto 80 x 210mm paper puts the ticket's text from 1mm down. Headless printing does not
+reproduce the print window's centring of a declared size, so the before/after difference rests on
+the owner's photo, not a test. `e2e/printing.spec.ts` checks the page rule and the printed document,
+in Chrome and in Safari's engine.
+
+What the page cannot choose is the paper length. Per till, once, in the print window's More
+settings: Margins None, Headers and footers unticked, Paper size the roll's width — the longest
+length first (many drivers stop right after the content now there is no footer at the far end), the
+shortest (e.g. 80 x 210mm) if it keeps feeding. Failing that, the driver's blank-trimming option in
+Windows Printing preferences. The steps are in every print dialog ("Printer keeps feeding blank
+paper?"). The one fix that removes the driver from the picture is printing raw ESC/POS (QZ Tray, or
+Web Serial where the printer has a COM port) — a bigger job, not started.
 
 **Any paper width (26 September 2026).** Every print dialog has a Paper row: 58 mm, 80 mm, or Other
 (any whole number of millimetres, 40–210). Remembered per device in localStorage, separately for
@@ -309,21 +327,6 @@ ticket: 5mm unprinted each side, type scaled down on narrow rolls to about a 58m
 (32 characters a line) and no further — below that lines wrap — and wide rolls keep the usual type
 with more on each line, the ticket capped at 104mm wide. The dialog's preview wraps where the paper
 will. Default 80mm, so nothing changes for a device until someone picks another width.
-
-**Still feeding on a real printer (reported 27 September 2026), and a kitchen slip printed sideways.**
-Sideways was ours: a short kitchen ticket made a page wider than long (80 x 49mm), which Chrome
-sends as landscape. Every page is now at least 10mm longer than wide.
-
-The feeding is not something the page can stop. Chrome and Edge lay the page out at the declared
-size but print on the paper size selected for the printer, and a receipt printer's usual default is
-a roll "page" about 3.3 metres long (e.g. "80 x 3276 mm"), fed to the end unless the driver trims
-blank paper. The fix is per till, once: in the print window, More settings → Paper size → the
-roll's shortest length (e.g. 80 x 297 mm), Margins None (remembered per printer); and in Windows,
-the printer's Printing preferences → the blank-trimming option (named Paper saving, Paper
-reduction (bottom margin), Blank skip…, depending on the driver). The steps are in every print
-dialog ("Printer keeps feeding blank paper?"). The one fix that removes the driver from the picture
-entirely is printing raw ESC/POS (QZ Tray, or Web Serial where the printer has a COM port) — a
-bigger job, not started.
 
 ---
 
