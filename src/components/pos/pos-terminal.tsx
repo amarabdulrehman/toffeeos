@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ClipboardList, Lock, ShoppingBag } from "lucide-react";
+import { Bell, BellOff, ChevronDown, ClipboardList, Lock, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ProductGrid } from "./product-grid";
@@ -18,6 +18,8 @@ import { OrderQueuePanel } from "./order-queue-panel";
 import { CancelOrderDialog } from "./cancel-order-dialog";
 import { OrderManageDialog, canManageAnything, type ManagePermissions } from "./order-manage-dialog";
 import { NoSaleDialog } from "./no-sale-dialog";
+import { useOrderAlerts } from "./use-order-alerts";
+import { setSoundOn, useSoundOn } from "@/lib/chime";
 import { TablesDialog, ResumedOrderPanel, AddItemsPanel } from "./tables-dialog";
 import { OfflineBanner } from "./offline-banner";
 import { useSync } from "@/lib/offline/use-sync";
@@ -50,6 +52,7 @@ function isNetworkFailure(err: unknown): boolean {
 export function PosTerminal({
   tenantId,
   branchId,
+  userId,
   tenantName,
   branchName,
   logoUrl,
@@ -70,6 +73,8 @@ export function PosTerminal({
 }: {
   tenantId: string;
   branchId: string;
+  /** Who is at this till: their own orders don't pop up here, and their "ready" alerts do. */
+  userId: string;
   tenantName: string;
   branchName: string;
   logoUrl: string | null;
@@ -179,6 +184,24 @@ export function PosTerminal({
       await loadQueue();
     })();
   }, [showQueue, loadQueue]);
+
+  // New orders from other devices, rounds added to tables, and "ready" for orders placed here —
+  // see use-order-alerts.ts. An open Order Queue reloads as they arrive.
+  const soundOn = useSoundOn();
+  const { awaitingPayment } = useOrderAlerts({
+    tenantId,
+    branchId,
+    userId,
+    canTakePayment,
+    soundOn,
+    onOpenQueue: () => {
+      setShowQueue(true);
+      setPaneOpen(true);
+    },
+    onActivity: () => {
+      if (showQueue) void loadQueue();
+    },
+  });
 
   // Refresh the queue view right after every sync pass, so a just-synced local order picks up its
   // real server status instead of lingering as "still local."
@@ -645,8 +668,20 @@ export function PosTerminal({
               loading={menuLoading}
               onSelectItem={handleSelectItem}
               headerAction={
-                (canTakePayment || canNoSale) && (
+                (
                   <div className="flex gap-2">
+                    {/* The alert chime, on or off for this device. */}
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="size-11 rounded-full border-none bg-card shadow-sm"
+                      aria-label={soundOn ? "Turn alert sound off" : "Turn alert sound on"}
+                      aria-pressed={soundOn}
+                      title={soundOn ? "Alert sound on" : "Alert sound off"}
+                      onClick={() => setSoundOn(!soundOn)}
+                    >
+                      {soundOn ? <Bell className="size-4" /> : <BellOff className="size-4 text-muted-foreground" />}
+                    </Button>
                     {canNoSale && (
                       <Button
                         variant="outline"
@@ -669,6 +704,17 @@ export function PosTerminal({
                       >
                         <ClipboardList className="size-4" />
                         <span className="max-sm:sr-only">Order Queue</span>
+                        {/* Orders still to be paid, so one placed on a waiter's phone can't be missed
+                            even after its pop-up has gone. */}
+                        {!!awaitingPayment && (
+                          <span
+                            className="ml-0.5 min-w-5 rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground tabular-nums"
+                            data-testid="queue-count"
+                            aria-label={`${awaitingPayment} waiting to be paid`}
+                          >
+                            {awaitingPayment}
+                          </span>
+                        )}
                       </Button>
                     )}
                   </div>

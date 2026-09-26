@@ -55,6 +55,8 @@ export default defineConfig({
         "pos-small-screens.spec.ts",
         // Printing on an iPad: the :has() print rule and the page size, in Safari's engine.
         "printing.spec.ts",
+        // New-order and ready alerts, on the device most tills are.
+        "order-alerts.spec.ts",
       ],
     },
   ],

@@ -57,6 +57,7 @@ export default async function PosPage() {
     <PosTerminal
       tenantId={user.tenantId}
       branchId={user.branchId}
+      userId={user.id}
       tenantName={user.tenantName}
       branchName={user.branchName}
       logoUrl={tenant?.logoUrl ?? null}

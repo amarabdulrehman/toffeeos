@@ -370,6 +370,12 @@ demo tenant has no second branch), against a clean production build:
   remaining items would; the tests compare against the live price, and each was broken on purpose
   to prove it. Item voids show on the kitchen screen and in the voids report; the kitchen can take
   back a mis-tapped "Ready"; a no-sale drawer opening is recorded against the day's drawer.
+- **The till hears about orders placed elsewhere** — a waiter's phone, an online or QR order pops up
+  on every till that takes payment ("New order #123 · Table 4 · by Ali · Rs 1,250", with Open), with
+  a chime each device can mute and a count of orders still to be paid on the Order Queue button.
+  Whoever placed an order is told when the kitchen marks it ready; a customer's online or QR order
+  is announced as ready at the counter. The live channel carries only an order's id — details are
+  fetched through the till's own session — and a 15-second check covers the channel being down.
 - **Buying stock** — suppliers, and purchase orders that go draft → approved → received, each step
   its own permission; what arrived (not what was ordered) is counted into stock and the P&L's stock
   purchases. A transfer asked for by someone who can't approve waits until someone can. A stock

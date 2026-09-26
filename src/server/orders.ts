@@ -519,6 +519,10 @@ export async function createOrder(
           status: "OCCUPIED",
         });
       }
+      // So every other till in the branch hears about it — a waiter's phone order, an online or QR
+      // order. Only the id: the channel is open to anyone who knows its name, so what the order is
+      // and who placed it are fetched by the till through its own signed-in session.
+      await publish(tenantId, branchId, "orders", "order_created", { orderId: result.order.id });
       await notifyOrderThankYou(tenantId, branchId, result.order.id, "ON_ORDER");
       return result.order;
     } catch (err) {
@@ -638,6 +642,8 @@ export async function addLinesToOrder(
     if (order.status === "SENT_TO_KITCHEN" || order.status === "READY") {
       await publish(tenantId, branchId, "kds", "order_sent_to_kitchen", { orderId });
     }
+    // Another round for a table already eating is on the bill too; the counter should know.
+    await publish(tenantId, branchId, "orders", "items_added", { orderId });
     return updated;
   });
 }
