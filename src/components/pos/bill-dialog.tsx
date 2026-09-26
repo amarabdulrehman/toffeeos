@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import type { OrderBill } from "@/lib/bill";
 import { Receipt } from "./receipt";
 import type { OrderDto } from "./types";
+import { printTicket } from "@/lib/print-ticket";
 
 type Loaded = { orderId: string; order: OrderDto; bill: OrderBill } | { orderId: string; error: string };
 
@@ -97,7 +98,7 @@ export function BillDialog({
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Button disabled={!current || "error" in current} onClick={() => window.print()}>
+          <Button disabled={!current || "error" in current} onClick={() => printTicket()}>
             <Printer className="size-4" />
             Print bill
           </Button>

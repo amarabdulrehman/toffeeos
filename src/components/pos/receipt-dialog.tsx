@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Receipt } from "./receipt";
 import type { OrderDto } from "./types";
+import { printTicket } from "@/lib/print-ticket";
 
 export function ReceiptDialog({
   order,
@@ -40,7 +41,7 @@ export function ReceiptDialog({
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Button onClick={() => window.print()}>
+          <Button onClick={() => printTicket()}>
             <Printer className="size-4" />
             Print
           </Button>

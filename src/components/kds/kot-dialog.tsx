@@ -4,6 +4,7 @@ import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { KitchenTicket } from "./kitchen-ticket";
+import { printTicket } from "@/lib/print-ticket";
 
 interface TicketOrder {
   orderNumber: number;
@@ -45,7 +46,7 @@ export function KotDialog({
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Button onClick={() => window.print()}>
+          <Button onClick={() => printTicket()}>
             <Printer className="size-4" />
             Print
           </Button>

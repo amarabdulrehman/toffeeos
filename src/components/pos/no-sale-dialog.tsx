@@ -6,6 +6,7 @@ import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { printTicket } from "@/lib/print-ticket";
 
 /**
  * Opening the cash drawer with no sale — for change, or to clear a jam.
@@ -89,7 +90,7 @@ export function NoSaleDialog({ open, branchName, onClose }: { open: boolean; bra
               Record
             </Button>
           ) : (
-            <Button onClick={() => window.print()}>
+            <Button onClick={() => printTicket()}>
               <Printer className="size-4" />
               Print slip
             </Button>

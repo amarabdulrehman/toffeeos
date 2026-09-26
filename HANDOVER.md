@@ -289,11 +289,22 @@ and recreating them.
 
 ### Receipt printing goes through the browser
 
-Both the receipt and the kitchen ticket call `window.print()`. That works with a thermal printer
-through the operating system's driver, but it means a print dialog every time rather than one-tap
-silent printing, and it has never been tested against real thermal hardware.
+Every ticket — receipt, bill, kitchen ticket, closing summary, no-sale slip — prints through the
+browser and the operating system's printer driver. That means a print dialog each time rather than
+one-tap silent printing.
 
-Worth an hour with an actual printer before you promise it.
+**Fixed 26 September 2026: the printer kept feeding paper after every ticket.** The page never
+declared a paper size, so a roll printer's driver used its default "page" — often 80mm by more than
+three metres — and the rest of the app, only made invisible for printing, still filled the printed
+document. Now `src/lib/print-ticket.ts` prints the ticket alone, on a page declared as exactly 80mm
+by the ticket's length plus a little to clear the cutter, and the browser's own Print goes through
+the same path. `e2e/printing.spec.ts` checks what the printer is given, in Chrome and in Safari's
+engine.
+
+Two things only a real printer can settle. It assumes 80mm paper; a 58mm printer would need the
+width made a branch setting. And if a driver still feeds extra after the fix, its paper size should
+be set to the roll's width with "cut after each page" (in the driver's printing preferences), not a
+fixed-length page.
 
 ---
 

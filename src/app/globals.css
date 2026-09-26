@@ -196,25 +196,35 @@
   }
 }
 
-/* Print-only isolation, shared by every printable ticket/receipt in the app (POS receipt —
-   src/components/pos/receipt.tsx — and the KDS kitchen ticket — src/components/kds/kitchen-ticket.tsx).
-   window.print() prints the whole page by default, and both of these render inside a Dialog/portal
-   (not nested under the rest of the app's DOM in any way scoped visibility would reach), so this
-   hides literally everything else and un-hides only the one currently-mounted `.print-area`,
-   regardless of where it sits in the tree. Only one such element is ever mounted at a time. */
+/* Printing a ticket (receipt, bill, kitchen ticket, closing summary, no-sale slip) — see
+   src/lib/print-ticket.ts, which copies the ticket into #print-root and sets the page to exactly its
+   size. While printing, everything else is taken out of the layout with display: none. The rule this
+   replaced used visibility: hidden, which left the whole app's height in the printed document — and
+   with no page size declared, a roll printer kept feeding paper long after the ticket ended.
+   Scoped with :has() so an ordinary print of a page with no ticket prepared prints normally. */
+#print-root {
+  display: none;
+}
 @media print {
-  body * {
-    visibility: hidden;
+  body:has(> #print-root) {
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    background: #fff !important;
   }
-  .print-area,
-  .print-area * {
-    visibility: visible;
+  html:has(> body > #print-root) {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
   }
-  .print-area {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
+  body:has(> #print-root) > *:not(#print-root) {
+    display: none !important;
+  }
+  #print-root {
+    display: block;
+  }
+  #print-root > .print-area {
+    margin: 0 auto;
   }
 }
 /*

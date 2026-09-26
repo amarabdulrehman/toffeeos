@@ -53,6 +53,8 @@ export default defineConfig({
         // Sets its own phone and portrait-tablet sizes, so here it runs as iPhone and portrait-iPad
         // Safari rather than at this project's landscape size.
         "pos-small-screens.spec.ts",
+        // Printing on an iPad: the :has() print rule and the page size, in Safari's engine.
+        "printing.spec.ts",
       ],
     },
   ],

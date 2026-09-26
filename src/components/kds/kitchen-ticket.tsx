@@ -19,8 +19,8 @@ interface TicketOrder {
 
 /** Pure, print-focused kitchen ticket — narrow (thermal-paper proportions), no prices (the kitchen
  * doesn't need money info, unlike the customer receipt this mirrors), just what to make and for
- * whom. Rendered inside KotDialog, which is what actually makes only this element show up when the
- * browser's print dialog fires — see the shared .print-area rule in globals.css. */
+ * whom. The `print-area` class is what printTicket (src/lib/print-ticket.ts) looks for: it prints
+ * this element alone, on a page exactly its length. */
 export function KitchenTicket({ order, branchName }: { order: TicketOrder; branchName: string }) {
   return (
     <div id="printable-kot" className="print-area mx-auto w-[300px] font-mono text-[15px] leading-snug text-black">

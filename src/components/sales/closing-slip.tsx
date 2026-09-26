@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatPkr } from "@/lib/money";
 import { METHOD_LABEL, ORDER_TYPE_LABEL, shortDay, type DayReport, type PeriodReport, type SalesTotals } from "@/lib/daily-sales";
+import { printTicket } from "@/lib/print-ticket";
 
 export type ClosingReport =
   | { kind: "day"; data: DayReport; title: string }
@@ -42,7 +43,7 @@ export function ClosingDialog({
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Button onClick={() => window.print()}>
+          <Button onClick={() => printTicket()}>
             <Printer className="size-4" />
             Print
           </Button>

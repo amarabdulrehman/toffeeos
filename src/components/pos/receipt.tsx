@@ -13,9 +13,8 @@ const METHOD_LABEL: Record<string, string> = {
 
 /** Pure, print-focused layout — deliberately narrow (thermal-receipt-paper proportions) and
  * plain, not styled to match the rest of the app, since this is the one piece of UI meant to be
- * read on paper, not a screen. Rendered inside ReceiptDialog, which is what actually makes only
- * this element show up when the browser's print dialog fires — see the #printable-receipt rule
- * in globals.css. */
+ * read on paper, not a screen. The `print-area` class is what printTicket (src/lib/print-ticket.ts)
+ * looks for: it prints this element alone, on a page exactly its length. */
 export function Receipt({
   order,
   tenantName,
