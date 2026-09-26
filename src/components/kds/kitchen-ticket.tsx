@@ -20,10 +20,11 @@ interface TicketOrder {
 /** Pure, print-focused kitchen ticket — narrow (thermal-paper proportions), no prices (the kitchen
  * doesn't need money info, unlike the customer receipt this mirrors), just what to make and for
  * whom. The `print-area` class is what printTicket (src/lib/print-ticket.ts) looks for: it prints
- * this element alone, on a page exactly its length. */
+ * this element alone, on a page exactly its length. `data-paper="kitchen"` sends it to the kitchen
+ * printer's paper width rather than the receipt printer's, which is often a different roll. */
 export function KitchenTicket({ order, branchName }: { order: TicketOrder; branchName: string }) {
   return (
-    <div id="printable-kot" className="print-area mx-auto w-[300px] font-mono text-[15px] leading-snug text-black">
+    <div id="printable-kot" data-paper="kitchen" className="print-area mx-auto w-[300px] font-mono text-[15px] leading-snug text-black">
       <div className="text-center">
         <div className="text-lg font-bold">KITCHEN TICKET</div>
         <div>{branchName}</div>

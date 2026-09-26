@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { formatPkr } from "@/lib/money";
 import { METHOD_LABEL, ORDER_TYPE_LABEL, shortDay, type DayReport, type PeriodReport, type SalesTotals } from "@/lib/daily-sales";
 import { printTicket } from "@/lib/print-ticket";
+import { TicketPreview } from "@/components/print/ticket-preview";
 
 export type ClosingReport =
   | { kind: "day"; data: DayReport; title: string }
@@ -14,8 +15,8 @@ export type ClosingReport =
 
 /**
  * The end-of-day (or week, or month) summary on paper — what the owner files, or checks the drawer
- * against. Laid out for an 80mm receipt printer like the bill and the kitchen ticket, and printed
- * the same way: the shared .print-area rule in globals.css hides everything else on the page.
+ * against. Printed like the bill and the kitchen ticket, by printTicket (src/lib/print-ticket.ts),
+ * on the receipt printer's paper width.
  */
 export function ClosingDialog({
   open,
@@ -36,9 +37,9 @@ export function ClosingDialog({
         <DialogHeader>
           <DialogTitle className="font-heading">{report.kind === "day" ? "Day summary" : "Closing summary"}</DialogTitle>
         </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto rounded-lg border bg-white p-4">
+        <TicketPreview kind="receipt">
           {open && <ClosingSlip tenantName={tenantName} scopeLabel={scopeLabel} report={report} />}
-        </div>
+        </TicketPreview>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Close

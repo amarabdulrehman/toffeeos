@@ -9,6 +9,7 @@ import type { OrderBill } from "@/lib/bill";
 import { Receipt } from "./receipt";
 import type { OrderDto } from "./types";
 import { printTicket } from "@/lib/print-ticket";
+import { TicketPreview } from "@/components/print/ticket-preview";
 
 type Loaded = { orderId: string; order: OrderDto; bill: OrderBill } | { orderId: string; error: string };
 
@@ -73,7 +74,7 @@ export function BillDialog({
             Bill{current && "order" in current ? ` — Order #${current.order.orderNumber}` : ""}
           </DialogTitle>
         </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto rounded-lg border bg-white p-4">
+        <TicketPreview kind="receipt">
           {!current && (
             <div className="space-y-2" aria-label="Preparing the bill">
               <Skeleton className="h-4 w-2/3" />
@@ -93,7 +94,7 @@ export function BillDialog({
               receiptHeader={receiptHeader}
             />
           )}
-        </div>
+        </TicketPreview>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Close

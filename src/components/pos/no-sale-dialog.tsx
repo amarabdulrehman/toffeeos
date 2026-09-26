@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { printTicket } from "@/lib/print-ticket";
+import { TicketPreview } from "@/components/print/ticket-preview";
 
 /**
  * Opening the cash drawer with no sale — for change, or to clear a jam.
@@ -70,7 +71,7 @@ export function NoSaleDialog({ open, branchName, onClose }: { open: boolean; bra
         ) : (
           <div className="space-y-3">
             <p className="text-sm">Recorded. Print the slip to open the drawer, or open it with its key.</p>
-            <div className="rounded-lg border bg-white p-4">
+            <TicketPreview kind="receipt">
               <div className="print-area mx-auto w-[300px] font-mono text-[13px] leading-snug text-black">
                 <div className="text-center text-base font-bold tracking-[0.3em]">NO SALE</div>
                 <div className="text-center">{branchName}</div>
@@ -78,7 +79,7 @@ export function NoSaleDialog({ open, branchName, onClose }: { open: boolean; bra
                 <div>{new Date(recorded.at).toLocaleString()}</div>
                 <div>Reason: {recorded.reason}</div>
               </div>
-            </div>
+            </TicketPreview>
           </div>
         )}
         <DialogFooter>

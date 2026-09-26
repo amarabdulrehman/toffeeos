@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { KitchenTicket } from "./kitchen-ticket";
 import { printTicket } from "@/lib/print-ticket";
+import { TicketPreview } from "@/components/print/ticket-preview";
 
 interface TicketOrder {
   orderNumber: number;
@@ -38,9 +39,9 @@ export function KotDialog({
           <DialogTitle className="font-heading">Kitchen ticket — Order #{order?.orderNumber}</DialogTitle>
         </DialogHeader>
         {order && (
-          <div className="max-h-[60vh] overflow-y-auto rounded-lg border bg-white p-4">
+          <TicketPreview kind="kitchen">
             <KitchenTicket order={order} branchName={branchName} />
-          </div>
+          </TicketPreview>
         )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

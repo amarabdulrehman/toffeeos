@@ -297,14 +297,21 @@ one-tap silent printing.
 **Fixed 26 September 2026: the printer kept feeding paper after every ticket.** The page never
 declared a paper size, so a roll printer's driver used its default "page" — often 80mm by more than
 three metres — and the rest of the app, only made invisible for printing, still filled the printed
-document. Now `src/lib/print-ticket.ts` prints the ticket alone, on a page declared as exactly 80mm
-by the ticket's length plus a little to clear the cutter, and the browser's own Print goes through
-the same path. `e2e/printing.spec.ts` checks what the printer is given, in Chrome and in Safari's
-engine.
+document. Now `src/lib/print-ticket.ts` prints the ticket alone, on a page declared as exactly the
+paper's width by the ticket's length plus a little to clear the cutter, and the browser's own Print
+goes through the same path. `e2e/printing.spec.ts` checks what the printer is given, in Chrome and
+in Safari's engine.
 
-Two things only a real printer can settle. It assumes 80mm paper; a 58mm printer would need the
-width made a branch setting. And if a driver still feeds extra after the fix, its paper size should
-be set to the roll's width with "cut after each page" (in the driver's printing preferences), not a
+**Any paper width (26 September 2026).** Every print dialog has a Paper row: 58 mm, 80 mm, or Other
+(any whole number of millimetres, 40–210). Remembered per device in localStorage, separately for
+receipts and kitchen tickets (a till often has two printers). `src/lib/paper-width.ts` fits the
+ticket: 5mm unprinted each side, type scaled down on narrow rolls to about a 58mm printer's own
+(32 characters a line) and no further — below that lines wrap — and wide rolls keep the usual type
+with more on each line, the ticket capped at 104mm wide. The dialog's preview wraps where the paper
+will. Default 80mm, so nothing changes for a device until someone picks another width.
+
+One thing only a real printer can settle: if a driver still feeds extra, its paper size should be
+set to the roll's width with "cut after each page" (in the driver's printing preferences), not a
 fixed-length page.
 
 ---

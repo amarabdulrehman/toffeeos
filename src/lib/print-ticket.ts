@@ -13,15 +13,19 @@
  *
  * So printing now copies the one ticket on screen into a container of its own directly under
  * <body>, takes everything else out of the layout entirely while printing (display: none, in
- * globals.css), and declares a page exactly the ticket's width and length. The printer is told to
- * print one page that long, prints it, and stops.
+ * globals.css), and declares a page exactly the paper's width and the ticket's length. The printer
+ * is told to print one page that long, prints it, and stops.
+ *
+ * The width is whatever this device's paper is — 58mm, 80mm or any other, set from the print
+ * dialogs and remembered per device (see src/lib/paper-width.ts). The copy is laid out and scaled
+ * to that paper's printable width, and measured there, since a narrower ticket is a longer one.
  *
  * The same preparation runs on the browser's own Print (Ctrl+P / the share sheet), via the
  * beforeprint event, so there is no way to print a ticket that skips it.
  */
 
-/** 80mm roll: the size nearly every café receipt printer here takes. */
-const PAPER_WIDTH_MM = 80;
+import { paperLayout, readPaperWidth, type PaperKind } from "@/lib/paper-width";
+
 /** Paper left under the last line, so the cutter doesn't slice through it. */
 const TAIL_MM = 8;
 const PX_TO_MM = 25.4 / 96;
@@ -46,30 +50,54 @@ export function clearPreparedTicket(): void {
   document.getElementById(PAGE_STYLE_ID)?.remove();
 }
 
-/** The page length, in whole millimetres, for a ticket this tall on screen. */
+/** The page length, in whole millimetres, for a ticket this tall as laid out for print. */
 export function ticketPageHeightMm(heightPx: number): number {
   return Math.ceil(heightPx * PX_TO_MM) + TAIL_MM;
+}
+
+/** Which paper a ticket goes on: kitchen tickets say so (data-paper="kitchen"); the rest are receipts. */
+function kindOf(ticket: HTMLElement): PaperKind {
+  return ticket.dataset.paper === "kitchen" ? "kitchen" : "receipt";
 }
 
 function prepare(ticket: HTMLElement): void {
   window.clearTimeout(pendingCleanup);
   clearPreparedTicket();
 
-  // Measured on the original, which is laid out; the copy is display: none until printing starts.
-  // getBoundingClientRect is the element's full height even when a scrolling dialog clips it.
-  const heightMm = ticketPageHeightMm(ticket.getBoundingClientRect().height);
+  const paper = paperLayout(readPaperWidth(kindOf(ticket)));
 
+  // The copy sits on a "sheet" exactly the printable width, centred on the page; inside it the
+  // ticket is laid out at the width that wraps its lines right for this paper, then scaled to fit.
+  // zoom, not transform: zoom changes the space the ticket takes up, so the sheet — and the page
+  // measured from it — is the ticket's real printed length.
   const copy = ticket.cloneNode(true) as HTMLElement;
   copy.removeAttribute("id"); // the original keeps its id; two in the document is invalid
+  const sheet = document.createElement("div");
+  sheet.className = "print-sheet";
+  sheet.appendChild(copy);
   const root = document.createElement("div");
   root.id = ROOT_ID;
-  root.appendChild(copy);
+  root.appendChild(sheet);
   document.body.appendChild(root);
 
   const style = document.createElement("style");
   style.id = PAGE_STYLE_ID;
-  style.textContent = `@page { size: ${PAPER_WIDTH_MM}mm ${heightMm}mm; margin: 0; }`;
+  const layoutRules =
+    `#${ROOT_ID} .print-sheet { width: ${paper.printableMm}mm; margin: 0 auto; }\n` +
+    // The ticket's own fixed width is for the screen; the long word or number that won't wrap
+    // breaks rather than running off the paper.
+    `#${ROOT_ID} .print-area { width: ${paper.layoutPx}px; zoom: ${paper.zoom}; margin: 0; overflow-wrap: anywhere; }`;
+  style.textContent = layoutRules;
   document.head.appendChild(style);
+
+  // Measured on the copy, laid out as it will print: the copy is display: none on screen, so it is
+  // shown for a moment off-screen, measured, and hidden again. getBoundingClientRect is its full
+  // height whatever scrolls or clips on screen.
+  root.style.cssText = `display: block; position: absolute; left: -10000px; top: 0; width: ${paper.pageMm}mm; visibility: hidden;`;
+  const heightMm = ticketPageHeightMm(sheet.getBoundingClientRect().height);
+  root.removeAttribute("style");
+
+  style.textContent = `@page { size: ${paper.pageMm}mm ${heightMm}mm; margin: 0; }\n${layoutRules}`;
 }
 
 /** Prints the ticket on screen — only it, on a page exactly its length. */

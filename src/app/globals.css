@@ -223,9 +223,13 @@
   #print-root {
     display: block;
   }
-  #print-root > .print-area {
-    margin: 0 auto;
-  }
+  /* The sheet's width and the ticket's scale are set per print, for this device's paper. */
+}
+/* A ticket in a print dialog is laid out at the width it will print at, so its lines wrap on
+   screen where they will wrap on paper — see TicketPreview. */
+.ticket-preview .print-area {
+  width: var(--ticket-width, 300px);
+  zoom: var(--ticket-preview-zoom, 1);
 }
 /*
  * ── Landing-page entrance animation ────────────────────────────────────────

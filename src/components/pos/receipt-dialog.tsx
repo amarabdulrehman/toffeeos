@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Receipt } from "./receipt";
 import type { OrderDto } from "./types";
 import { printTicket } from "@/lib/print-ticket";
+import { TicketPreview } from "@/components/print/ticket-preview";
 
 export function ReceiptDialog({
   order,
@@ -33,9 +34,9 @@ export function ReceiptDialog({
           <DialogTitle className="font-heading">Receipt — Order #{order?.orderNumber}</DialogTitle>
         </DialogHeader>
         {order && (
-          <div className="max-h-[60vh] overflow-y-auto rounded-lg border bg-white p-4">
+          <TicketPreview kind="receipt">
             <Receipt order={order} tenantName={tenantName} branchName={branchName} logoUrl={logoUrl} showLogo={showLogo} receiptHeader={receiptHeader} />
-          </div>
+          </TicketPreview>
         )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
