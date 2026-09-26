@@ -1,5 +1,6 @@
 import "server-only";
 import { tenantDb } from "@/server/db";
+import { branchTodayStart } from "@/server/branch-settings";
 
 /**
  * What has happened to this branch's orders since a moment — for the till's alerts.
@@ -56,7 +57,7 @@ export interface OrderActivity {
     readyAt: string;
     createdById: string | null;
   }[];
-  /** Orders still to be paid — the number on the till's Order Queue button. */
+  /** Today's orders still to be paid — the number on the till's Order Queue button. */
   awaitingPayment: number;
   /** Waiter orders and rounds asked for since `since` — for the counter. */
   approvalRequests: {
@@ -88,6 +89,7 @@ export async function orderActivity(tenantId: string, branchId: string, since: D
   const now = new Date();
   const db = tenantDb(tenantId);
   const from = since ?? now;
+  const dayStart = await branchTodayStart(tenantId, branchId, now);
 
   const [created, appended, ready, awaitingPayment, requested, decided, pendingApprovals] = await Promise.all([
     db.order.findMany({
@@ -133,9 +135,11 @@ export async function orderActivity(tenantId: string, branchId: string, since: D
         table: { select: { label: true } },
       },
     }),
+    // Today's, like the Order Queue itself: an earlier day's unpaid order is listed there apart.
     db.order.count({
       where: {
         branchId,
+        createdAt: { gte: dayStart },
         OR: [
           { status: { in: ["OPEN", "SENT_TO_KITCHEN", "READY", "SERVED"] } },
           // Cash on delivery, delivered, the rider's cash not yet handed in.

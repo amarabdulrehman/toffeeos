@@ -1,5 +1,6 @@
 import "server-only";
 import { tenantDb } from "@/server/db";
+import { businessDayRange, todayFor } from "@/lib/business-day";
 
 /** Whether this branch wants the Kitchen Display System at all — some cafes run the kitchen right
  * at the counter off a printed KOT and have no use for a dedicated KDS screen. Purely a per-branch
@@ -35,4 +36,14 @@ export async function getBranchClock(tenantId: string, branchId: string): Promis
     timezone: branch?.timezone ?? DEFAULT_TIMEZONE,
     dayStartMinutes: branch?.settings?.dayStartMinutes ?? 0,
   };
+}
+
+/**
+ * The moment this branch's current business day began — midnight, or the "day starts at" time for
+ * a branch trading past midnight, in the branch's own timezone. What "today's orders" means on the
+ * till.
+ */
+export async function branchTodayStart(tenantId: string, branchId: string, now: Date = new Date()): Promise<Date> {
+  const clock = await getBranchClock(tenantId, branchId);
+  return businessDayRange(todayFor(clock.timezone, now, clock.dayStartMinutes), clock.timezone, clock.dayStartMinutes).from;
 }

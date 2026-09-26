@@ -126,6 +126,8 @@ export function PosTerminal({
   const [showQueue, setShowQueue] = useState(false);
   /** Waiter orders and rounds waiting for this counter — shown at the top of the Order Queue. */
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
+  /** An earlier business day's orders still unpaid — folded away at the foot of the Order Queue. */
+  const [earlierUnpaid, setEarlierUnpaid] = useState<OrderDto[]>([]);
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   /**
    * Whether the order panel is pulled up, on screens too narrow to show it beside the menu.
@@ -185,9 +187,12 @@ export function PosTerminal({
     }
 
     try {
-      const res = await fetch("/api/orders");
+      // Today's orders only — yesterday's paid bills don't belong in today's queue. An earlier
+      // day's unpaid order comes back apart (see GET /api/orders).
+      const res = await fetch("/api/orders?day=today");
       const data = await res.json();
       const serverOrders: OrderDto[] = data.orders ?? [];
+      setEarlierUnpaid(data.earlierUnpaid ?? []);
       await cacheOpenOrders(serverOrders);
       const serverIds = new Set(serverOrders.map((o) => o.id));
       setQueue([...serverOrders, ...localOrders.filter((o) => !serverIds.has(o.id))]);
@@ -918,6 +923,7 @@ export function PosTerminal({
             }
             awaitingApprovalIds={new Set(approvals.map((a) => a.orderId))}
             orders={queue}
+            earlierUnpaid={earlierUnpaid}
             onPay={(o) => setPayingOrder(o)}
             onVoid={handleVoidOrder}
             canVoid={canVoid}

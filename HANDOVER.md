@@ -409,6 +409,12 @@ demo tenant has no second branch), against a clean production build:
   button reads "Send for approval" and they are told the outcome. Offline sends replay through
   the same check. `src/server/order-approvals.ts`, table `OrderApproval` (RLS),
   `e2e/order-approvals.spec.ts`.
+- **The Order Queue is today's** (27 September 2026) — this business day's orders only (the branch's
+  own day, so a branch whose day starts at 4am keeps 1:30am orders with the evening's), via
+  `GET /api/orders?day=today`; the number on the button counts today's unpaid. An earlier day's
+  order still unpaid is folded away at the foot ("Earlier days · N not paid"), not dropped — a table
+  seated at 11:30pm is still eating at 12:15 in a branch whose day starts at midnight. Other screens
+  still use the unfiltered list to find an order by id. `e2e/order-queue-today.spec.ts`.
 - **A waiter at a table already eating** (27 September 2026) no longer sees Take Payment (they can't)
   as the only big button; Add items leads, and tapping a dish on the menu starts the next round —
   those taps used to go into a hidden cart that "Add items" then emptied.
