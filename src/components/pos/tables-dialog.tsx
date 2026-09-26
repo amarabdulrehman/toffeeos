@@ -185,8 +185,18 @@ export function TablesDialog({
   );
 }
 
-/** Compact summary shown after resuming an occupied table — view what's on it, add another round
- * if the kitchen isn't done yet, or take payment. */
+const STATUS_LABEL: Record<string, string> = {
+  OPEN: "Not in the kitchen yet",
+  SENT_TO_KITCHEN: "In the kitchen",
+  READY: "Ready",
+  SERVED: "Served",
+  PAID: "Paid",
+};
+
+/** Compact summary shown after resuming an occupied table — view what's on it, add another round,
+ * or take payment. Another round is the waiter's job here, so it leads: tapping a dish on the menu
+ * starts one too. Take Payment is only for someone who can take payment; a waiter used to be offered
+ * it, big and green, with no Send to Kitchen anywhere in sight. */
 export function ResumedOrderPanel({
   table,
   order,
@@ -199,7 +209,8 @@ export function ResumedOrderPanel({
   table: RestaurantTableDto;
   order: OrderDto;
   onClose: () => void;
-  onTakePayment: () => void;
+  /** Omit to hide it — gated by pos.payment.take. */
+  onTakePayment?: () => void;
   onAddItems: () => void;
   /** Omit to hide it — gated by pos.receipt.print. */
   onPrintBill?: () => void;
@@ -213,7 +224,7 @@ export function ResumedOrderPanel({
           <div className="font-heading font-semibold">
             Table {table.label} · Order #{order.orderNumber}
           </div>
-          <div className="text-sm text-muted-foreground">{order.status.replace(/_/g, " ")}</div>
+          <div className="text-sm text-muted-foreground">{STATUS_LABEL[order.status] ?? order.status.replace(/_/g, " ")}</div>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose}>
           Back
@@ -236,9 +247,10 @@ export function ResumedOrderPanel({
       </div>
       {order.status !== "PAID" && (
         <div className="space-y-2">
-          <Button variant="outline" size="lg" className="w-full" onClick={onAddItems}>
+          <Button variant={onTakePayment ? "outline" : "default"} size="lg" className="w-full" onClick={onAddItems}>
             Add items
           </Button>
+          <p className="text-center text-xs text-muted-foreground">Or tap dishes on the menu to add another round.</p>
           {onPrintBill && (
             <Button variant="outline" size="lg" className="w-full" onClick={onPrintBill}>
               Print bill
@@ -249,9 +261,11 @@ export function ResumedOrderPanel({
               Change order
             </Button>
           )}
-          <Button variant="success" size="lg" className="w-full" onClick={onTakePayment}>
-            Take Payment
-          </Button>
+          {onTakePayment && (
+            <Button variant="success" size="lg" className="w-full" onClick={onTakePayment}>
+              Take Payment
+            </Button>
+          )}
         </div>
       )}
     </div>
@@ -273,6 +287,7 @@ export function AddItemsPanel({
   onCancel,
   onSubmit,
   submitting,
+  sendLabel = "Send to Kitchen",
 }: {
   orderNumber: number;
   lines: CartLine[];
@@ -282,6 +297,8 @@ export function AddItemsPanel({
   onCancel: () => void;
   onSubmit: () => void;
   submitting: boolean;
+  /** "Send for approval" where this person's rounds wait at the counter. */
+  sendLabel?: string;
 }) {
   const subtotalPaisa = lines.reduce((a, l) => a + l.unitPricePaisa * l.quantity, 0);
 
@@ -321,7 +338,7 @@ export function AddItemsPanel({
           Cancel
         </Button>
         <Button className="w-full" size="lg" disabled={lines.length === 0 || submitting} onClick={onSubmit}>
-          {submitting ? "Sending…" : "Send to Kitchen"}
+          {submitting ? "Sending…" : sendLabel}
         </Button>
       </div>
     </div>

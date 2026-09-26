@@ -24,6 +24,14 @@ import {
   type TenderInput,
 } from "@/lib/pricing";
 
+/** Closes whatever is still waiting for approval on an order that is being voided or cancelled. */
+async function closePendingApprovals(tx: TenantTransactionClient, orderId: string, actorId: string, why: string) {
+  await tx.orderApproval.updateMany({
+    where: { orderId, status: "PENDING" },
+    data: { status: "REJECTED", decidedById: actorId, decidedAt: new Date(), rejectReason: why },
+  });
+}
+
 /** Statuses where the order is done — never occupying its table, never payable/voidable again.
  * Shared by createOrder's table-conflict check, takePayment's double-pay guard, and voidOrder's
  * double-void guard, so the definition of "closed" can't drift between the three. */
@@ -227,7 +235,7 @@ interface ResolvedLine extends CreateOrderLineInput {
 /** Resolves each line's per-unit price from current menu data (base price ± branch override ±
  * variant delta + sum of modifier deltas) and snapshots the display name, so a later menu edit
  * never changes what a historical order shows or how it was priced. */
-async function resolveLines(
+export async function resolveLines(
   tenantId: string,
   branchId: string,
   lines: CreateOrderLineInput[]
@@ -775,6 +783,12 @@ export async function takePayment(
       // happened before this transaction opened, so it can't be what decides whether this payment
       // is safe to apply.
       const fresh = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
+      // An order, or a round for it, still waiting for the counter's approval isn't finished: paying
+      // now would close it with a round nobody decided on, or bill food the kitchen never saw.
+      const waiting = await tx.orderApproval.count({ where: { orderId, status: "PENDING" } });
+      if (waiting > 0) {
+        throw new HttpError(409, "Something on this order is waiting for approval — send it to the kitchen or reject it first.");
+      }
       // DELIVERED is terminal for everything else, but a cash-on-delivery order is delivered before
       // it is paid: the rider brings the cash back afterwards. That one payment is still owed.
       const awaitingDeliveryCash = fresh.status === "DELIVERED" && fresh.paidAt === null;
@@ -914,6 +928,8 @@ export async function voidOrder(
         data: { status: "VOIDED", voidedAt: new Date(), version: { increment: 1 } },
       });
       await tx.orderEvent.create({ data: { tenantId, orderId, type: "VOIDED", actorId, payload: { reason } } });
+      // Anything still waiting for the counter's approval on this order goes with it.
+      await closePendingApprovals(tx, orderId, actorId, "The order was voided.");
       // Points spent on a bill that is no longer a sale go back to the customer.
       await giveBackRedemption(tx, tenantId, orderId, actorId);
       if (updated.tableId) {
@@ -971,6 +987,8 @@ export async function cancelSentOrder(
       data: { status: "CANCELLED", cancelledAt: new Date(), version: { increment: 1 } },
     });
     await tx.orderEvent.create({ data: { tenantId, orderId, type: "CANCELLED", actorId, payload: { reason } } });
+    // Anything still waiting for the counter's approval on this order goes with it.
+    await closePendingApprovals(tx, orderId, actorId, "The order was cancelled.");
     await giveBackRedemption(tx, tenantId, orderId, actorId);
     await tx.orderCancellation.create({ data: { tenantId, branchId, orderId, reason, cancelledById: actorId } });
     if (updated.tableId) {

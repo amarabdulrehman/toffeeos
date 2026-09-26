@@ -32,6 +32,7 @@ export default async function PosPage() {
         serviceChargeTaxable: true,
         roundingMode: true,
         maxDiscountBasisPoints: true,
+        waiterOrdersNeedApproval: true,
       },
     }),
     db.taxRule.findMany({
@@ -81,6 +82,7 @@ export default async function PosPage() {
         canRedeemPoints: user.permissions.includes("pos.payment.take"),
       }}
       canNoSale={user.permissions.includes("pos.cashDrawer.openNoSale")}
+      approvalsOn={settings?.waiterOrdersNeedApproval ?? false}
     />
   );
 }

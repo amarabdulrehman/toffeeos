@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Building2, ChefHat, Image as ImageIcon, Percent, Plus, Receipt, Trash2 } from "lucide-react";
+import { Building2, ChefHat, ClipboardCheck, Image as ImageIcon, Percent, Plus, Receipt, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -199,6 +199,7 @@ export function BranchesView({
       <OrderSettingsCard canManageServiceCharge={canManageServiceCharge} />
       <ReceiptBrandingCard />
       <KitchenDisplayCard />
+      <WaiterApprovalCard />
       <TaxRulesCard />
     </div>
   );
@@ -507,6 +508,75 @@ function KitchenDisplayCard() {
             </p>
           </div>
           <Switch checked={enabled} disabled={saving} onCheckedChange={toggle} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Whether a waiter's order waits for the counter before the kitchen starts on it — some
+ * restaurants want every order checked at the till first, most want it in the kitchen at once. Off
+ * by default. See src/server/order-approvals.ts. */
+function WaiterApprovalCard() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/branch-settings")
+      .then((r) => r.json())
+      .then((d) => setEnabled(d.settings?.waiterOrdersNeedApproval ?? false))
+      .catch(() => toast.error("Could not load the order approval setting."));
+  }, []);
+
+  async function toggle(checked: boolean) {
+    setEnabled(checked);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/branch-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ waiterOrdersNeedApproval: checked }),
+      });
+      if (!res.ok) {
+        toast.error("Could not save the order approval setting.");
+        setEnabled(!checked);
+        return;
+      }
+      toast.success(
+        checked
+          ? "Waiter orders now wait for the counter's approval. Tills pick this up when they next open the POS."
+          : "Waiter orders now go straight to the kitchen."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (enabled === null) return null;
+
+  return (
+    <Card className="mt-6 shadow-sm transition-shadow hover:shadow-md">
+      <CardHeader className="flex flex-row items-center gap-2.5">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <ClipboardCheck className="size-4" />
+        </span>
+        <div>
+          <CardTitle className="font-heading text-base">Waiter orders — this branch</CardTitle>
+          <p className="text-xs text-muted-foreground">Have the counter check every waiter order before the kitchen starts on it.</p>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between gap-4 rounded-xl border bg-muted/20 px-3.5 py-3">
+          <div>
+            <div className="text-sm font-medium" id="waiter-approval-label">
+              Waiter orders need the counter&apos;s approval
+            </div>
+            <p className="text-xs text-muted-foreground">
+              On: a waiter&apos;s order, or another round for a table, pops up on the cashier&apos;s till and only goes to the
+              kitchen when the cashier sends it. Anyone who can take payment sends straight to the kitchen as before.
+            </p>
+          </div>
+          <Switch aria-labelledby="waiter-approval-label" checked={enabled} disabled={saving} onCheckedChange={toggle} />
         </div>
       </CardContent>
     </Card>

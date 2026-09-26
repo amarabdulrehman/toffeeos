@@ -57,6 +57,8 @@ export default defineConfig({
         "printing.spec.ts",
         // New-order and ready alerts, on the device most tills are.
         "order-alerts.spec.ts",
+        // Waiter orders held for the counter, and the waiter's table panel.
+        "order-approvals.spec.ts",
       ],
     },
   ],

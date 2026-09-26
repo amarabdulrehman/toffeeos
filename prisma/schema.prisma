@@ -320,6 +320,11 @@ model BranchSettings {
   /// client running one branch that wants letterheaded receipts and another that does not is
   /// expressible — and defaults to false so no existing client's receipts change on deploy.
   showLogoOnReceipt             Boolean      @default(false)
+  /// Orders from staff who can't take payment (waiters) wait at the counter until a cashier sends
+  /// them to the kitchen or rejects them — a new order and another round alike. Off by default: most
+  /// cafés want a waiter's order in the kitchen at once. Per branch, like kdsEnabled. See
+  /// src/server/order-approvals.ts.
+  waiterOrdersNeedApproval      Boolean      @default(false)
   /// When this branch's business day starts, in minutes after midnight (0 = midnight, 240 = 4am).
   /// A café trading until 2am wants 1:30am counted as tonight — in its takings, its cash drawer and
   /// its closing summary — not as tomorrow. 0 keeps plain calendar days, so no branch changes until
@@ -1441,6 +1446,43 @@ model RecurringExpense {
 /// the cashier does it by hand or by printing the no-sale slip (many receipt printers kick the drawer
 /// on every print); what the system does is make sure every such opening is on record, with who,
 /// when and why, beside that day's drawer.
+enum OrderApprovalKind {
+  /// A waiter's new order, held OPEN until the counter sends it to the kitchen.
+  NEW_ORDER
+  /// Another round for an order already in the kitchen. Its items are only added to the order —
+  /// and the bill, and the kitchen — if it is approved.
+  MORE_ITEMS
+}
+
+enum OrderApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// An order, or another round for one, waiting for the counter to say whether it goes to the kitchen
+/// (BranchSettings.waiterOrdersNeedApproval). Plain ids, like NoSaleOpening: the order and the
+/// people are looked up by id, and a decided request stays as the record of who approved what.
+model OrderApproval {
+  id            String              @id @default(uuid())
+  tenantId      String
+  branchId      String
+  orderId       String
+  kind          OrderApprovalKind
+  /// MORE_ITEMS only: `{ input, display }` — the lines as the waiter sent them (re-priced when
+  /// approved) and their names and quantities to show the cashier.
+  lines         Json?
+  requestedById String?
+  requestedAt   DateTime            @default(now())
+  status        OrderApprovalStatus @default(PENDING)
+  decidedById   String?
+  decidedAt     DateTime?
+  rejectReason  String?
+
+  @@index([tenantId, branchId, status])
+  @@index([orderId])
+}
+
 model NoSaleOpening {
   id         String   @id @default(uuid())
   tenantId   String

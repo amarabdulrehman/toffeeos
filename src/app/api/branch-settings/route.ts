@@ -18,6 +18,8 @@ const schema = z.object({
   serviceChargeTaxable: z.boolean().optional(),
   roundingMode: z.enum(["NONE", "NEAREST_1", "NEAREST_5"]).optional(),
   kdsEnabled: z.boolean().optional(),
+  // Waiter orders wait for the counter before the kitchen — src/server/order-approvals.ts.
+  waiterOrdersNeedApproval: z.boolean().optional(),
   showLogoOnReceipt: z.boolean().optional(),
   // Empty string from a cleared textarea is normalised to null by the handler below, so "no header"
   // is one value rather than two that render identically.

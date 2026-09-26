@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { defineHandler } from "@/server/handler";
 import { addLinesToOrder, assertDiscountPermission } from "@/server/orders";
+import { ordersNeedApproval, requestMoreItemsApproval } from "@/server/order-approvals";
 
 // Same line shape POST /api/orders already uses (src/app/api/orders/route.ts) — kept in sync by
 // hand since Zod schemas aren't shared across route files in this codebase.
@@ -26,6 +27,10 @@ export const POST = defineHandler(
   { permission: "pos.order.editItems", input: addLinesSchema },
   async ({ session, params, input }) => {
     assertDiscountPermission(session, undefined, input.lines);
+    // Held for the counter in a branch that asks for it: nothing is added until it is approved.
+    if (await ordersNeedApproval(session.tenantId, session.branchId, session.permissions)) {
+      return requestMoreItemsApproval(session.tenantId, session.branchId, params.orderId, input.lines, session.id);
+    }
     const order = await addLinesToOrder(
       session.tenantId,
       session.branchId,
@@ -34,6 +39,6 @@ export const POST = defineHandler(
       session.id,
       session.permissions.includes("pos.discount.exceedMax")
     );
-    return { order };
+    return { order, awaitingApproval: false };
   }
 );

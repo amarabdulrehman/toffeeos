@@ -19,6 +19,7 @@ import { CancelOrderDialog } from "./cancel-order-dialog";
 import { OrderManageDialog, canManageAnything, type ManagePermissions } from "./order-manage-dialog";
 import { NoSaleDialog } from "./no-sale-dialog";
 import { useOrderAlerts } from "./use-order-alerts";
+import { ApprovalsSection, type PendingApproval } from "./approvals-section";
 import { setSoundOn, useSoundOn } from "@/lib/chime";
 import { TablesDialog, ResumedOrderPanel, AddItemsPanel } from "./tables-dialog";
 import { OfflineBanner } from "./offline-banner";
@@ -70,6 +71,7 @@ export function PosTerminal({
   canRefund,
   managePermissions,
   canNoSale,
+  approvalsOn,
 }: {
   tenantId: string;
   branchId: string;
@@ -94,7 +96,15 @@ export function PosTerminal({
   managePermissions: ManagePermissions;
   /** pos.cashDrawer.openNoSale. */
   canNoSale: boolean;
+  /**
+   * This branch holds waiter orders for the counter (BranchSettings.waiterOrdersNeedApproval): the
+   * orders of anyone who can't take payment wait for approval, and those who can approve them. See
+   * src/server/order-approvals.ts — the server decides; this only sets labels and alerts.
+   */
+  approvalsOn: boolean;
 }) {
+  /** This person's orders wait at the counter rather than going straight to the kitchen. */
+  const ordersNeedApproval = approvalsOn && !canTakePayment;
   const sync = useSync();
   const [categories, setCategories] = useState<MenuCategoryDto[]>([]);
   const [menuLoading, setMenuLoading] = useState(true);
@@ -114,6 +124,9 @@ export function PosTerminal({
   const [refundingOrder, setRefundingOrder] = useState<OrderDto | null>(null);
   const [sending, setSending] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
+  /** Waiter orders and rounds waiting for this counter — shown at the top of the Order Queue. */
+  const [approvals, setApprovals] = useState<PendingApproval[]>([]);
+  const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   /**
    * Whether the order panel is pulled up, on screens too narrow to show it beside the menu.
    *
@@ -164,6 +177,13 @@ export function PosTerminal({
     );
     const localOrders = localCreates.map((a) => a.localOrder);
 
+    if (canTakePayment) {
+      fetch("/api/orders/approvals")
+        .then((r) => (r.ok ? r.json() : { approvals: [] }))
+        .then((d) => setApprovals(d.approvals ?? []))
+        .catch(() => {});
+    }
+
     try {
       const res = await fetch("/api/orders");
       const data = await res.json();
@@ -176,7 +196,7 @@ export function PosTerminal({
       const cachedIds = new Set(cached.map((o) => o.id));
       setQueue([...cached, ...localOrders.filter((o) => !cachedIds.has(o.id))]);
     }
-  }, []);
+  }, [canTakePayment]);
 
   useEffect(() => {
     if (!showQueue) return;
@@ -188,11 +208,12 @@ export function PosTerminal({
   // New orders from other devices, rounds added to tables, and "ready" for orders placed here —
   // see use-order-alerts.ts. An open Order Queue reloads as they arrive.
   const soundOn = useSoundOn();
-  const { awaitingPayment } = useOrderAlerts({
+  const { awaitingPayment, pendingApprovals } = useOrderAlerts({
     tenantId,
     branchId,
     userId,
     canTakePayment,
+    approvalsOn,
     soundOn,
     onOpenQueue: () => {
       setShowQueue(true);
@@ -291,6 +312,12 @@ export function PosTerminal({
     serverTotals && serverTotals.for === localTotals ? serverTotals.totals : localTotals;
 
   function addLine(item: MenuItemDto, variantId?: string, modifierIds: string[] = []) {
+    // A table already eating is open on the right: a dish tapped now is the next round. It used to
+    // go into the hidden new-order cart instead, and pressing "Add items" then threw it away.
+    if (resumed && !addingItemsToOrder && resumed.order.status !== "PAID") {
+      setLines([]);
+      setAddingItemsToOrder(true);
+    }
     const variant = variantId ? item.variants.find((v) => v.id === variantId) : undefined;
     const chosen = item.modifierGroups.flatMap((g) => g.modifiers).filter((m) => modifierIds.includes(m.id));
     const unitPricePaisa =
@@ -428,7 +455,19 @@ export function PosTerminal({
           toast.error(data.error ?? "Could not create order.");
           return;
         }
-        await fetch(`/api/orders/${data.order.id}/send-to-kitchen`, { method: "POST" });
+        const sent = await fetch(`/api/orders/${data.order.id}/send-to-kitchen`, { method: "POST" })
+          .then((r) => r.json())
+          .catch(() => ({}));
+
+        // Held at the counter in a branch that approves waiter orders: say so, not "sent to kitchen".
+        if (sent.awaitingApproval) {
+          toast.success(`Order #${data.order.orderNumber} sent to the counter for approval.`, {
+            description: "You'll be told here when it goes to the kitchen.",
+          });
+          resetCart();
+          if (showQueue) loadQueue();
+          return;
+        }
 
         // Offered beside the confirmation rather than in a dialog over it. A modal here blocks the
         // till until someone dismisses it — on every order, during a rush — and an interrupted
@@ -508,6 +547,14 @@ export function PosTerminal({
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error ?? "Could not add items.");
+        return;
+      }
+      if (data.awaitingApproval) {
+        toast.success(`More items for order #${resumed.order.orderNumber} sent to the counter for approval.`, {
+          description: "They go on the order and to the kitchen once approved.",
+        });
+        setAddingItemsToOrder(false);
+        setLines([]);
         return;
       }
       toast.success(`Added to order #${resumed.order.orderNumber}.`);
@@ -594,6 +641,40 @@ export function PosTerminal({
     } catch {
       // Payment already succeeded — a failed refetch just means no receipt pops up automatically;
       // not worth surfacing as an error on top of a successful payment.
+    }
+  }
+
+  /** Sends a waiter's held order to the kitchen (or adds their round), or turns it away with a reason. */
+  async function decideApproval(approval: PendingApproval, decision: "approve" | "reject", reason?: string) {
+    setApprovalBusyId(approval.id);
+    try {
+      const res = await fetch(`/api/orders/approvals/${approval.id}/${decision}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(decision === "reject" ? { reason } : {}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not save that — try again.");
+      } else if (decision === "approve") {
+        const orderId = approval.orderId;
+        toast.success(
+          approval.kind === "NEW_ORDER"
+            ? `Order #${approval.orderNumber} sent to kitchen.`
+            : `More items added to order #${approval.orderNumber} and sent to kitchen.`,
+          {
+            duration: canPrintKot ? 10_000 : undefined,
+            action: canPrintKot ? { label: "Print ticket", onClick: () => void openKotFor(orderId) } : undefined,
+          }
+        );
+      } else {
+        toast.success(`Order #${approval.orderNumber}: ${approval.kind === "NEW_ORDER" ? "order" : "items"} rejected. The waiter has been told.`);
+      }
+    } catch {
+      toast.error("Could not reach the server — check the connection.");
+    } finally {
+      setApprovalBusyId(null);
+      void loadQueue();
     }
   }
 
@@ -706,6 +787,16 @@ export function PosTerminal({
                         <span className="max-sm:sr-only">Order Queue</span>
                         {/* Orders still to be paid, so one placed on a waiter's phone can't be missed
                             even after its pop-up has gone. */}
+                        {/* Waiter orders waiting for this counter: the one number here that needs doing. */}
+                        {pendingApprovals > 0 && (
+                          <span
+                            className="ml-0.5 min-w-5 rounded-full bg-warning px-1.5 text-xs font-bold text-warning-foreground tabular-nums"
+                            data-testid="approval-count"
+                            aria-label={`${pendingApprovals} waiting for approval`}
+                          >
+                            {pendingApprovals} to approve
+                          </span>
+                        )}
                         {!!awaitingPayment && (
                           <span
                             className="ml-0.5 min-w-5 rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground tabular-nums"
@@ -794,6 +885,7 @@ export function PosTerminal({
               }}
               onSubmit={handleAddItemsSubmit}
               submitting={sending}
+              sendLabel={ordersNeedApproval ? "Send for approval" : "Send to Kitchen"}
             />
           </div>
         ) : resumed ? (
@@ -805,7 +897,7 @@ export function PosTerminal({
                 setResumed(null);
                 setPaneOpen(false);
               }}
-              onTakePayment={() => setPayingOrder(resumed.order)}
+              onTakePayment={canTakePayment ? () => setPayingOrder(resumed.order) : undefined}
               onPrintBill={canPrintBill ? () => setBillOrderId(resumed.order.id) : undefined}
               onManage={canManage ? () => setManagingOrderId(resumed.order.id) : undefined}
               onAddItems={() => {
@@ -816,6 +908,15 @@ export function PosTerminal({
           </div>
         ) : showQueue ? (
           <OrderQueuePanel
+            approvals={
+              <ApprovalsSection
+                approvals={approvals}
+                busyId={approvalBusyId}
+                onApprove={(a) => void decideApproval(a, "approve")}
+                onReject={(a, reason) => void decideApproval(a, "reject", reason)}
+              />
+            }
+            awaitingApprovalIds={new Set(approvals.map((a) => a.orderId))}
             orders={queue}
             onPay={(o) => setPayingOrder(o)}
             onVoid={handleVoidOrder}
@@ -855,6 +956,7 @@ export function PosTerminal({
             totals={lines.length === 0 ? null : totals}
             canTakePayment={canTakePayment}
             onSendToKitchen={() => handleSendToKitchen()}
+            sendLabel={ordersNeedApproval ? "Send for approval" : "Send to Kitchen"}
             onOpenPayment={() => handleSendToKitchen(true)}
             sending={sending}
           />

@@ -102,6 +102,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "BranchSettings",
   "CashDrawerDay",
   "NoSaleOpening",
+  "OrderApproval",
   "Supplier",
   "PurchaseOrder",
   "PurchaseOrderLine",

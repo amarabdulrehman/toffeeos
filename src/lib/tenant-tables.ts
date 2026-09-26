@@ -35,6 +35,7 @@ export const TENANT_OWNED_TABLES = [
   "Expense",
   "CashDrawerDay",
   "NoSaleOpening",
+  "OrderApproval",
   "PurchaseOrderLine",
   "PurchaseOrder",
   "Supplier",

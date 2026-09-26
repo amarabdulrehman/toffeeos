@@ -38,6 +38,7 @@ export function CartPanel({
   totals,
   canTakePayment,
   onSendToKitchen,
+  sendLabel = "Send to Kitchen",
   onOpenPayment,
   sending,
 }: {
@@ -61,6 +62,8 @@ export function CartPanel({
   totals: PreviewTotals | null;
   canTakePayment: boolean;
   onSendToKitchen: () => void;
+  /** "Send for approval" where this person's orders wait at the counter. */
+  sendLabel?: string;
   onOpenPayment: () => void;
   sending: boolean;
 }) {
@@ -150,7 +153,7 @@ export function CartPanel({
           disabled={lines.length === 0 || sending}
           onClick={onSendToKitchen}
         >
-          {sending ? "Sending…" : "Send to Kitchen"}
+          {sending ? "Sending…" : sendLabel}
         </Button>
         {canTakePayment && (
           <Button variant="success" className="w-full" size="lg" disabled={lines.length === 0} onClick={onOpenPayment}>

@@ -84,6 +84,7 @@ const ALL_MODELS = [
   "RecurringExpense",
   "CashDrawerDay",
   "NoSaleOpening",
+  "OrderApproval",
   "Supplier",
   "PurchaseOrder",
   "PurchaseOrderLine",

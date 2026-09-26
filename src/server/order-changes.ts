@@ -338,6 +338,26 @@ export async function mergeOrders(
       },
     });
     if (source.tableId) await tx.restaurantTable.update({ where: { id: source.tableId }, data: { status: "AVAILABLE" } });
+    // Requests waiting for the counter (src/server/order-approvals.ts) follow the bill. A held round
+    // moves with it. A held new order is decided by the merge itself, which is a counter action:
+    // approved if the combined bill is in the kitchen (its food is going there now), otherwise
+    // closed, pointing at the order it joined.
+    await tx.orderApproval.updateMany({
+      where: { orderId: source.id, status: "PENDING", kind: "MORE_ITEMS" },
+      data: { orderId: target.id },
+    });
+    const decidedAt = new Date();
+    if (saved.status !== "OPEN") {
+      await tx.orderApproval.updateMany({
+        where: { orderId: { in: [source.id, target.id] }, status: "PENDING", kind: "NEW_ORDER" },
+        data: { status: "APPROVED", decidedById: actorId, decidedAt },
+      });
+    } else {
+      await tx.orderApproval.updateMany({
+        where: { orderId: source.id, status: "PENDING", kind: "NEW_ORDER" },
+        data: { status: "REJECTED", decidedById: actorId, decidedAt, rejectReason: `Merged into order #${target.orderNumber}` },
+      });
+    }
     await tx.orderEvent.create({
       data: {
         tenantId,

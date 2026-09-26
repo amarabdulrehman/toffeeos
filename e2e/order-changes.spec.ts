@@ -98,7 +98,9 @@ test.describe("Changing an order", () => {
     expect((await paid.json()).order.totalPaisa).toBe(card.totalPaisa);
 
     // The voids report says what went and why.
-    const today = new Date().toISOString().slice(0, 10);
+    // The branch's date, not UTC's: between midnight and 5am in Karachi, UTC is still on yesterday,
+    // and a report asked for "up to yesterday" doesn't have this morning's void in it.
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi" }).format(new Date());
     const report = await request.get(`/api/reports/discount-void?from=2024-01-01&to=${today}`);
     expect(report.ok(), await report.text()).toBeTruthy();
     const rows = (await report.json()).rows as { orderNumber: number; detail: string; reason: string | null }[];

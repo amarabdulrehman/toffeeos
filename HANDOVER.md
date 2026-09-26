@@ -398,6 +398,20 @@ demo tenant has no second branch), against a clean production build:
   Whoever placed an order is told when the kitchen marks it ready; a customer's online or QR order
   is announced as ready at the counter. The live channel carries only an order's id — details are
   fetched through the till's own session — and a 15-second check covers the channel being down.
+- **Waiter orders can wait for the counter** (27 September 2026) — a switch per branch on the
+  Branches page, off by default (`BranchSettings.waiterOrdersNeedApproval`). On, the orders of
+  anyone who can't take payment (`pos.payment.take`) wait: a new order stays OPEN and out of the
+  kitchen; another round isn't added to the order, the bill or the kitchen at all. The cashier's
+  till pops up "Order #123 needs your approval" with the chime and a "to approve" count, and the
+  Order Queue lists each request with Send to kitchen / Reject (a reason, which the waiter sees).
+  Rejected, a new order is voided ("Not approved: …") and its table freed. Payment is refused while
+  anything on the order waits; voiding or cancelling an order closes its requests. The waiter's
+  button reads "Send for approval" and they are told the outcome. Offline sends replay through
+  the same check. `src/server/order-approvals.ts`, table `OrderApproval` (RLS),
+  `e2e/order-approvals.spec.ts`.
+- **A waiter at a table already eating** (27 September 2026) no longer sees Take Payment (they can't)
+  as the only big button; Add items leads, and tapping a dish on the menu starts the next round —
+  those taps used to go into a hidden cart that "Add items" then emptied.
 - **Buying stock** — suppliers, and purchase orders that go draft → approved → received, each step
   its own permission; what arrived (not what was ordered) is counted into stock and the P&L's stock
   purchases. A transfer asked for by someone who can't approve waits until someone can. A stock

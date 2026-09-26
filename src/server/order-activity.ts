@@ -13,6 +13,9 @@ import { tenantDb } from "@/server/db";
  * Deliberately small: a few fields per order, and only what changed since the caller's last look,
  * so every till in the branch can ask often without dragging the full order list each time.
  *
+ * In a branch that holds waiter orders for the counter (src/server/order-approvals.ts) it also
+ * carries each new request, for the counter, and each decision, for the waiter who asked.
+ *
  * Times come from the server — `now` is returned for the caller to send back as `since` — so a till
  * whose clock is wrong still misses nothing and sees nothing twice. An order landing exactly on the
  * boundary can come back in two consecutive answers; the till drops ones it has already shown.
@@ -29,6 +32,8 @@ export interface OrderActivity {
     tableLabel: string | null;
     totalPaisa: number;
     itemCount: number;
+    /** OPEN is not in the kitchen yet — in a branch that approves waiter orders, waiting to be. */
+    status: string;
     /** Null for an online or QR order — a customer placed it. */
     createdById: string | null;
     createdByName: string | null;
@@ -53,6 +58,29 @@ export interface OrderActivity {
   }[];
   /** Orders still to be paid — the number on the till's Order Queue button. */
   awaitingPayment: number;
+  /** Waiter orders and rounds asked for since `since` — for the counter. */
+  approvalRequests: {
+    id: string;
+    kind: "NEW_ORDER" | "MORE_ITEMS";
+    orderId: string;
+    orderNumber: number;
+    tableLabel: string | null;
+    itemCount: number;
+    requestedById: string | null;
+    requestedByName: string | null;
+  }[];
+  /** Requests decided since `since` — for the waiter who asked. */
+  approvalDecisions: {
+    id: string;
+    kind: "NEW_ORDER" | "MORE_ITEMS";
+    orderNumber: number;
+    tableLabel: string | null;
+    status: "APPROVED" | "REJECTED";
+    requestedById: string | null;
+    rejectReason: string | null;
+  }[];
+  /** Requests still waiting for the counter — the number beside the Order Queue button. */
+  pendingApprovals: number;
 }
 
 /** How far back a first look reaches: nothing, so opening the till doesn't replay the morning. */
@@ -61,7 +89,7 @@ export async function orderActivity(tenantId: string, branchId: string, since: D
   const db = tenantDb(tenantId);
   const from = since ?? now;
 
-  const [created, appended, ready, awaitingPayment] = await Promise.all([
+  const [created, appended, ready, awaitingPayment, requested, decided, pendingApprovals] = await Promise.all([
     db.order.findMany({
       where: { branchId, createdAt: { gte: from }, status: { notIn: ["VOIDED", "CANCELLED"] } },
       orderBy: { createdAt: "asc" },
@@ -71,6 +99,7 @@ export async function orderActivity(tenantId: string, branchId: string, since: D
         orderNumber: true,
         type: true,
         source: true,
+        status: true,
         totalPaisa: true,
         createdById: true,
         createdBy: { select: { name: true } },
@@ -114,16 +143,41 @@ export async function orderActivity(tenantId: string, branchId: string, since: D
         ],
       },
     }),
+    db.orderApproval.findMany({
+      where: { branchId, requestedAt: { gte: from } },
+      orderBy: { requestedAt: "asc" },
+      take: 50,
+      select: { id: true, kind: true, orderId: true, lines: true, requestedById: true },
+    }),
+    db.orderApproval.findMany({
+      where: { branchId, decidedAt: { gte: from } },
+      orderBy: { decidedAt: "asc" },
+      take: 50,
+      select: { id: true, kind: true, orderId: true, status: true, requestedById: true, rejectReason: true },
+    }),
+    db.orderApproval.count({ where: { branchId, status: "PENDING" } }),
   ]);
 
   // Only the "more items for a table already eating" events: a PUNCHED event is also written when an
   // order is first created, and that one is already a new order above.
   const rounds = appended.filter((e) => (e.payload as { appended?: boolean } | null)?.appended === true);
-  const actorIds = [...new Set(rounds.map((e) => e.actorId).filter((v): v is string => !!v))];
-  const actors = actorIds.length
-    ? await db.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } })
-    : [];
+  const actorIds = [
+    ...new Set([...rounds.map((e) => e.actorId), ...requested.map((a) => a.requestedById)].filter((v): v is string => !!v)),
+  ];
+  const approvalOrderIds = [...new Set([...requested, ...decided].map((a) => a.orderId))];
+  const [actors, approvalOrders] = await Promise.all([
+    actorIds.length ? db.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }) : [],
+    approvalOrderIds.length
+      ? db.order.findMany({
+          where: { id: { in: approvalOrderIds } },
+          select: { id: true, orderNumber: true, table: { select: { label: true } }, lines: { where: { isVoided: false }, select: { quantity: true } } },
+        })
+      : [],
+  ]);
   const actorName = new Map(actors.map((a) => [a.id, a.name]));
+  const approvalOrder = new Map(approvalOrders.map((o) => [o.id, o]));
+  const roundItemCount = (lines: unknown) =>
+    ((lines as { display?: { quantity: number }[] } | null)?.display ?? []).reduce((s, l) => s + l.quantity, 0);
 
   return {
     now: now.toISOString(),
@@ -135,6 +189,7 @@ export async function orderActivity(tenantId: string, branchId: string, since: D
       tableLabel: o.table?.label ?? null,
       totalPaisa: o.totalPaisa,
       itemCount: o.lines.reduce((s, l) => s + l.quantity, 0),
+      status: o.status,
       createdById: o.createdById,
       createdByName: o.createdBy?.name ?? null,
     })),
@@ -157,5 +212,37 @@ export async function orderActivity(tenantId: string, branchId: string, since: D
       createdById: o.createdById,
     })),
     awaitingPayment,
+    approvalRequests: requested.flatMap((a) => {
+      const order = approvalOrder.get(a.orderId);
+      if (!order) return [];
+      return [
+        {
+          id: a.id,
+          kind: a.kind,
+          orderId: a.orderId,
+          orderNumber: order.orderNumber,
+          tableLabel: order.table?.label ?? null,
+          itemCount: a.kind === "MORE_ITEMS" ? roundItemCount(a.lines) : order.lines.reduce((s, l) => s + l.quantity, 0),
+          requestedById: a.requestedById,
+          requestedByName: a.requestedById ? (actorName.get(a.requestedById) ?? null) : null,
+        },
+      ];
+    }),
+    approvalDecisions: decided.flatMap((a) => {
+      const order = approvalOrder.get(a.orderId);
+      if (!order || a.status === "PENDING") return [];
+      return [
+        {
+          id: a.id,
+          kind: a.kind,
+          orderNumber: order.orderNumber,
+          tableLabel: order.table?.label ?? null,
+          status: a.status,
+          requestedById: a.requestedById,
+          rejectReason: a.rejectReason,
+        },
+      ];
+    }),
+    pendingApprovals,
   };
 }

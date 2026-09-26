@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Printer, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,8 @@ function liveCount(o: OrderDto): number {
 }
 
 export function OrderQueuePanel({
+  approvals,
+  awaitingApprovalIds,
   orders,
   onPay,
   onVoid,
@@ -34,6 +37,11 @@ export function OrderQueuePanel({
   onRefund,
   onClose,
 }: {
+  /** Waiter orders waiting for the counter, above the queue — see ApprovalsSection. */
+  approvals?: ReactNode;
+  /** Orders with something waiting for approval: not payable until it is decided (the server
+   * refuses anyway), so they say so rather than offering Payment. */
+  awaitingApprovalIds?: ReadonlySet<string>;
   orders: OrderDto[];
   onPay: (order: OrderDto) => void;
   onVoid?: (order: OrderDto) => void;
@@ -74,6 +82,7 @@ export function OrderQueuePanel({
         </button>
       </div>
       <div className="flex-1 space-y-2.5 overflow-y-auto p-4">
+        {approvals}
         {orders.length === 0 && <div className="mt-10 text-center text-sm text-muted-foreground">No open orders.</div>}
         {orders.map((o) => (
           <div key={o.id} className="rounded-xl border border-border/60 bg-background p-4 shadow-xs transition-colors hover:border-primary/30 hover:shadow-sm">
@@ -97,9 +106,15 @@ export function OrderQueuePanel({
             </div>
             {o.status !== "PAID" && o.status !== "VOIDED" && (
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button variant="success" className="flex-1" onClick={() => onPay(o)}>
-                  Payment
-                </Button>
+                {awaitingApprovalIds?.has(o.id) ? (
+                  <span className="flex flex-1 items-center justify-center rounded-md border border-warning/60 bg-warning/10 px-3 text-sm font-medium text-warning-foreground">
+                    Waiting for approval
+                  </span>
+                ) : (
+                  <Button variant="success" className="flex-1" onClick={() => onPay(o)}>
+                    Payment
+                  </Button>
+                )}
                 {/* Only once it has actually gone to the kitchen — a ticket for an order the
                     kitchen has not been told about is how the same food gets made twice. */}
                 {onPrintBill && (

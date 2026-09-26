@@ -18,6 +18,7 @@ interface Activity {
     tableLabel: string | null;
     totalPaisa: number;
     itemCount: number;
+    status: string;
     createdById: string | null;
     createdByName: string | null;
   }[];
@@ -40,6 +41,26 @@ interface Activity {
     createdById: string | null;
   }[];
   awaitingPayment: number;
+  approvalRequests: {
+    id: string;
+    kind: "NEW_ORDER" | "MORE_ITEMS";
+    orderId: string;
+    orderNumber: number;
+    tableLabel: string | null;
+    itemCount: number;
+    requestedById: string | null;
+    requestedByName: string | null;
+  }[];
+  approvalDecisions: {
+    id: string;
+    kind: "NEW_ORDER" | "MORE_ITEMS";
+    orderNumber: number;
+    tableLabel: string | null;
+    status: "APPROVED" | "REJECTED";
+    requestedById: string | null;
+    rejectReason: string | null;
+  }[];
+  pendingApprovals: number;
 }
 
 /** Checked this often even when the live channel is quiet — in case it is down, not quiet. */
@@ -70,6 +91,9 @@ function placedBy(o: { source: string; createdByName: string | null }): string {
  * - Whoever placed an order hears when the kitchen marks it ready. An online or QR order was placed
  *   by a customer, so its "ready" goes to the counter instead.
  *
+ * - In a branch that holds waiter orders for the counter, someone who takes payment hears about
+ *   each order or round waiting for them, and the waiter who asked hears the answer.
+ *
  * Each is a pop-up with the order's number, where it is and who placed it, plus the chime if this
  * device has sound on. Nothing already shown is shown twice.
  *
@@ -81,6 +105,7 @@ export function useOrderAlerts({
   branchId,
   userId,
   canTakePayment,
+  approvalsOn,
   soundOn,
   onOpenQueue,
   onActivity,
@@ -90,12 +115,15 @@ export function useOrderAlerts({
   userId: string;
   /** Takes payment, so sees new orders and the count waiting to be paid. */
   canTakePayment: boolean;
+  /** This branch holds waiter orders for the counter (BranchSettings.waiterOrdersNeedApproval). */
+  approvalsOn: boolean;
   soundOn: boolean;
   onOpenQueue: () => void;
   /** Something changed — an open Order Queue should reload. */
   onActivity: () => void;
-}): { awaitingPayment: number | null } {
+}): { awaitingPayment: number | null; pendingApprovals: number } {
   const [awaitingPayment, setAwaitingPayment] = useState<number | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
   const since = useRef<string | null>(null);
   const seen = useRef(new Set<string>());
   const busy = useRef(false);
@@ -107,6 +135,7 @@ export function useOrderAlerts({
     onOpenQueue,
     onActivity,
     canTakePayment,
+    approvalsOn,
     userId,
   });
   useEffect(() => {
@@ -115,6 +144,7 @@ export function useOrderAlerts({
       onOpenQueue,
       onActivity,
       canTakePayment,
+      approvalsOn,
       userId,
     };
   });
@@ -146,6 +176,7 @@ export function useOrderAlerts({
         const firstLook = since.current === null;
         since.current = a.now;
         setAwaitingPayment(a.awaitingPayment);
+        setPendingApprovals(a.pendingApprovals);
         // The first look only sets the starting point: opening the till doesn't replay the morning.
         if (firstLook) return;
 
@@ -163,6 +194,9 @@ export function useOrderAlerts({
           seen.current.add(key);
           changed = true;
           if (!me.canTakePayment || o.createdById === me.userId) continue;
+          // A waiter's order not yet in the kitchen, where the counter approves them: it arrives as
+          // "needs your approval" below, not twice.
+          if (me.approvalsOn && o.createdById !== null && o.status === "OPEN") continue;
           toast(`New order #${o.orderNumber}`, {
             description: [
               where(o),
@@ -215,6 +249,51 @@ export function useOrderAlerts({
           chime = true;
         }
 
+        for (const r of a.approvalRequests) {
+          const key = `approval:${r.id}`;
+          if (seen.current.has(key)) continue;
+          seen.current.add(key);
+          changed = true;
+          if (!me.canTakePayment || r.requestedById === me.userId) continue;
+          const where = r.tableLabel ? `Table ${r.tableLabel}` : `Order #${r.orderNumber}`;
+          toast.warning(
+            r.kind === "NEW_ORDER" ? `Order #${r.orderNumber} needs your approval` : `${where}: more items need your approval`,
+            {
+              description: [
+                r.kind === "NEW_ORDER" ? where : `Order #${r.orderNumber}`,
+                r.requestedByName ? `by ${r.requestedByName}` : "",
+                `${r.itemCount} item${r.itemCount === 1 ? "" : "s"}`,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+              action: { label: "Review", onClick: () => latest.current.onOpenQueue() },
+              duration: 20_000,
+            }
+          );
+          chime = true;
+        }
+
+        for (const d of a.approvalDecisions) {
+          const key = `decided:${d.id}`;
+          if (seen.current.has(key)) continue;
+          seen.current.add(key);
+          changed = true;
+          if (d.requestedById !== me.userId) continue;
+          const what = d.kind === "NEW_ORDER" ? `Order #${d.orderNumber}` : `More items for order #${d.orderNumber}`;
+          if (d.status === "APPROVED") {
+            toast.success(`${what} approved`, {
+              description: `${d.tableLabel ? `Table ${d.tableLabel} · ` : ""}sent to the kitchen`,
+              duration: 10_000,
+            });
+          } else {
+            toast.error(`${what} was not approved`, {
+              description: [d.tableLabel ? `Table ${d.tableLabel}` : "", d.rejectReason ?? ""].filter(Boolean).join(" · "),
+              duration: 20_000,
+            });
+          }
+          chime = true;
+        }
+
         if (chime && me.soundOn) playChime();
         if (changed) me.onActivity();
       } catch {
@@ -239,5 +318,5 @@ export function useOrderAlerts({
 
   useChannel(topic(tenantId, branchId, "orders"), () => void check());
 
-  return { awaitingPayment };
+  return { awaitingPayment, pendingApprovals };
 }
