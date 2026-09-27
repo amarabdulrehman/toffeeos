@@ -8,7 +8,7 @@ import { hashPassword, hashPin } from "@/lib/password";
 import { SEED_ROLES } from "@/server/permissions/registry";
 import { finalizeOrder, type PricingLineInput, type TaxRuleInput } from "@/lib/pricing";
 import { defaultExpenseCategoryRows } from "@/lib/expense-categories";
-import { GATEABLE_MODULES } from "@/lib/tiers";
+import { GATEABLE_MODULES, TIER_MAX_BRANCHES } from "@/lib/tiers";
 
 // Every write below the initial Tenant row goes through tenantDb(tenantId), never rawDb directly —
 // rawDb is RLS-bound (app_user) and, with no app.tenant_id session var set, RLS's WITH CHECK would
@@ -44,9 +44,9 @@ const PLATFORM_PASSWORD = requiredEnv("PLATFORM_SEED_PASSWORD", "the platform su
 // maxBranches: null means unlimited (Complete).
 async function seedPlans() {
   const plans = [
-    { key: "starter", name: "Starter", maxBranches: 1, pricePaisaPerBranchMonth: 4_999_00 },
-    { key: "growth", name: "Growth", maxBranches: 3, pricePaisaPerBranchMonth: 3_999_00 },
-    { key: "complete", name: "Complete", maxBranches: null, pricePaisaPerBranchMonth: 2_999_00 },
+    { key: "starter", name: "Starter", maxBranches: TIER_MAX_BRANCHES.starter, pricePaisaPerBranchMonth: 4_999_00 },
+    { key: "growth", name: "Growth", maxBranches: TIER_MAX_BRANCHES.growth, pricePaisaPerBranchMonth: 3_999_00 },
+    { key: "complete", name: "Complete", maxBranches: TIER_MAX_BRANCHES.complete, pricePaisaPerBranchMonth: 2_999_00 },
   ];
   for (const plan of plans) {
     await rawDb.plan.upsert({ where: { key: plan.key }, update: plan, create: plan });

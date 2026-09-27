@@ -7,28 +7,38 @@ import { Eyebrow, Reveal } from "./motion";
 import { RevealLines, TiltCard } from "./anim";
 import { InstagramGlyph } from "./site-chrome";
 import { BRAND_NAME, COMPANY_EMAIL, COMPANY_INSTAGRAM, COMPANY_INSTAGRAM_HANDLE, COMPANY_NAME } from "@/config/brand";
-import { GATEABLE_MODULES, TIER_LABEL, TIER_ORDER, tierMeets, type TierKey } from "@/lib/tiers";
+import { GATEABLE_MODULES, TIER_LABEL, TIER_MAX_BRANCHES, TIER_ORDER, tierMeets, type TierKey } from "@/lib/tiers";
 
 /**
  * Plans, and the closing ask.
  *
  * The plan contents are still generated from GATEABLE_MODULES rather than retyped, so the page
- * cannot promise a module a tier does not actually unlock.
+ * cannot promise a module a tier does not actually unlock — and the branch count from
+ * TIER_MAX_BRANCHES, which is what the app enforces. Starter used to list "Multi-branch" among
+ * what every plan includes; Starter is one branch.
  *
  * Still no prices: billing is per branch, per month and set per tenant, so there is no public
  * number to print that would not be invented. Each plan mails KRIMSOLS with that plan in the
  * subject line, which is the more useful outcome anyway — a quote based on their branch count.
  */
 
+// "Tables, grouped by floor", not "floor plan": tables are listed under their floor, with no map
+// of the room to arrange them on (RestaurantTable.posX/posY exist in the schema but nothing reads
+// or writes them).
 const CORE = [
   "Point of sale & offline mode",
   "Kitchen display",
-  "Tables & floor plan",
+  "Tables, grouped by floor",
   "Menu, variants & modifiers",
   "Sales & staff reports",
   "Staff, roles & permissions",
-  "Multi-branch",
 ];
+
+function branchesLine(tier: TierKey) {
+  const max = TIER_MAX_BRANCHES[tier];
+  if (max === null) return "Any number of branches";
+  return max === 1 ? "One branch" : `Up to ${max} branches`;
+}
 
 const PITCH: Record<TierKey, string> = {
   starter: "One counter, running properly.",
@@ -36,8 +46,15 @@ const PITCH: Record<TierKey, string> = {
   complete: "Delivery, online orders and payroll too.",
 };
 
+/**
+ * Modules the plans don't advertise yet, though a tier unlocks them in the app. WhatsApp messaging
+ * waits on Meta's approval and has never delivered a message; it goes back on the page the day one
+ * is delivered.
+ */
+const NOT_ADVERTISED = new Set(["whatsapp"]);
+
 function modulesFor(tier: TierKey) {
-  return GATEABLE_MODULES.filter((m) => tierMeets(tier, m.minTier)).map((m) => m.label);
+  return GATEABLE_MODULES.filter((m) => !NOT_ADVERTISED.has(m.key) && tierMeets(tier, m.minTier)).map((m) => m.label);
 }
 
 function quoteHref(tier: TierKey) {
@@ -92,7 +109,7 @@ export function Plans() {
                     {tier === "starter" ? "Includes" : "Everything in Starter, plus"}
                   </p>
                   <ul className="mt-4 space-y-2.5">
-                    {(tier === "starter" ? CORE : modulesFor(tier)).map((f) => (
+                    {[branchesLine(tier), ...(tier === "starter" ? CORE : modulesFor(tier))].map((f) => (
                       <li key={f} className="flex items-start gap-2.5 text-[13.5px] text-[color:var(--ink-2)]">
                         <Check className="mt-[3px] size-3.5 shrink-0 text-[color:var(--accent)]" strokeWidth={3} />
                         {f}

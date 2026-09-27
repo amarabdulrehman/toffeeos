@@ -328,6 +328,38 @@ ticket: 5mm unprinted each side, type scaled down on narrow rolls to about a 58m
 with more on each line, the ticket capped at 104mm wide. The dialog's preview wraps where the paper
 will. Default 80mm, so nothing changes for a device until someone picks another width.
 
+### Logged, not fixed
+
+Found during the SEO work (27 September 2026) and written down rather than acted on, by the
+owner's call — the search work comes first unless something is a live overclaim, a security issue
+or could hurt a paying client.
+
+- **The kitchen display's late mark is hardcoded at ten minutes.** `SLA_SECONDS = 600` in
+  `src/components/kds/kds-board.tsx`, although `BranchSettings.kdsSlaSeconds` exists in the
+  database. Ten minutes means something very different at a fast-food counter and at a sit-down
+  restaurant; the setting should drive it, per branch. Owner: log it, don't fix it now.
+
+### Public claims corrected
+
+Live overclaims, so fixed rather than logged (27 September 2026).
+
+- **WhatsApp is off the public site until a real message is delivered.** Removed 27 September:
+  the homepage's "Out the door" line and its chip, and the plans list (`NOT_ADVERTISED` in
+  plans-closing.tsx hides the module there; the app's tiers still include it). Riders are no longer
+  "tracked" — the line says every delivery is proved with a photo or a code, which is what
+  `markDelivered` requires. Put WhatsApp back — and take it out of NOT_ADVERTISED and the test —
+  the day a real message is delivered.
+- **Two more plan-card overclaims, fixed the same night.** "Tables & floor plan" is now "Tables,
+  grouped by floor" — there is no map of the room (`RestaurantTable.posX/posY` exist in the schema
+  but nothing reads or writes them). And Starter listed "Multi-branch" among what every plan
+  includes, though Starter allows one branch; each card now opens with its real count — One branch
+  / Up to 3 branches / Any number — read from `TIER_MAX_BRANCHES` in `src/lib/tiers.ts`, which
+  `prisma/seed.ts` now also writes to `Plan.maxBranches`, so the page and the limit the app
+  enforces can't drift apart. Change a plan's branch limit there, then re-run the seed.
+- **The guard:** `e2e/public-claims.spec.ts` fails if WhatsApp, PRA e-IMS, FBR, Foodpanda or Urdu
+  appear on the homepage, if riders are called tracked, if "floor plan" comes back, or if the plan
+  cards stop stating the branch counts above.
+
 ---
 
 ## 4. Unverified — genuine unknowns
@@ -426,13 +458,20 @@ demo tenant has no second branch), against a clean production build:
   load time is made of: Next.js + React taking the page over (~730ms of throttled script), motion
   (~220ms, homepage only), Sentry's browser SDK (~90ms, every page). The homepage no longer runs
   anything while idle (Lenis's frame loop and the kitchen-ticket clock stopped when not needed:
-  1,079ms → 312ms of main-thread work per 10 idle seconds). Sentry's browser init is skipped when
-  `NEXT_PUBLIC_SENTRY_DSN` is unset (it is, on production), but its code still loads; removing it
-  needs the build to know the DSN is empty — `NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN
-  ?? ""` in next.config's `env` plus `onRouterTransitionStart = dsn ? … : undefined` — measured at
-  homepage 157→78ms, POS 313→211ms, KDS 501→426ms blocking time. Proposed, not applied (shared
-  config). A `require()`-based version was tried and rejected: it shipped ~1MB more JS to every page.
-  The KDS page is the heaviest (~500ms blocking on a throttled tablet).
+  1,079ms → 312ms of main-thread work per 10 idle seconds).
+- **Browser Sentry is a switch** (27 September 2026). next.config's `env` always defines
+  `NEXT_PUBLIC_SENTRY_DSN` (empty when unset), so a build without it ships no Sentry SDK to the
+  browser: homepage 157→78ms, POS 313→211ms, KDS 501→426ms blocking time on a throttled tablet.
+  **To turn browser error reporting on: set `NEXT_PUBLIC_SENTRY_DSN` in Vercel and redeploy** —
+  NEXT_PUBLIC_ values are fixed at build time, so setting it alone does nothing until the next
+  build. No code change: verified by building with a fake DSN and crashing the POS on purpose — the
+  SDK was back and tried to send the report. The error screens (`src/app/error.tsx`,
+  `global-error.tsx`, `components/errors/section-error.tsx` and the platform/rider/order ones) call
+  `Sentry.captureException` themselves; with no DSN that is a no-op (Sentry's scope returns without
+  a client) and the error screen still renders — also verified by crashing the POS on a no-DSN build.
+  The CSP's connect-src already allows the project's Sentry ingest host; a DSN on a different host
+  needs that updated too. A `require()`-based version was tried and rejected: ~1MB more JS on every
+  page. The KDS page is the heaviest (~500ms blocking on a throttled tablet).
 - **"ToffeeOS by Krimsols · @krimsols" on receipts and bills** (27 September 2026) — one line at
   the foot of every customer-facing receipt and bill (not kitchen tickets, summaries or no-sale
   slips), with the Instagram mark drawn as a plain-line SVG so it prints crisp on thermal paper.

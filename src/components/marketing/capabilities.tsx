@@ -169,8 +169,11 @@ const PANELS: Panel[] = [
   {
     room: "Out the door",
     title: "Follow the order past the counter.",
-    body: "Riders assigned and tracked, a QR menu customers order from directly, and WhatsApp to reach them on the app they already have open.",
-    covers: ["Delivery & riders", "Online ordering", "WhatsApp", "Customers"],
+    // No WhatsApp here, and no "tracked": messages wait on Meta's approval and have never been
+    // delivered, and riders aren't located on a map — each delivery is proved with a photo or the
+    // customer's code. WhatsApp comes back the day a real message is delivered.
+    body: "Riders assigned to each order, a QR menu customers order from directly, and every delivery proved with a photo or a code.",
+    covers: ["Delivery & riders", "Online ordering", "Customers"],
     visual: <RiderTrack />,
   },
 ];

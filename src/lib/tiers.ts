@@ -13,6 +13,18 @@ export const TIER_LABEL: Record<TierKey, string> = {
 };
 
 /**
+ * How many branches each plan allows; null is no limit. prisma/seed.ts writes these to
+ * Plan.maxBranches, which is what adding or reactivating a branch is checked against
+ * (src/server/branches.ts), and the homepage's plan cards print them — one list, so the page can't
+ * promise a branch the app would refuse.
+ */
+export const TIER_MAX_BRANCHES: Record<TierKey, number | null> = {
+  starter: 1,
+  growth: 3,
+  complete: null,
+};
+
+/**
  * Feature-to-tier mapping, per the pricing brief's grid. Keyed by the first segment of a
  * permission key (its "module"), since that's the granularity the tier table is drawn at — every
  * permission under `inventory.*` moves together, for example. Modules absent here (pos, kds,
