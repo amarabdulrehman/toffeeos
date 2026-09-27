@@ -59,7 +59,15 @@ const buildId =
   process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.NEXT_PUBLIC_BUILD_ID ?? `local-${Date.now()}`;
 
 const nextConfig: NextConfig = {
-  env: { NEXT_PUBLIC_BUILD_ID: buildId },
+  env: {
+    NEXT_PUBLIC_BUILD_ID: buildId,
+    // Always defined at build time — empty when unset — so src/instrumentation-client.ts's
+    // `if (dsn)` is a constant the bundler can see, and a build without a browser DSN ships no
+    // Sentry SDK to the browser at all (it cost every page, POS and KDS included, ~50–100ms of
+    // blocking time on a slow tablet for nothing). Setting NEXT_PUBLIC_SENTRY_DSN and redeploying
+    // turns browser reporting back on with no code change.
+    NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN ?? "",
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
