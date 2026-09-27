@@ -1,0 +1,49 @@
+# ToffeeOS
+
+> ToffeeOS is restaurant management software for restaurants and cafés in Pakistan, made by KRIMSOLS. It runs in a web browser on a tablet, phone or computer, and covers the point of sale, the kitchen display, inventory and recipes, delivery, online ordering, reports, staff and payroll. The point of sale keeps taking orders and payments when the internet connection drops, and syncs them when it returns.
+
+## Point of sale
+- Dine-in, takeaway and delivery orders on one screen; tables grouped by floor, each showing whether it is available, reserved or occupied.
+- Works through internet outages: orders, payments and voids are saved on the device and sent to the server once when the connection returns. Prices, tax, service charge and rounding are calculated on the device from the branch's own settings.
+- Tax rates are set per branch and per payment method. A bill paid partly in cash and partly by card is taxed at each method's rate, with the taxable amount apportioned between them. Every amount is a whole number of paisa.
+- Line and order discounts with a per-branch ceiling; voids and cancellations with reasons; refunds that reach the reports and the cash drawer.
+- A cash drawer per business day: opening float, closing count, and every no-sale opening recorded with a reason.
+- Receipts, bills and kitchen tickets print on any receipt printer the device can print to, at 58mm, 80mm or any other width.
+- Waiter orders can pop up on the cashier's screen, and a branch can require the cashier to approve them before they reach the kitchen.
+
+## Kitchen display
+- Each order appears as a ticket in the kitchen with its add-ons, notes and a running timer, and is marked late after ten minutes.
+- The kitchen marks items or whole orders ready, and the waiter who placed the order is told.
+- A branch can switch the kitchen display off and work from printed kitchen tickets instead.
+
+## Inventory and costing
+- Stock is kept per branch and per storeroom. Recipes take each dish's ingredients out of stock when an order is paid.
+- Suppliers and purchase orders (draft, approved, received); transfers between storerooms and between branches; every adjustment needs a reason, and stock movements are only ever added, never edited or deleted.
+- Low-stock levels per ingredient, flagged on the dashboard.
+- Recipe costing from each ingredient's most recent purchase price, with dishes listed by margin.
+
+## Beyond the counter
+- The restaurant's own online ordering site and QR ordering at the table, with no per-order fee.
+- Delivery: orders assigned to riders, and each delivery confirmed with a photo or a code from the customer.
+- Customers and loyalty points.
+- Reports by branch or across branches, each branch's business day ending at the time it sets; daily sales and printable closing summaries; expenses and profit and loss.
+- Staff roles and permissions; payroll and HR.
+
+## Plans
+- Priced per branch, per month, on three plans: Starter (one branch), Growth (up to three branches) and Complete (any number). Prices are quoted rather than published. There is no limit on the number of staff users.
+- Free trial, 14 days: https://toffeeos.com/signup
+
+## What it does not do
+- It does not process payments itself; the cashier records how each bill was paid (cash, card, JazzCash, Easypaisa, bank transfer).
+- It does not split one bill between diners, and it has no tipping.
+- It does not drive printers directly; printing goes through the device's print dialog.
+
+## Company
+- Made by KRIMSOLS, in Pakistan.
+- Email: krimsolcompany@gmail.com
+- Instagram: https://www.instagram.com/krimsols/
+
+## Pages
+- [Home](https://toffeeos.com/)
+- [Privacy policy](https://toffeeos.com/privacy)
+- [Terms of service](https://toffeeos.com/terms)

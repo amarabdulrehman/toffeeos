@@ -8,6 +8,7 @@ import { Plans, Closing } from "@/components/marketing/plans-closing";
 import { SiteFooter, SiteHeader } from "@/components/marketing/site-chrome";
 import { ScrollProgress } from "@/components/marketing/anim";
 import { SmoothScroll } from "@/components/marketing/smooth-scroll";
+import { JsonLd, organizationLd, softwareApplicationLd } from "@/components/marketing/json-ld";
 import { BRAND_NAME, COMPANY_NAME } from "@/config/brand";
 
 // What people search first, what sets it apart second, the name last: "the till that keeps selling"
@@ -54,6 +55,8 @@ export const metadata: Metadata = {
 export default function Home() {
   return (
     <div className={`tos-landing ${displaySerif.variable} flex flex-1 flex-col`}>
+      <JsonLd data={organizationLd} />
+      <JsonLd data={softwareApplicationLd} />
       <SmoothScroll />
       <ScrollProgress />
       <SiteHeader />
