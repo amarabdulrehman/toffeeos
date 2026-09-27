@@ -193,16 +193,26 @@ export function RevealLines({
   );
 }
 
-/** A live clock for the kitchen ticket — small, but it makes a static card feel switched on. */
+/**
+ * A live clock for the kitchen ticket — small, but it makes a static card feel switched on. It ticks
+ * only while on screen: it used to re-render every second for the whole visit, wherever the reader
+ * had scrolled to.
+ */
 export function TickingTimer({ from = 252, className = "" }: { from?: number; className?: string }) {
   const reduced = useReducedMotion();
+  const ref = useRef<HTMLSpanElement>(null);
+  const inView = useInView(ref);
   const [secs, setSecs] = useState(from);
   useEffect(() => {
-    if (reduced) return;
+    if (reduced || !inView) return;
     const t = setInterval(() => setSecs((s) => s + 1), 1000);
     return () => clearInterval(t);
-  }, [reduced]);
+  }, [reduced, inView]);
   const m = Math.floor(secs / 60);
   const s = secs % 60;
-  return <span className={className}>{`${m}:${String(s).padStart(2, "0")}`}</span>;
+  return (
+    <span ref={ref} className={className}>
+      {`${m}:${String(s).padStart(2, "0")}`}
+    </span>
+  );
 }

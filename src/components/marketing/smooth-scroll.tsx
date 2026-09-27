@@ -17,9 +17,9 @@ import { useReducedMotion } from "motion/react";
  * list to stop exactly where they let go; inertia on a POS is an irritation, not a luxury. This
  * component is mounted by the marketing page and nothing else.
  *
- * Driven from motion's own animation frame rather than a second requestAnimationFrame loop, so the
- * scroll interpolation and everything reading from it advance on the same tick. Two independent
- * loops produce a subtle shear between the page and the elements tracking it.
+ * Its frame loop runs only while a smooth scroll is under way — started by the wheel or an anchor
+ * link, stopped when the interpolation settles. It used to run every frame for the whole visit,
+ * sixty wake-ups a second on a page nobody was scrolling.
  */
 export function SmoothScroll() {
   const reduced = useReducedMotion();
@@ -45,9 +45,15 @@ export function SmoothScroll() {
     let frame = 0;
     const raf = (time: number) => {
       lenis.raf(time);
-      frame = requestAnimationFrame(raf);
+      // Keep going while Lenis is interpolating; once it settles, sleep until the next wheel.
+      frame = lenis.isScrolling === "smooth" ? requestAnimationFrame(raf) : 0;
     };
-    frame = requestAnimationFrame(raf);
+    const wake = () => {
+      if (!frame) frame = requestAnimationFrame(raf);
+    };
+    // Lenis turns a wheel event into a target to glide to; the loop has to be awake to glide there.
+    window.addEventListener("wheel", wake, { passive: true });
+    wake();
 
     // In-page anchors have to go through Lenis, or the browser's instant jump fights the
     // interpolated position and lands somewhere neither of them intended.
@@ -59,11 +65,13 @@ export function SmoothScroll() {
       if (!target) return;
       e.preventDefault();
       lenis.scrollTo(target as HTMLElement, { offset: -8 });
+      wake();
     };
     document.addEventListener("click", onAnchorClick);
 
     return () => {
       document.removeEventListener("click", onAnchorClick);
+      window.removeEventListener("wheel", wake);
       cancelAnimationFrame(frame);
       lenis.destroy();
     };

@@ -35,8 +35,13 @@ const MENU = [
 export const CASH_RATE = 0.16;
 export const CARD_RATE = 0.08;
 
+// One formatter for the page. Building an Intl.NumberFormat is expensive, and this used to build
+// a fresh one for every price on every render of every terminal on the page — the largest single
+// piece of the homepage's startup work on a slow phone.
+const RS = new Intl.NumberFormat("en-PK");
+
 function rs(n: number) {
-  return new Intl.NumberFormat("en-PK").format(Math.round(n));
+  return RS.format(Math.round(n));
 }
 
 export function cartTotals(lines: CartLine[], rate: number) {

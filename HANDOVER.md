@@ -415,9 +415,24 @@ demo tenant has no second branch), against a clean production build:
   which serves the same pages, doesn't compete with it. Homepage title "Restaurant POS Software in
   Pakistan, Works Offline — ToffeeOS"; the poem stays the H1 with a plain-keyword H2 under it.
   Sign-in and account pages are `noindex` with their own titles; a restaurant's ordering page is
-  titled with its name. Not done yet: structured data, Search Console (needs the owner), speed
-  (lab baseline 27 Sep, phone: LCP 3.0s, TBT 783ms, CLS 0), the PRA e-IMS integration (none exists
-  — the `fiscalInvoiceNumber`/`fiscalPushedAt` columns on Order are unused placeholders).
+  titled with its name. Not done yet: structured data, Search Console (needs the owner), the PRA
+  e-IMS integration (none exists — the `fiscalInvoiceNumber`/`fiscalPushedAt` columns on Order are
+  unused placeholders).
+- **Speed, measured properly** (27 September 2026). Production build, throttled phone (4x CPU, slow
+  4G), 5 runs, median, quiet machine: homepage blocking time ~150–190ms, first paint ~1.25s, layout
+  shift 0 — inside Google's "good" limits. An earlier reading of 783ms / 3.0s was wrong: the same
+  script reads 1,016ms / 3.1s while a build runs on the same computer, because the 4x throttle
+  multiplies any other load. Trust only same-session before/after pairs on an idle machine. What the
+  load time is made of: Next.js + React taking the page over (~730ms of throttled script), motion
+  (~220ms, homepage only), Sentry's browser SDK (~90ms, every page). The homepage no longer runs
+  anything while idle (Lenis's frame loop and the kitchen-ticket clock stopped when not needed:
+  1,079ms → 312ms of main-thread work per 10 idle seconds). Sentry's browser init is skipped when
+  `NEXT_PUBLIC_SENTRY_DSN` is unset (it is, on production), but its code still loads; removing it
+  needs the build to know the DSN is empty — `NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN
+  ?? ""` in next.config's `env` plus `onRouterTransitionStart = dsn ? … : undefined` — measured at
+  homepage 157→78ms, POS 313→211ms, KDS 501→426ms blocking time. Proposed, not applied (shared
+  config). A `require()`-based version was tried and rejected: it shipped ~1MB more JS to every page.
+  The KDS page is the heaviest (~500ms blocking on a throttled tablet).
 - **"ToffeeOS by Krimsols · @krimsols" on receipts and bills** (27 September 2026) — one line at
   the foot of every customer-facing receipt and bill (not kitchen tickets, summaries or no-sale
   slips), with the Instagram mark drawn as a plain-line SVG so it prints crisp on thermal paper.
