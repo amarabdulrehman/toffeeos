@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/config/brand";
+import { FEATURES } from "@/lib/marketing/features";
 
 /**
  * /sitemap.xml — the pages meant to be found. Sign-in pages are noindex and not listed; each
@@ -13,6 +14,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: `${SITE_URL}/`, lastModified: new Date("2026-09-28"), changeFrequency: "weekly", priority: 1 },
     { url: `${SITE_URL}/pricing`, lastModified: new Date("2026-09-28"), changeFrequency: "monthly", priority: 0.8 },
+    { url: `${SITE_URL}/features`, lastModified: new Date("2026-09-28"), changeFrequency: "monthly", priority: 0.8 },
+    ...FEATURES.map((f) => ({
+      url: `${SITE_URL}/features/${f.slug}`,
+      lastModified: new Date("2026-09-28"),
+      changeFrequency: "monthly" as const,
+      priority: 0.8,
+    })),
     { url: `${SITE_URL}/privacy`, changeFrequency: "yearly", priority: 0.3 },
     { url: `${SITE_URL}/terms`, changeFrequency: "yearly", priority: 0.3 },
   ];
