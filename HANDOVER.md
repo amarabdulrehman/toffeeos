@@ -409,6 +409,15 @@ demo tenant has no second branch), against a clean production build:
   button reads "Send for approval" and they are told the outcome. Offline sends replay through
   the same check. `src/server/order-approvals.ts`, table `OrderApproval` (RLS),
   `e2e/order-approvals.spec.ts`.
+- **Search basics** (27 September 2026) — `/robots.txt` and `/sitemap.xml` exist (src/app/robots.ts,
+  sitemap.ts; every crawler including AI assistants allowed on the public site). Canonical links on
+  every page point at `SITE_URL` (https://toffeeos.com, src/config/brand.ts), so toffeeos.vercel.app,
+  which serves the same pages, doesn't compete with it. Homepage title "Restaurant POS Software in
+  Pakistan, Works Offline — ToffeeOS"; the poem stays the H1 with a plain-keyword H2 under it.
+  Sign-in and account pages are `noindex` with their own titles; a restaurant's ordering page is
+  titled with its name. Not done yet: structured data, Search Console (needs the owner), speed
+  (lab baseline 27 Sep, phone: LCP 3.0s, TBT 783ms, CLS 0), the PRA e-IMS integration (none exists
+  — the `fiscalInvoiceNumber`/`fiscalPushedAt` columns on Order are unused placeholders).
 - **"ToffeeOS by Krimsols · @krimsols" on receipts and bills** (27 September 2026) — one line at
   the foot of every customer-facing receipt and bill (not kitchen tickets, summaries or no-sale
   slips), with the Instagram mark drawn as a plain-line SVG so it prints crisp on thermal paper.

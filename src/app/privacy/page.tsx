@@ -5,6 +5,7 @@ import { BRAND_NAME, COMPANY_NAME } from "@/config/brand";
 export const metadata: Metadata = {
   title: `Privacy Policy — ${BRAND_NAME}`,
   description: `How ${COMPANY_NAME} collects, uses and protects information through ${BRAND_NAME}.`,
+  alternates: { canonical: "/privacy" },
 };
 
 export default function PrivacyPage() {

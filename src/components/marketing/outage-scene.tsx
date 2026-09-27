@@ -60,7 +60,7 @@ const PHASES: Phase[] = [
   {
     eyebrow: "8:41 pm — 9:12 pm",
     title: "Nobody stops.",
-    body: "Orders carry on. The till prices each one on the device — tax, service charge, rounding — so the cashier always knows what to charge. Every order is saved the instant it is punched.",
+    body: "Orders carry on. The POS prices each one on the device — tax, service charge, rounding — so the cashier always knows what to charge. Every order is saved the instant it is punched.",
     connection: "offline",
     lines: PLUS,
     queued: 6,

@@ -86,6 +86,10 @@ export function Hero() {
               delay={0.1}
               className="font-display mt-6 text-[clamp(2.9rem,7.4vw,5.4rem)] leading-[0.94] tracking-[-0.02em] text-[color:var(--ink)]"
             />
+            {/* What it is, in the words people search: the line above is the pitch, this is the label. */}
+            <h2 className="mt-6 max-w-xl text-[15px] font-semibold leading-[1.5] text-[color:var(--ink-2)]">
+              Cloud restaurant POS, kitchen display and inventory software for Pakistani restaurants and cafés.
+            </h2>
           </div>
 
           <Enter delay={0.6} className="lg:col-span-5 lg:pb-3">

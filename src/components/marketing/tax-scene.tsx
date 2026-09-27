@@ -44,7 +44,7 @@ const POINTS = [
     v: "A restaurant's day ends when it closes. Reports run on the branch's own timezone and closing time, so last night's late orders land on last night.",
   },
   {
-    k: "Split bills, split correctly",
+    k: "One bill, paid partly cash, partly card",
     v: "Half cash and half card on one bill means two different rates. The taxable amount is apportioned between them, not applied at whichever rate is convenient.",
   },
 ];

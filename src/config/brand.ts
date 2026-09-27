@@ -3,6 +3,13 @@ export const BRAND_NAME = "ToffeeOS";
 export const BRAND_TAGLINE = "Restaurant management for Pakistan's kitchens.";
 
 /**
+ * The site's one public address. Canonical links, the sitemap and robots.txt use it whatever host
+ * served the page — toffeeos.vercel.app and every preview deployment serve the same pages, and
+ * search engines should credit this address, not those.
+ */
+export const SITE_URL = "https://toffeeos.com";
+
+/**
  * The company behind the product. Kept here for the same reason as the two values above: the
  * landing page, the footer and every "contact us" link read from one place, so changing an email
  * or a handle is a one-line edit rather than a hunt through JSX.

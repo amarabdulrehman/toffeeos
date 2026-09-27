@@ -8,6 +8,12 @@
       "port": 3000
     },
     {
+      "name": "toffeeos-prod-3100",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "start", "-p", "3100"],
+      "port": 3100
+    },
+    {
       "name": "tableos-dev-3010",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],

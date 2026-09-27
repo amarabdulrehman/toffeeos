@@ -5,6 +5,7 @@ import { BRAND_NAME, COMPANY_NAME } from "@/config/brand";
 export const metadata: Metadata = {
   title: `Terms of Service — ${BRAND_NAME}`,
   description: `The agreement between ${COMPANY_NAME} and restaurants using ${BRAND_NAME}.`,
+  alternates: { canonical: "/terms" },
 };
 
 export default function TermsPage() {

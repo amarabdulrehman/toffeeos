@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Manrope, Geist_Mono } from "next/font/google";
-import { BRAND_NAME, BRAND_TAGLINE } from "@/config/brand";
+import { BRAND_NAME, BRAND_TAGLINE, SITE_URL } from "@/config/brand";
 import { Providers } from "@/components/providers";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
 import "./globals.css";
@@ -18,6 +18,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // Relative canonicals (each page sets its own; none is set here, or every page would inherit the
+  // homepage's) resolve against the public address, whichever host served the page.
+  metadataBase: new URL(SITE_URL),
   title: BRAND_NAME,
   description: BRAND_TAGLINE,
   // Lets a café tablet "Add to Home Screen" and open the till like an app rather than a browser

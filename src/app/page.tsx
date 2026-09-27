@@ -10,13 +10,22 @@ import { ScrollProgress } from "@/components/marketing/anim";
 import { SmoothScroll } from "@/components/marketing/smooth-scroll";
 import { BRAND_NAME, COMPANY_NAME } from "@/config/brand";
 
+// What people search first, what sets it apart second, the name last: "the till that keeps selling"
+// is the page's best line, and stays its H1, but nobody searches for it.
+const TITLE = `Restaurant POS Software in Pakistan, Works Offline — ${BRAND_NAME}`;
+const DESCRIPTION =
+  "Restaurant POS software for Pakistan that keeps billing through internet outages, with kitchen display, inventory, delivery and per-branch reports.";
+
 export const metadata: Metadata = {
-  title: `${BRAND_NAME} — the till that keeps selling when the internet stops`,
-  description: `${BRAND_NAME} runs the counter, kitchen, stock, staff and delivery for restaurants in Pakistan — and keeps taking orders through an outage. By ${COMPANY_NAME}.`,
+  title: { absolute: TITLE },
+  description: DESCRIPTION,
+  alternates: { canonical: "/" },
   openGraph: {
-    title: `${BRAND_NAME} — the till that keeps selling when the internet stops`,
-    description: `Restaurant software built in Pakistan, by ${COMPANY_NAME}. Works offline, prices Punjab PRA's split rates correctly, and runs one branch or six.`,
+    title: TITLE,
+    description: `Restaurant POS software built in Pakistan by ${COMPANY_NAME}. Keeps billing offline, prices Punjab PRA's cash and card rates correctly, and runs one branch or six.`,
     type: "website",
+    url: "/",
+    siteName: BRAND_NAME,
   },
 };
 
