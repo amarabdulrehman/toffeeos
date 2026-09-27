@@ -409,6 +409,12 @@ demo tenant has no second branch), against a clean production build:
   button reads "Send for approval" and they are told the outcome. Offline sends replay through
   the same check. `src/server/order-approvals.ts`, table `OrderApproval` (RLS),
   `e2e/order-approvals.spec.ts`.
+- **"ToffeeOS by Krimsols · @krimsols" on receipts and bills** (27 September 2026) — one line at
+  the foot of every customer-facing receipt and bill (not kitchen tickets, summaries or no-sale
+  slips), with the Instagram mark drawn as a plain-line SVG so it prints crisp on thermal paper.
+  On for every restaurant (`Tenant.showReceiptCredit`, default true); only the platform admin can
+  switch it off, per restaurant, on the platform's restaurant page ("Receipt credit") — audited as
+  `platform.receiptCredit.change`. `e2e/receipt-credit.spec.ts`.
 - **The Order Queue is today's** (27 September 2026) — this business day's orders only (the branch's
   own day, so a branch whose day starts at 4am keeps 1:30am orders with the evening's), via
   `GET /api/orders?day=today`; the number on the button counts today's unpaid. An earlier day's

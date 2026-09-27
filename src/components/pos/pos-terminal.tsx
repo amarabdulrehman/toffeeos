@@ -58,6 +58,7 @@ export function PosTerminal({
   branchName,
   logoUrl,
   showLogoOnReceipt,
+  showReceiptCredit,
   receiptHeader,
   pricingSnapshot,
   canTakePayment,
@@ -81,6 +82,8 @@ export function PosTerminal({
   branchName: string;
   logoUrl: string | null;
   showLogoOnReceipt: boolean;
+  /** Tenant.showReceiptCredit — "ToffeeOS by Krimsols · @krimsols" on receipts and bills. */
+  showReceiptCredit: boolean;
   receiptHeader: string | null;
   pricingSnapshot: BranchPricingSnapshot;
   canTakePayment: boolean;
@@ -1064,6 +1067,7 @@ export function PosTerminal({
           logoUrl={logoUrl}
           showLogo={showLogoOnReceipt}
           receiptHeader={receiptHeader}
+          showCredit={showReceiptCredit}
           onClose={() => setBillOrderId(null)}
         />
 
@@ -1074,6 +1078,7 @@ export function PosTerminal({
           logoUrl={logoUrl}
           showLogo={showLogoOnReceipt}
           receiptHeader={receiptHeader}
+          showCredit={showReceiptCredit}
           onClose={() => setReceiptOrder(null)}
         />
 

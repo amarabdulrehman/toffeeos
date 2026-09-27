@@ -21,7 +21,7 @@ export default async function PosPage() {
   // that has opened the till once can price orders through an outage.
   const db = tenantDb(user.tenantId);
   const [tenant, settings, taxRules] = await Promise.all([
-    db.tenant.findUnique({ where: { id: user.tenantId }, select: { logoUrl: true } }),
+    db.tenant.findUnique({ where: { id: user.tenantId }, select: { logoUrl: true, showReceiptCredit: true } }),
     db.branchSettings.findUnique({
       where: { branchId: user.branchId },
       select: {
@@ -63,6 +63,7 @@ export default async function PosPage() {
       branchName={user.branchName}
       logoUrl={tenant?.logoUrl ?? null}
       showLogoOnReceipt={settings?.showLogoOnReceipt ?? false}
+      showReceiptCredit={tenant?.showReceiptCredit ?? true}
       receiptHeader={settings?.receiptHeader ?? null}
       pricingSnapshot={pricingSnapshot}
       canTakePayment={user.permissions.includes("pos.payment.take")}

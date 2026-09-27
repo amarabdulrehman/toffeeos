@@ -53,6 +53,10 @@ model Tenant {
   // these two fields, not a full site builder.
   logoUrl    String?
   brandColor String? // hex, e.g. "#7c3aed"
+  /// "ToffeeOS by Krimsols · @krimsols" at the foot of this restaurant's receipts and bills. On for
+  /// everyone; only the platform admin can switch it off for a restaurant (PATCH
+  /// /api/platform/tenants/[tenantId]/receipt-credit) — a restaurant can't, or most would.
+  showReceiptCredit Boolean @default(true)
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 

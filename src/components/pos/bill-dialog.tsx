@@ -28,6 +28,7 @@ export function BillDialog({
   logoUrl,
   showLogo,
   receiptHeader,
+  showCredit,
   onClose,
 }: {
   /** Null closes the dialog. */
@@ -37,6 +38,8 @@ export function BillDialog({
   logoUrl?: string | null;
   showLogo?: boolean;
   receiptHeader?: string | null;
+  /** Tenant.showReceiptCredit. */
+  showCredit?: boolean;
   onClose: () => void;
 }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -92,6 +95,7 @@ export function BillDialog({
               logoUrl={logoUrl}
               showLogo={showLogo}
               receiptHeader={receiptHeader}
+              showCredit={showCredit}
             />
           )}
         </TicketPreview>

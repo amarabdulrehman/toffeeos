@@ -37,6 +37,8 @@ interface TenantDetail {
     slug: string;
     status: "TRIALING" | "ACTIVE" | "SUSPENDED" | "CANCELLED";
     createdAt: string;
+    /** "ToffeeOS by Krimsols · @krimsols" on this restaurant's receipts and bills. */
+    showReceiptCredit: boolean;
     subscription: {
       plan: { key: TierKey; name: string; maxBranches: number | null; pricePaisaPerBranchMonth: number };
       status: string;
@@ -89,6 +91,7 @@ export default function TenantDetailPage() {
   const [changingTier, setChangingTier] = useState(false);
   const [pendingTier, setPendingTier] = useState<TierKey | null>(null);
   const [savingFeatures, setSavingFeatures] = useState(false);
+  const [savingCredit, setSavingCredit] = useState(false);
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
   // Shown once, in a dialog, and never persisted anywhere — the admin reads it out and it is gone.
@@ -229,6 +232,26 @@ export default function TenantDetailPage() {
     } finally {
       setChangingTier(false);
       setPendingTier(null);
+    }
+  }
+
+  async function saveReceiptCredit(on: boolean) {
+    setSavingCredit(true);
+    try {
+      const res = await fetch(`/api/platform/tenants/${params.tenantId}/receipt-credit`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ on }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not save the receipt credit.");
+        return;
+      }
+      toast.success(on ? "Receipts will show the ToffeeOS credit." : "Receipts will no longer show the ToffeeOS credit.");
+      await load();
+    } finally {
+      setSavingCredit(false);
     }
   }
 
@@ -472,6 +495,32 @@ export default function TenantDetailPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* Only here: a restaurant has no switch of its own for this, or most would turn it off. */}
+        <Card className="shadow-sm transition-shadow hover:shadow-md">
+          <CardHeader>
+            <CardTitle className="font-heading">Receipt credit</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between gap-4">
+              <div className="text-sm">
+                <div className="font-medium" id="receipt-credit-label">
+                  Show &ldquo;ToffeeOS by Krimsols · @krimsols&rdquo;
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  One line at the foot of this restaurant&apos;s receipts and bills. On for every restaurant unless switched
+                  off here.
+                </p>
+              </div>
+              <Switch
+                aria-labelledby="receipt-credit-label"
+                checked={tenant.showReceiptCredit}
+                disabled={savingCredit}
+                onCheckedChange={(on) => void saveReceiptCredit(on)}
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         {sub && billing && (
           <Card className="shadow-sm transition-shadow hover:shadow-md lg:col-span-2">

@@ -287,6 +287,28 @@ export async function setTenantFeatures(
   return { enabledModules: updated.enabledModules };
 }
 
+/**
+ * Whether "ToffeeOS by Krimsols · @krimsols" prints at the foot of this restaurant's receipts and
+ * bills. On by default; switched off here, by the platform admin, for a restaurant that has been
+ * promised it — never by the restaurant itself.
+ */
+export async function setTenantReceiptCredit(tenantId: string, on: boolean, platformUserId: string, platformUserEmail: string) {
+  const tenant = await platformDb.tenant.findUnique({ where: { id: tenantId }, select: { showReceiptCredit: true } });
+  if (!tenant) throw new HttpError(404, "Tenant not found.");
+  const updated = await platformDb.tenant.update({ where: { id: tenantId }, data: { showReceiptCredit: on } });
+  await platformDb.auditLog.create({
+    data: {
+      tenantId,
+      actorId: platformUserId,
+      action: "platform.receiptCredit.change",
+      entityType: "Tenant",
+      entityId: tenantId,
+      metadata: { platformUserEmail, from: tenant.showReceiptCredit, to: on },
+    },
+  });
+  return { showReceiptCredit: updated.showReceiptCredit };
+}
+
 export interface DeleteTenantResult {
   slug: string;
   name: string;

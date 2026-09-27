@@ -23,6 +23,7 @@ export function Receipt({
   showLogo = false,
   receiptHeader,
   bill,
+  showCredit = false,
 }: {
   order: OrderDto;
   tenantName: string;
@@ -39,6 +40,8 @@ export function Receipt({
    * total for each way of paying, because tax depends on which one the customer chooses.
    */
   bill?: OrderBill;
+  /** Tenant.showReceiptCredit: "ToffeeOS by Krimsols · @krimsols" at the foot. */
+  showCredit?: boolean;
 }) {
   const subtotal = bill ? bill.subtotalPaisa : (order.subtotalPaisa ?? order.totalPaisa);
   const discountedSubtotal = order.discountedSubtotalPaisa ?? subtotal;
@@ -210,7 +213,37 @@ export function Receipt({
       <div className="text-center">
         {standing.state === "PAID" ? "Thank you for dining with us!" : "This is not a payment receipt."}
       </div>
+      {/* Who made the till, below everything the restaurant says: small, one line, no pitch. */}
+      {showCredit && (
+        <div className="mt-2 flex items-center justify-center gap-1 text-[0.85em]" data-testid="receipt-credit">
+          <span>ToffeeOS by Krimsols ·</span>
+          <InstagramGlyph />
+          <span>@krimsols</span>
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * The Instagram glyph, drawn in plain black lines so it prints crisp on a thermal printer. There is
+ * no Instagram emoji, and a colour one would print as a grey smudge.
+ */
+function InstagramGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="inline-block size-[1em] shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      aria-label="Instagram"
+      role="img"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="5" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="17.3" cy="6.7" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
   );
 }
 
