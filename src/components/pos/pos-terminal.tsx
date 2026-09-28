@@ -442,13 +442,19 @@ export function PosTerminal({
       };
 
       if (!sync.isOnline) {
-        // Taking payment immediately requires a live pay-preview round trip (PaymentDialog fetches
-        // the authoritative total, which depends on the chosen tender's tax rate) — not something
-        // that works offline. Falls back to the normal queue-and-notify path either way; the
-        // cashier pays it from the Order Queue once the connection's back, same as any other order
-        // that was sent to the kitchen while offline.
+        // Queued like any order sent while offline. It shows in the Order Queue straight away
+        // (loadQueue merges queued orders in), and cash can be taken for it there now: the order's
+        // total already assumes cash, and a queued payment replays after the order itself
+        // (e2e/offline-sync.spec.ts). Card can't be taken correctly yet: PaymentDialog reprices
+        // for the card rate through the server (pay-preview), so offline it would ask for the
+        // cash-rate total and the card would be charged more than the bill. So the message says
+        // cash now, card once the connection is back. It used to say to wait for everything.
         await queueOffline();
-        if (andPay) toast.error("You're offline — pay this order from the Order Queue once you're back online.");
+        if (andPay) {
+          toast.warning(
+            "You're offline, so this order is saved on the device. Take cash for it from the Order Queue now. Card and other methods need the connection, to be charged at the right rate."
+          );
+        }
         return;
       }
 

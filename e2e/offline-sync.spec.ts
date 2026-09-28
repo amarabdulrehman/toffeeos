@@ -297,3 +297,49 @@ test("an add-on chosen offline survives the sync, at the price the cashier charg
     "and the kitchen must be told what was added to it"
   ).toContain("Extra Shot");
 });
+
+/**
+ * What the offline "Take Payment" message tells a cashier to do: the order punched offline is in
+ * the Order Queue straight away, cash can be taken for it there while still offline, and once the
+ * connection is back the order and its payment both reach the server, the payment at exactly the
+ * order's total. The test above pays offline an order created online; this one pays an order that
+ * never reached the server before it was paid.
+ */
+test("an order punched with Take Payment while offline can be paid in cash from the Order Queue straight away", async ({
+  page,
+  request,
+}) => {
+  const table = await getAvailableTable(request);
+  const idsBefore = new Set(((await (await request.get("/api/orders")).json()).orders as { id: string }[]).map((o) => o.id));
+
+  await page.goto("/pos");
+  await expect(page.getByText("Online — all orders synced")).toBeVisible({ timeout: 15_000 });
+  await selectTable(page, table.label);
+  await page.getByRole("button", { name: SEED_MENU_CATEGORY, exact: true }).first().click();
+  await page.getByRole("button", { name: SEED_MENU_ITEM_2.name, exact: false }).first().click();
+  await expect(page.getByText("Subtotal")).toBeVisible();
+
+  await page.context().setOffline(true);
+  await expect(page.getByText("You're offline")).toBeVisible();
+
+  await page.getByRole("button", { name: "Take Payment" }).click();
+  await expect(page.getByText(/Take cash for it from the Order Queue now/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Order Queue" }).click();
+  const queueRow = page.locator("div.rounded-xl", { hasText: "#-1" });
+  await queueRow.getByRole("button", { name: "Payment" }).click();
+  await page.getByRole("dialog", { name: "Take payment" }).getByRole("button", { name: "Confirm payment" }).click();
+  await expect(page.getByText(/Payment for order #-1 queued offline/)).toBeVisible();
+
+  await page.context().setOffline(false);
+
+  type ListedOrder = { id: string; status: string; totalPaisa: number; paidPaisa: number; table?: { label: string } | null };
+  async function findPaid(): Promise<ListedOrder | undefined> {
+    const { orders } = (await (await request.get("/api/orders")).json()) as { orders: ListedOrder[] };
+    return orders.find((o) => !idsBefore.has(o.id) && o.table?.label === table.label && o.status === "PAID");
+  }
+  // Same transient first-replay failure as the tests above; useSync's periodic retry recovers it.
+  await expect.poll(findPaid, { timeout: 30_000, intervals: [1000] }).toBeTruthy();
+  const paid = (await findPaid())!;
+  expect(paid.paidPaisa).toBe(paid.totalPaisa);
+});
