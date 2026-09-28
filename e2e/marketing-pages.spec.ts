@@ -111,12 +111,34 @@ test.describe("Feature pages", () => {
       "restaurant-pos-system": "On every plan.",
       "kitchen-display-system": "On every plan.",
       "restaurant-inventory-management": "On the Growth and Complete plans.",
+      "recipe-costing-software": "On the Growth and Complete plans.",
+      "table-and-floor-management": "On every plan; some parts need Complete.",
+      "delivery-and-rider-management": "On the Complete plan.",
+      "restaurant-online-ordering-system": "On the Complete plan.",
+      "qr-code-menu-and-table-ordering": "On the Complete plan.",
+      "restaurant-reports-and-analytics": "On every plan; some parts need Growth or Complete.",
+      // Starter allows one branch (TIER_MAX_BRANCHES), so multi-branch starts at Growth.
+      "multi-branch-restaurant-management": "On the Growth and Complete plans.",
+      "restaurant-payroll-and-staff-management": "On every plan; some parts need Complete.",
+    };
+    // The parts of a page that need more than the page's own plan say so under their heading.
+    const sectionPlans: Record<string, string[]> = {
+      "table-and-floor-management": ["On the Complete plan"],
+      "restaurant-reports-and-analytics": [
+        "On the Growth and Complete plans",
+        "On the Growth and Complete plans",
+        "On the Growth and Complete plans",
+        "On the Complete plan",
+      ],
+      "multi-branch-restaurant-management": ["On the Growth and Complete plans"],
+      "restaurant-payroll-and-staff-management": ["On the Complete plan", "On the Complete plan", "On the Complete plan"],
     };
     expect(Object.keys(expected).sort()).toEqual(FEATURES.map((f) => f.slug).sort());
     for (const [slug, plans] of Object.entries(expected)) {
       await page.goto(`/features/${slug}`);
       await expect(page.locator("[data-feature-plans]"), slug).toHaveText(plans);
-      await expect(page.locator("[data-trial-note]"), slug).toHaveCount(plans === "On every plan." ? 0 : 1);
+      await expect(page.locator("[data-trial-note]"), slug).toHaveCount(plans.startsWith("On every plan") ? 0 : 1);
+      await expect(page.locator("[data-section-plans]"), `${slug} sections`).toHaveText(sectionPlans[slug] ?? []);
     }
   });
 });
@@ -125,7 +147,9 @@ test.describe("Feature pages", () => {
 // software, a customer claim with no customers, riders "tracked" with no map, and three facts the
 // feature pages had wrong before they went live (the queue splits at the business day, not
 // midnight; a closed drawer day can be corrected more than once; "any tablet"; and the kitchen
-// doesn't get an order taken offline until the connection is back).
+// doesn't get an order taken offline until the connection is back); and three the app can't
+// back up: a delivery code no customer is ever given, tables marked reserved, and staff PINs, which
+// nothing in the app can set.
 const TAKEN_BACK =
-  /floor ?plan|on most systems|written somewhere else|most start here|riders?[^.]{0,40}tracked|before midnight|corrected once|runs on any tablet|keeps doing all three/i;
+  /floor ?plan|on most systems|written somewhere else|most start here|riders?[^.]{0,40}tracked|before midnight|corrected once|runs on any tablet|keeps doing all three|photo or a code|reserved or occupied|\bPIN\b/i;
 const PRICE = /(Rs\.?|PKR|USD|US\$|\$)\s?\d|\d[\d,]*\s?(rupees|\/-)|\d[\d,.]*\s?(\/|per )\s?(month|mo|branch|user|seat)\b/i;

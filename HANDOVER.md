@@ -338,18 +338,62 @@ or could hurt a paying client.
   `src/components/kds/kds-board.tsx`, although `BranchSettings.kdsSlaSeconds` exists in the
   database. Ten minutes means something very different at a fast-food counter and at a sit-down
   restaurant; the setting should drive it, per branch. Owner: log it, don't fix it now.
-- **The POS's offline "pay now" message says to wait, but you don't have to.** Punching an order
-  with "pay now" while offline queues the order and shows *"You're offline — pay this order from
-  the Order Queue once you're back online"* (`src/components/pos/pos-terminal.tsx`, around line
-  451). But the Order Queue shows orders punched offline straight away, and a payment taken there
-  while offline is queued too (`loadQueue` and `handleConfirmPayment` in the same file). The
-  message should say "pay it from the Order Queue now". The one thing not covered end to end:
-  `e2e/offline-sync.spec.ts` pays offline an order that was created online, never one that was
-  itself created offline. Found 28 September while checking the feature pages; logged, not changed.
+- **Offline card payments are charged at the cash rate. The worst thing found on 28 September.**
+  Offline, the payment dialog can't reprice for the chosen method: it reprices through the server
+  (`pay-preview`), so it keeps the order's stored total, which assumes cash. A card taken offline
+  from the Order Queue is charged the cash-rate total, and the server accepts it, since it only
+  refuses payments that fall short (`takePayment` in `src/server/orders.ts`).
+
+  Measured against the dev server: a Rs 284 card-rate bill was charged **Rs 305** on the card,
+  recorded as Rs 21 overpaid. Every outage where a card is taken from the queue hits this.
+
+  Two ways to fix it, neither applied yet (the owner decides):
+  - Refuse non-cash methods in the dialog while offline, with the reason.
+  - Price the tender on the device. The order's `discountedSubtotalPaisa`, the cached service
+    charge, tax rules and rounding are enough to do it the way `finalizeOrder` does.
+- **The POS's offline "pay now" message: fixed 28 September.** Punching an order with "Take
+  Payment" while offline used to say to pay "once you're back online". It now says to take cash
+  from the Order Queue now, and to leave card and other methods for the connection, because of the
+  card problem above. `e2e/offline-sync.spec.ts` covers the path: an order punched offline, paid
+  in cash from the queue while still offline, synced at exactly its total.
+- **Riders added from the riders screen can't sign in in production.** They get a name and phone
+  number only. Phone sign-in is refused wherever no SMS or WhatsApp sender exists
+  (`otpDeliveryAvailable`), which is production today, and the rider sign-in page is phone-only.
+
+  What works: invite the rider by link with the Rider role. They set a password, sign in with
+  email, and open `/rider/orders` themselves, since email sign-in lands on the dashboard.
+- **Staff PINs can't be set anywhere,** so PIN sign-in, and the automatic clock-in that rides on
+  it, never happen for a real restaurant. `hashPin` is used only by the seed, and the sign-in page
+  has no PIN option.
+
+  Attendance is manual entries only, and the "Clock out" button has nothing to close unless a
+  manager left a record open.
+- **Nobody can switch branch.** Email sign-in always lands on a person's first branch
+  (`session-user.ts`). Branch settings and tax rates are saved for the signed-in branch only
+  (`/api/branch-settings`). So an owner can't set up their second branch themselves; someone
+  invited to that branch has to. Reports are the exception: owners see every branch.
+- **A new branch starts with no tax rates, and charges 0% until it gets some.** `createBranch`
+  creates the branch's settings but no `TaxRule` rows (only sign-up seeds the Punjab rates), and
+  `resolveTaxRate` falls back to 0. Combined with the point above, the owner can't add them. Every
+  second branch should be checked before it takes a sale.
+- **The delivery handoff code never reaches the customer.** It's generated on assignment and
+  checked in the rider app's "Enter code", but no page, receipt or message ever shows it. In
+  practice every delivery is proved by photo, which is what the site now says.
+- **Tables can't be marked reserved or booked.** The statuses exist and an API route sets them, but
+  no screen does, while the POS table picker still offers "Reserved" and "Booked" filters that can
+  never match.
+- **Per-person permission grants and denials** are enforced (`Membership.grants/denies`), but
+  nothing in the app sets them.
 
 ### Public claims corrected
 
-Live overclaims, so fixed rather than logged (27 September 2026).
+Live overclaims, so fixed rather than logged (27–28 September 2026).
+
+- **"Available, reserved or occupied" and "proved with a photo or a code" were mine, and wrong.**
+  I wrote both on 27–28 September from the database's enums and the rider app's code check. I
+  didn't first check that the app can set a reservation (it can't) or that a customer ever gets the
+  code (they don't). Both came out of the homepage, the pricing page, the POS feature page and
+  `llms.txt` on 28 September, and the claims tests now fail if they return.
 
 - **WhatsApp is off the public site until a real message is delivered.** Removed 27 September:
   the homepage's "Out the door" line and its chip, and the plans list (`NOT_ADVERTISED` in
@@ -381,11 +425,14 @@ Live overclaims, so fixed rather than logged (27 September 2026).
   touching the page. The test pins every line of every card. When it fails, read the cards against
   the code before updating the list, every time tiers or features change.
 
-### The feature pages (/features and three pages under it)
+### The feature pages (/features and eleven pages under it)
 
-Live from 28 September: the restaurant POS, the kitchen display and inventory, plus an index.
-Each answers the questions an owner asks, in the words they'd search, and ends with what the
-feature doesn't do. The other eight planned pages aren't written yet.
+The first three (restaurant POS, kitchen display and inventory) went live on 28 September. The
+other eight followed the same day: recipe costing, table & floor management, delivery & riders,
+online ordering, QR table ordering, reports, multi-branch, and payroll & staff. Each answers the
+questions an owner asks, in the words they'd search, and ends with what the feature doesn't do.
+Several of those limits are the app issues logged above (no branch switching, riders signing in by
+email, manual attendance), stated plainly on the page. Fixing an issue means changing its page too.
 
 - **Checked against the code before they went live.** Six lines were wrong or too loose and were
   corrected:
@@ -400,7 +447,9 @@ feature doesn't do. The other eight planned pages aren't written yet.
     kitchen". An order taken offline reaches the kitchen screen when the connection is back, and
     the page now says so.
 - **Each page says which plans include it,** worked out from the tiers (`plansSentence` in
-  `src/lib/marketing/plans.ts`), never typed into the copy. Inventory is Growth and Complete, while
+  `src/lib/marketing/plans.ts`), never typed into the copy. So does each section that needs more
+  than its page's plan (payroll on the staff page, the Growth reports on the reports page). The
+  multi-branch page's plans come from the branch limits: Starter allows one. Inventory is Growth and Complete, while
   the free trial runs on Starter. So that page says the trial doesn't include it and offers a quote
   instead, rather than sending someone to a trial without the feature.
 - **One frame for every content page:** `marketing-shell.tsx`. Structured data comes from

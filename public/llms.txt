@@ -3,7 +3,7 @@
 > ToffeeOS is restaurant management software for restaurants and cafés in Pakistan, made by KRIMSOLS. It runs in a web browser on a tablet, phone or computer, and covers the point of sale, the kitchen display, inventory and recipes, delivery, online ordering, reports, staff and payroll. The point of sale keeps taking orders and payments when the internet connection drops, and syncs them when it returns.
 
 ## Point of sale
-- Dine-in, takeaway and delivery orders on one screen; tables grouped by floor, each showing whether it is available, reserved or occupied.
+- Dine-in, takeaway and delivery orders on one screen; tables grouped by floor, each showing whether it is free or occupied.
 - Works through internet outages: orders, payments and voids are saved on the device and sent to the server once when the connection returns. Prices, tax, service charge and rounding are calculated on the device from the branch's own settings.
 - Tax rates are set per branch and per payment method. A bill paid partly in cash and partly by card is taxed at each method's rate, with the taxable amount apportioned between them. Every amount is a whole number of paisa.
 - Line and order discounts with a per-branch ceiling; voids and cancellations with reasons; refunds that reach the reports and the cash drawer.
@@ -24,7 +24,7 @@
 
 ## Beyond the counter
 - The restaurant's own online ordering site and QR ordering at the table, with no per-order fee.
-- Delivery: orders assigned to riders, and each delivery confirmed with a photo or a code from the customer.
+- Delivery: orders assigned to riders, and each delivery confirmed with a photo taken at the door.
 - Customers and loyalty points.
 - Reports by branch or across branches, each branch's business day ending at the time it sets; daily sales and printable closing summaries; expenses and profit and loss.
 - Staff roles and permissions; payroll and HR.
@@ -51,5 +51,13 @@
 - [Restaurant POS system](https://toffeeos.com/features/restaurant-pos-system)
 - [Kitchen display system](https://toffeeos.com/features/kitchen-display-system)
 - [Restaurant inventory management](https://toffeeos.com/features/restaurant-inventory-management)
+- [Recipe costing](https://toffeeos.com/features/recipe-costing-software)
+- [Table & floor management](https://toffeeos.com/features/table-and-floor-management)
+- [Delivery & rider management](https://toffeeos.com/features/delivery-and-rider-management)
+- [Online ordering](https://toffeeos.com/features/restaurant-online-ordering-system)
+- [QR menu & table ordering](https://toffeeos.com/features/qr-code-menu-and-table-ordering)
+- [Reports & analytics](https://toffeeos.com/features/restaurant-reports-and-analytics)
+- [Multi-branch management](https://toffeeos.com/features/multi-branch-restaurant-management)
+- [Payroll & staff management](https://toffeeos.com/features/restaurant-payroll-and-staff-management)
 - [Privacy policy](https://toffeeos.com/privacy)
 - [Terms of service](https://toffeeos.com/terms)

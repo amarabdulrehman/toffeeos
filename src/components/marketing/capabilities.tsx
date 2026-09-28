@@ -170,9 +170,10 @@ const PANELS: Panel[] = [
     room: "Out the door",
     title: "Follow the order past the counter.",
     // No WhatsApp here, and no "tracked": messages wait on Meta's approval and have never been
-    // delivered, and riders aren't located on a map — each delivery is proved with a photo or the
-    // customer's code. WhatsApp comes back the day a real message is delivered.
-    body: "Riders assigned to each order, a QR menu customers order from directly, and every delivery proved with a photo or a code.",
+    // delivered, and riders aren't located on a map. And a photo, not "a photo or a code": the rider
+    // app accepts a handoff code, but nothing ever gives the customer that code, so in practice every
+    // delivery is proved by the photo. WhatsApp comes back the day a real message is delivered.
+    body: "Riders assigned to each order, a QR menu customers order from directly, and every delivery proved with a photo.",
     covers: ["Delivery & riders", "Online ordering", "Customers"],
     visual: <RiderTrack />,
   },

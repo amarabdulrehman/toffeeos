@@ -3,12 +3,12 @@ import Link from "next/link";
 import { Breadcrumbs, MarketingShell } from "@/components/marketing/marketing-shell";
 import { breadcrumbLd, JsonLd } from "@/components/marketing/json-ld";
 import { BRAND_NAME } from "@/config/brand";
-import { FEATURES } from "@/lib/marketing/features";
-import { plansSentence } from "@/lib/marketing/plans";
+import { FEATURES, sectionModules } from "@/lib/marketing/features";
+import { plansSummary } from "@/lib/marketing/plans";
 
 const TITLE = `Restaurant Management Software Features — ${BRAND_NAME}`;
 const DESCRIPTION =
-  "What ToffeeOS runs for a restaurant: the POS, the kitchen display and inventory, each explained plainly, including what it doesn't do.";
+  "What ToffeeOS runs for a restaurant, from the POS and kitchen display to delivery, reports and payroll, each explained plainly, limits included.";
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
@@ -32,7 +32,7 @@ export default function FeaturesIndex() {
         Restaurant management software, one part at a time
       </h1>
       <p className="mt-7 max-w-2xl text-[17px] leading-[1.65] text-[color:var(--ink-2)]">
-        {BRAND_NAME} runs the counter, the kitchen and the storeroom for restaurants and cafés in Pakistan. Each page below
+        {BRAND_NAME} runs the counter, the kitchen, the storeroom and the office for restaurants and cafés in Pakistan. Each page below
         explains one part: what it does, how, and what it doesn&apos;t do.
       </p>
       <ul className="mt-12 grid gap-4 sm:grid-cols-2">
@@ -44,7 +44,7 @@ export default function FeaturesIndex() {
             >
               <h2 className="font-display text-[1.35rem] leading-tight text-[color:var(--ink)]">{f.name}</h2>
               <p className="mt-2 text-[14px] leading-[1.6] text-[color:var(--ink-3)]">{f.summary}</p>
-              <p className="mt-3 text-[12px] font-medium text-[color:var(--ink-2)]">{plansSentence(f.modules)}</p>
+              <p className="mt-3 text-[12px] font-medium text-[color:var(--ink-2)]">{plansSummary(f.modules, f.branches, sectionModules(f))}</p>
             </Link>
           </li>
         ))}

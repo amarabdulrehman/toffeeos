@@ -31,7 +31,7 @@ export const CORE_LINES: PlanLine[] = [
   { label: "Kitchen display", detail: "Every order on a kitchen screen with a running timer, or on printed kitchen tickets if you prefer." },
   // "Grouped by floor", not "floor plan": tables are listed under their floor, with no map of the
   // room (RestaurantTable.posX/posY exist in the schema but nothing reads or writes them).
-  { label: "Tables, grouped by floor", detail: "Every table's status at a glance: available, reserved or occupied." },
+  { label: "Tables, grouped by floor", detail: "Every table's status at a glance: free or occupied." },
   { label: "Menu, variants & modifiers", detail: "Sizes and add-ons, with each branch's own prices and availability." },
   { label: "Sales & staff reports", detail: "Daily sales, printable closing summaries, staff performance and CSV export." },
   { label: "Staff, roles & permissions", detail: "Your own roles, with a separate permission for each action." },
@@ -50,7 +50,7 @@ const MODULE_DETAIL: Record<string, string> = {
   crm: "Customer profiles and loyalty points.",
   finance: "Expenses by category, and profit and loss.",
   reports: "Discount and void audit, cancellations and inventory valuation.",
-  delivery: "Riders assigned to orders, a rider app, every delivery proved with a photo or a code, and rider performance.",
+  delivery: "Riders assigned to orders, a rider app, every delivery proved with a photo, and rider performance.",
   online: "Your own ordering site and QR ordering at the table, with no per-order fee.",
   hr: "Employee records, shifts, attendance, payroll and payslips.",
 };
@@ -73,8 +73,9 @@ export function modulesFor(tier: TierKey): string[] {
     .map((m) => m.label);
 }
 
-/** The lowest plan that includes every one of these modules (keys of GATEABLE_MODULES). */
-export function minTierFor(moduleKeys: string[]): TierKey {
+/** The lowest plan that includes every one of these modules (keys of GATEABLE_MODULES) and allows
+ * at least `branches` branches (TIER_MAX_BRANCHES, the limit the app enforces). */
+export function minTierFor(moduleKeys: string[], branches = 1): TierKey {
   let tier: TierKey = "starter";
   for (const key of moduleKeys) {
     const m = GATEABLE_MODULES.find((g) => g.key === key);
@@ -82,17 +83,40 @@ export function minTierFor(moduleKeys: string[]): TierKey {
     if (!m) throw new Error(`Unknown module "${key}": not in GATEABLE_MODULES (src/lib/tiers.ts).`);
     if (!tierMeets(tier, m.minTier)) tier = m.minTier;
   }
+  if (branches > 1) {
+    const fits = TIER_ORDER.find((t) => {
+      const max = TIER_MAX_BRANCHES[t];
+      return max === null || max >= branches;
+    });
+    if (!fits) throw new Error(`No plan allows ${branches} branches.`);
+    if (!tierMeets(tier, fits)) tier = fits;
+  }
   return tier;
 }
 
-/** Which plans include a feature that needs these modules, as a sentence: "On every plan", or
- * "On the Growth and Complete plans". Worked out from the tiers, never typed into the copy. */
-export function plansSentence(moduleKeys: string[]): string {
-  const from = minTierFor(moduleKeys);
+/** Which plans include a feature that needs these modules (and branches), as a sentence: "On every
+ * plan", or "On the Growth and Complete plans". Worked out from the tiers, never typed into the copy. */
+export function plansSentence(moduleKeys: string[], branches = 1): string {
+  const from = minTierFor(moduleKeys, branches);
   const names = TIER_ORDER.filter((t) => tierMeets(t, from)).map((t) => TIER_LABEL[t]);
   if (names.length === TIER_ORDER.length) return "On every plan";
   if (names.length === 1) return `On the ${names[0]} plan`;
   return `On the ${names.slice(0, -1).join(", ")} and ${names.at(-1)} plans`;
+}
+
+/**
+ * A page's plan line when parts of it need more than the page itself: "On every plan; some parts
+ * need Complete". Without the second half, a page titled "Payroll & staff management" read "On
+ * every plan" although payroll is on Complete only.
+ */
+export function plansSummary(moduleKeys: string[], branches = 1, sectionModuleKeys: string[][] = []): string {
+  const base = minTierFor(moduleKeys, branches);
+  const sentence = plansSentence(moduleKeys, branches);
+  const higher = sectionModuleKeys.map((m) => minTierFor([...moduleKeys, ...m], branches)).filter((t) => t !== base);
+  const lowest = TIER_ORDER.find((t) => higher.includes(t));
+  if (!lowest) return sentence;
+  const names = TIER_ORDER.filter((t) => tierMeets(t, lowest)).map((t) => TIER_LABEL[t]);
+  return `${sentence}; some parts need ${names.join(" or ")}`;
 }
 
 /** The branch count the app enforces for a tier, as the plans state it. */

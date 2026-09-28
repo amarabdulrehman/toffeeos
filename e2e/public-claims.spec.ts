@@ -29,8 +29,10 @@ test("the homepage claims nothing ToffeeOS doesn't do", async ({ request }) => {
   expect(text, "there's no floor plan to arrange tables on").not.toMatch(/floor ?plan/i);
   // Nothing said about competitors' software that their own sites contradict or we can't show.
   expect(text).not.toMatch(/on most systems|written somewhere else/i);
+  // No handoff code reaches a customer, and nothing in the app can mark a table reserved.
+  expect(text, "claims a delivery code or reserved tables").not.toMatch(/photo or a code|reserved or occupied/i);
   // Still says what it does do.
-  expect(text).toContain("every delivery proved with a photo or a code");
+  expect(text).toContain("every delivery proved with a photo");
 });
 
 /**
@@ -113,6 +115,7 @@ test.describe("Pricing page", () => {
     expect(html, "a price in the structured data").not.toMatch(/"(offers|price|priceCurrency|priceSpecification|lowPrice|highPrice)"/);
     expect(text.match(FORBIDDEN)?.[0] ?? null, "names something ToffeeOS doesn't do").toBeNull();
     expect(text).not.toMatch(/most (start|choose|popular)/i);
+    expect(text, "claims a delivery code or reserved tables").not.toMatch(/photo or a code|reserved or occupied/i);
     // The model, stated plainly: per branch, not per seat, quoted.
     expect(text).toContain("priced per branch, per month");
     expect(text).toContain("Nothing is charged per user or per device");

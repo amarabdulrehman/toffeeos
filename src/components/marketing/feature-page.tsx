@@ -2,8 +2,8 @@ import Link from "next/link";
 import { Breadcrumbs, MarketingShell } from "./marketing-shell";
 import { breadcrumbLd, JsonLd } from "./json-ld";
 import { COMPANY_EMAIL, COMPANY_NAME } from "@/config/brand";
-import { FEATURES, type Feature } from "@/lib/marketing/features";
-import { minTierFor, plansSentence, quoteHref } from "@/lib/marketing/plans";
+import { FEATURES, sectionModules, type Feature } from "@/lib/marketing/features";
+import { minTierFor, plansSentence, plansSummary, quoteHref } from "@/lib/marketing/plans";
 import { TIER_LABEL } from "@/lib/tiers";
 
 /**
@@ -21,7 +21,7 @@ export function FeaturePageView({ feature }: { feature: Feature }) {
     { name: feature.name, path: `/features/${feature.slug}` },
   ];
   const related = feature.related.map((s) => FEATURES.find((f) => f.slug === s)).filter((f): f is Feature => !!f);
-  const minTier = minTierFor(feature.modules);
+  const minTier = minTierFor(feature.modules, feature.branches);
   const inTrial = minTier === "starter";
 
   return (
@@ -36,7 +36,7 @@ export function FeaturePageView({ feature }: { feature: Feature }) {
       <p className="mt-7 max-w-2xl text-[17px] leading-[1.65] text-[color:var(--ink-2)]">{feature.lead}</p>
       <p className="mt-5 text-[13.5px] text-[color:var(--ink-3)]">
         <span data-feature-plans className="font-medium text-[color:var(--ink)]">
-          {plansSentence(feature.modules)}.
+          {plansSummary(feature.modules, feature.branches, sectionModules(feature))}.
         </span>{" "}
         <Link href="/pricing" className="border-b border-[color:var(--rule)] pb-px transition-colors hover:border-[color:var(--ink)] hover:text-[color:var(--ink)]">
           See pricing
@@ -49,6 +49,11 @@ export function FeaturePageView({ feature }: { feature: Feature }) {
             <h2 className="font-display text-[clamp(1.45rem,2.6vw,1.9rem)] leading-[1.15] tracking-[-0.01em] text-[color:var(--ink)]">
               {s.heading}
             </h2>
+            {s.modules && (
+              <p data-section-plans className="mt-2 text-[12.5px] font-medium text-[color:var(--accent)]">
+                {plansSentence(s.modules)}
+              </p>
+            )}
             <p className="mt-4 max-w-2xl text-[16px] leading-[1.7] text-[color:var(--ink)]">{s.answer}</p>
             {s.points && (
               <ul className="mt-5 max-w-2xl space-y-3">
