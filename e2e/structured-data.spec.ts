@@ -13,7 +13,8 @@ import { test, expect } from "@playwright/test";
 
 const FORBIDDEN = /e-?IMS|\bFBR\b|foodpanda|\burdu\b|whatsapp/i;
 
-// Checked against schema.org's vocabulary (schemaorg-current-https.jsonld), 27 September 2026.
+// Checked against schema.org's vocabulary (schemaorg-current-https.jsonld): the first three on
+// 27 September 2026, the breadcrumb and FAQ types on 28 September.
 const ALLOWED: Record<string, string[]> = {
   Organization: ["name", "url", "email", "logo", "sameAs", "brand"],
   SoftwareApplication: [
@@ -29,6 +30,11 @@ const ALLOWED: Record<string, string[]> = {
     "featureList",
   ],
   Brand: ["name"],
+  BreadcrumbList: ["itemListElement"],
+  ListItem: ["position", "name", "item"],
+  FAQPage: ["mainEntity"],
+  Question: ["name", "acceptedAnswer"],
+  Answer: ["text"],
 };
 
 function ldBlocks(html: string): Record<string, unknown>[] {
@@ -42,7 +48,9 @@ function checkProperties(node: Record<string, unknown>, where: string) {
   for (const [key, value] of Object.entries(node)) {
     if (key.startsWith("@")) continue;
     expect(ALLOWED[type], `${where}: ${type}.${key} is a schema.org property`).toContain(key);
-    if (value && typeof value === "object" && !Array.isArray(value)) checkProperties(value as Record<string, unknown>, `${where} › ${key}`);
+    for (const v of Array.isArray(value) ? value : [value]) {
+      if (v && typeof v === "object") checkProperties(v as Record<string, unknown>, `${where} › ${key}`);
+    }
   }
 }
 
@@ -78,5 +86,29 @@ test("llms.txt is served as plain text, names nothing ToffeeOS doesn't do, and i
 
   for (const [, path] of text.matchAll(/https:\/\/toffeeos\.com(\/[^\s)]*)/g)) {
     expect((await request.get(path)).status(), `llms.txt links to ${path}`).toBe(200);
+  }
+});
+
+test("the pricing page's structured data: breadcrumbs and its own questions, and no price", async ({ request }) => {
+  const html = await (await request.get("/pricing")).text();
+  const blocks = ldBlocks(html);
+  expect(blocks.map((b) => b["@type"]).sort()).toEqual(["BreadcrumbList", "FAQPage"]);
+  for (const block of blocks) {
+    expect(block["@context"]).toBe("https://schema.org");
+    checkProperties(block, String(block["@type"]));
+    expect(JSON.stringify(block).match(FORBIDDEN)?.[0] ?? null).toBeNull();
+  }
+
+  const crumbs = blocks.find((b) => b["@type"] === "BreadcrumbList")!.itemListElement as { position: number; item: string }[];
+  crumbs.forEach((c, i) => expect(c.position).toBe(i + 1));
+  expect(crumbs.at(-1)!.item).toBe("https://toffeeos.com/pricing");
+
+  // Google requires marked-up questions to be visible on the page: every one must be, word for word.
+  const text = html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
+  const faqs = blocks.find((b) => b["@type"] === "FAQPage")!.mainEntity as { name: string; acceptedAnswer: { text: string } }[];
+  expect(faqs.length).toBeGreaterThan(0);
+  for (const f of faqs) {
+    expect(text, "the question is on the page").toContain(f.name);
+    expect(text, "the answer is on the page").toContain(f.acceptedAnswer.text);
   }
 });

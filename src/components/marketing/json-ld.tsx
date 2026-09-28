@@ -59,6 +59,33 @@ export const softwareApplicationLd = {
   ],
 };
 
+export function breadcrumbLd(trail: { name: string; path: string }[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: trail.map((t, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: t.name,
+      item: `${SITE_URL}${t.path}`,
+    })),
+  };
+}
+
+/** Questions and answers exactly as the page shows them. Google requires the marked-up text to be
+ * visible, so the page and this block are rendered from the same list. */
+export function faqLd(faqs: { q: string; a: string }[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqs.map((f) => ({
+      "@type": "Question",
+      name: f.q,
+      acceptedAnswer: { "@type": "Answer", text: f.a },
+    })),
+  };
+}
+
 /** A schema.org block, escaped so nothing in it can close the script tag. */
 export function JsonLd({ data }: { data: object }) {
   return (

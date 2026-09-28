@@ -166,7 +166,7 @@ test.describe("Back-office navigation on a phone", () => {
  * Anonymous on purpose. These render for people who have no session, so testing them with an
  * owner's cookie would be testing a different page than the one that matters.
  */
-const PUBLIC_SCREENS = ["/", "/login", "/signup", "/privacy", "/terms", `/order/${TENANT_SLUG}`];
+const PUBLIC_SCREENS = ["/", "/pricing", "/login", "/signup", "/privacy", "/terms", `/order/${TENANT_SLUG}`];
 
 test.describe("Public pages", () => {
   test.use({ storageState: { cookies: [], origins: [] } });

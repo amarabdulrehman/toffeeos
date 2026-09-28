@@ -108,6 +108,9 @@ export function SiteFooter() {
           <a href="#plans" className="text-[color:var(--ink-3)] transition-colors hover:text-[color:var(--ink)]">
             Plans
           </a>
+          <Link href="/pricing" className="text-[color:var(--ink-3)] transition-colors hover:text-[color:var(--ink)]">
+            Pricing
+          </Link>
           <Link href="/login" className="text-[color:var(--ink-3)] transition-colors hover:text-[color:var(--ink)]">
             Sign in
           </Link>

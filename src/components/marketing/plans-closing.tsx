@@ -6,60 +6,18 @@ import { ArrowRight, Check } from "lucide-react";
 import { Eyebrow, Reveal } from "./motion";
 import { RevealLines, TiltCard } from "./anim";
 import { InstagramGlyph } from "./site-chrome";
-import { BRAND_NAME, COMPANY_EMAIL, COMPANY_INSTAGRAM, COMPANY_INSTAGRAM_HANDLE, COMPANY_NAME } from "@/config/brand";
-import { GATEABLE_MODULES, TIER_LABEL, TIER_MAX_BRANCHES, TIER_ORDER, tierMeets, type TierKey } from "@/lib/tiers";
+import { COMPANY_EMAIL, COMPANY_INSTAGRAM, COMPANY_INSTAGRAM_HANDLE, COMPANY_NAME } from "@/config/brand";
+import { TIER_LABEL, TIER_ORDER } from "@/lib/tiers";
+import { branchesLine, CORE_LINES, modulesFor, PLAN_PITCH, quoteHref } from "@/lib/marketing/plans";
 
 /**
  * Plans, and the closing ask.
  *
- * The plan contents are still generated from GATEABLE_MODULES rather than retyped, so the page
- * cannot promise a module a tier does not actually unlock — and the branch count from
- * TIER_MAX_BRANCHES, which is what the app enforces. Starter used to list "Multi-branch" among
- * what every plan includes; Starter is one branch.
- *
- * Still no prices: billing is per branch, per month and set per tenant, so there is no public
- * number to print that would not be invented. Each plan mails KRIMSOLS with that plan in the
- * subject line, which is the more useful outcome anyway — a quote based on their branch count.
+ * What each plan includes comes from src/lib/marketing/plans.ts, which the pricing page reads
+ * too: built from what the app enforces, and pinned line by line in e2e/public-claims.spec.ts.
+ * Still no prices. Each plan mails KRIMSOLS with that plan in the subject line and the questions
+ * a quote needs in the body.
  */
-
-// "Tables, grouped by floor", not "floor plan": tables are listed under their floor, with no map
-// of the room to arrange them on (RestaurantTable.posX/posY exist in the schema but nothing reads
-// or writes them).
-const CORE = [
-  "Point of sale & offline mode",
-  "Kitchen display",
-  "Tables, grouped by floor",
-  "Menu, variants & modifiers",
-  "Sales & staff reports",
-  "Staff, roles & permissions",
-];
-
-function branchesLine(tier: TierKey) {
-  const max = TIER_MAX_BRANCHES[tier];
-  if (max === null) return "Any number of branches";
-  return max === 1 ? "One branch" : `Up to ${max} branches`;
-}
-
-const PITCH: Record<TierKey, string> = {
-  starter: "One counter, running properly.",
-  growth: "Watching stock and margins, not just sales.",
-  complete: "Delivery, online orders and payroll too.",
-};
-
-/**
- * Modules the plans don't advertise yet, though a tier unlocks them in the app. WhatsApp messaging
- * waits on Meta's approval and has never delivered a message; it goes back on the page the day one
- * is delivered.
- */
-const NOT_ADVERTISED = new Set(["whatsapp"]);
-
-function modulesFor(tier: TierKey) {
-  return GATEABLE_MODULES.filter((m) => !NOT_ADVERTISED.has(m.key) && tierMeets(tier, m.minTier)).map((m) => m.label);
-}
-
-function quoteHref(tier: TierKey) {
-  return `mailto:${COMPANY_EMAIL}?subject=${encodeURIComponent(`${BRAND_NAME} — ${TIER_LABEL[tier]} plan enquiry`)}`;
-}
 
 export function Plans() {
   return (
@@ -92,7 +50,7 @@ export function Plans() {
                       </span>
                     )}
                   </div>
-                  <p className="mt-2.5 text-[14px] text-[color:var(--ink-2)]">{PITCH[tier]}</p>
+                  <p className="mt-2.5 text-[14px] text-[color:var(--ink-2)]">{PLAN_PITCH[tier]}</p>
 
                   <a
                     href={quoteHref(tier)}
@@ -109,7 +67,7 @@ export function Plans() {
                     {tier === "starter" ? "Includes" : "Everything in Starter, plus"}
                   </p>
                   <ul className="mt-4 space-y-2.5">
-                    {[branchesLine(tier), ...(tier === "starter" ? CORE : modulesFor(tier))].map((f) => (
+                    {[branchesLine(tier), ...(tier === "starter" ? CORE_LINES.map((l) => l.label) : modulesFor(tier))].map((f) => (
                       <li key={f} className="flex items-start gap-2.5 text-[13.5px] text-[color:var(--ink-2)]">
                         <Check className="mt-[3px] size-3.5 shrink-0 text-[color:var(--accent)]" strokeWidth={3} />
                         {f}
@@ -122,6 +80,14 @@ export function Plans() {
             );
           })}
         </div>
+
+        <Link
+          href="/pricing"
+          className="group mt-8 inline-flex items-center gap-1.5 border-b border-[color:var(--rule)] pb-0.5 text-[13px] font-medium text-[color:var(--ink-2)] transition-colors hover:border-[color:var(--ink)] hover:text-[color:var(--ink)]"
+        >
+          How pricing works, and what each plan includes
+          <ArrowRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
+        </Link>
       </div>
     </section>
   );

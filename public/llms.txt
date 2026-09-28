@@ -18,7 +18,7 @@
 
 ## Inventory and costing
 - Stock is kept per branch and per storeroom. Recipes take each dish's ingredients out of stock when an order is paid.
-- Suppliers and purchase orders (draft, approved, received); transfers between storerooms and between branches; every adjustment needs a reason, and stock movements are only ever added, never edited or deleted.
+- Suppliers and purchase orders (draft, approved, received); transfers between storerooms and between branches; every adjustment needs a reason, and one made in error is undone by an opposite entry: stock movements are only ever added, never edited or deleted.
 - Low-stock levels per ingredient, flagged on the dashboard.
 - Recipe costing from each ingredient's most recent purchase price, with dishes listed by margin.
 
@@ -30,8 +30,9 @@
 - Staff roles and permissions; payroll and HR.
 
 ## Plans
-- Priced per branch, per month, on three plans: Starter (one branch), Growth (up to three branches) and Complete (any number). Prices are quoted rather than published. There is no limit on the number of staff users.
-- Free trial, 14 days: https://toffeeos.com/signup
+- Priced per branch, per month, on three plans: Starter (one branch), Growth (up to three branches) and Complete (any number). Prices are quoted rather than published. Nothing is charged per user or per device.
+- What each plan includes: https://toffeeos.com/pricing
+- Free trial, 14 days on the Starter plan: https://toffeeos.com/signup
 
 ## What it does not do
 - It does not process payments itself; the cashier records how each bill was paid (cash, card, JazzCash, Easypaisa, bank transfer).
@@ -45,5 +46,6 @@
 
 ## Pages
 - [Home](https://toffeeos.com/)
+- [Pricing](https://toffeeos.com/pricing)
 - [Privacy policy](https://toffeeos.com/privacy)
 - [Terms of service](https://toffeeos.com/terms)

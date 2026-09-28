@@ -373,6 +373,31 @@ Live overclaims, so fixed rather than logged (27 September 2026).
   touching the page. The test pins every line of every card. When it fails, read the cards against
   the code before updating the list, every time tiers or features change.
 
+### The pricing page (/pricing) — quote-based, no figures
+
+The owner's call (28 September): pricing stays quote-based for now, so the page explains the model
+and ends in a quote request. It covers per branch per month, no charge per user or device, what each
+plan includes, and a set of questions, all with no price. The structured data carries none either
+(breadcrumbs and the questions only).
+
+- **What each plan includes** comes from `src/lib/marketing/plans.ts`. The homepage's cards read the
+  same file, so the two can't disagree. A new module in `GATEABLE_MODULES` without a description
+  there fails the build rather than printing a blank row, so the page already live stays up.
+- **The trial is 14 days on Starter**, which is what self-serve sign-up creates. The page says so,
+  and says to ask if you want to see Growth or Complete first.
+- **"Can I change plan?"** is answered from the code: a plan change keeps the data, but can't take
+  a restaurant below its active branch count (`changeTenantTier`).
+- **"No per-order fee on online orders"** is a public commitment now, on this page as it already
+  was in `llms.txt`. If that ever changes, both need to change the same day.
+- **Quote requests are emails** to the company address, with the plan in the subject line and the
+  questions a quote needs in the body. There's no form and nothing is stored.
+- **The guard:** `e2e/public-claims.spec.ts` fails on any figure (Rs, PKR, $, "per month" after a
+  number), on a price field in the structured data, or if any plan group's lines change.
+  `e2e/structured-data.spec.ts` checks every question in the structured data appears word for word
+  on the page, as Google requires.
+- **When prices are decided,** add them to the page and a real `offers` to the structured data in
+  the same change. The price test has to be removed on purpose; it won't be satisfied by accident.
+
 ---
 
 ## 4. Unverified — genuine unknowns

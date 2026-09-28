@@ -96,7 +96,7 @@ test.describe("Keyboard operation", () => {
  * likeliest to have a problem: it is a warm-paper palette with a lot of deliberately muted
  * secondary text, and muted is exactly where 4.5:1 goes wrong.
  */
-const PUBLIC_SCREENS = ["/", "/login", "/signup", "/privacy", "/terms", `/order/${TENANT_SLUG}`];
+const PUBLIC_SCREENS = ["/", "/pricing", "/login", "/signup", "/privacy", "/terms", `/order/${TENANT_SLUG}`];
 
 test.describe("Accessibility — public pages", () => {
   test.use({ storageState: { cookies: [], origins: [] } });

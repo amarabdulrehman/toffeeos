@@ -18,6 +18,7 @@ function visibleText(html: string): string {
     .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&amp;/g, "&")
+    .replace(/&#x27;/g, "'")
     .replace(/\s+/g, " ");
 }
 
@@ -82,4 +83,67 @@ test("each plan card promises exactly what that plan unlocks, and nothing about 
   }
   // No claim about what customers choose: there are none to count yet.
   await expect(plans).not.toContainText(/most (start|choose|popular)/i);
+});
+
+/**
+ * The pricing page. Pricing is quote-based by the owner's decision, so no figure may appear on it —
+ * not in the text, and not in the structured data. What each plan includes comes from the same
+ * source as the cards above (src/lib/marketing/plans.ts) and is pinned here the same way.
+ */
+const PRICE = /(Rs\.?|PKR|USD|US\$|\$)\s?\d|\d[\d,]*\s?(rupees|\/-)|\d[\d,.]*\s?(\/|per )\s?(month|mo|branch|user|seat)\b/i;
+
+const PRICING_GROUPS = {
+  "On every plan": [
+    "Point of sale & offline mode",
+    "Kitchen display",
+    "Tables, grouped by floor",
+    "Menu, variants & modifiers",
+    "Sales & staff reports",
+    "Staff, roles & permissions",
+  ],
+  "Growth and Complete add": ["Inventory", "Recipe & Costing", "CRM", "Expenses", "Full Report Suite"],
+  "Complete adds": ["Delivery & Rider Management", "Online Ordering", "Payroll & HR"],
+};
+
+test.describe("Pricing page", () => {
+  test("states no price anywhere, and nothing ToffeeOS doesn't do", async ({ request }) => {
+    const html = await (await request.get("/pricing")).text();
+    const text = visibleText(html);
+    expect(text.match(PRICE)?.[0] ?? null, "a price on a quote-only page").toBeNull();
+    expect(html, "a price in the structured data").not.toMatch(/"(offers|price|priceCurrency|priceSpecification|lowPrice|highPrice)"/);
+    expect(text.match(FORBIDDEN)?.[0] ?? null, "names something ToffeeOS doesn't do").toBeNull();
+    expect(text).not.toMatch(/most (start|choose|popular)/i);
+    // The model, stated plainly: per branch, not per seat, quoted.
+    expect(text).toContain("priced per branch, per month");
+    expect(text).toContain("Nothing is charged per user or per device");
+    expect(text).toContain("14 days on the Starter plan");
+  });
+
+  test("is its own page, and lists what each plan includes exactly", async ({ page }) => {
+    await page.goto("/pricing");
+    await expect(page).toHaveTitle("Pricing — Restaurant POS Priced per Branch | ToffeeOS");
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://toffeeos.com/pricing");
+    await expect(page.locator("h1")).toHaveCount(1);
+    const description = await page.locator('meta[name="description"]').getAttribute("content");
+    expect(description!.length, "fits in a search result").toBeLessThanOrEqual(160);
+
+    for (const [heading, lines] of Object.entries(PRICING_GROUPS)) {
+      const group = page.locator(`[data-plan-group="${heading}"]`);
+      await expect(group.locator("li p:first-child"), heading).toHaveText(lines);
+    }
+    await expect(page.locator("[data-plan-branches]")).toHaveText(["One branch", "Up to 3 branches", "Any number of branches"]);
+    // Every quote link reaches the company, with the plan named where one is chosen.
+    const hrefs = await page.locator('a[href^="mailto:"]').evaluateAll((as) => as.map((a) => a.getAttribute("href")!));
+    expect(hrefs.length).toBeGreaterThanOrEqual(5);
+    for (const plan of ["Starter", "Growth", "Complete"]) {
+      expect(hrefs.some((h) => decodeURIComponent(h).includes(`${plan} plan enquiry`)), `a quote link for ${plan}`).toBe(true);
+    }
+  });
+
+  test("the homepage and the footer lead to it", async ({ request }) => {
+    const home = await (await request.get("/")).text();
+    expect(home).toContain('href="/pricing"');
+    const sitemap = await (await request.get("/sitemap.xml")).text();
+    expect(sitemap).toContain("<loc>https://toffeeos.com/pricing</loc>");
+  });
 });
