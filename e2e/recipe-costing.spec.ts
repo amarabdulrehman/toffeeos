@@ -66,6 +66,18 @@ test.describe("Recipe costing", () => {
     const menuItem = categories.flatMap((c: { items: { id: string; name: string; basePricePaisa: number }[] }) => c.items)[0];
     expect(menuItem, "the demo tenant needs at least one menu item").toBeTruthy();
 
+    // A run that died before its own clean-up (a timeout mid-delete) leaves its lines on this dish,
+    // and they'd be counted in the cost below: seen once, 952 instead of 810. So clear any line
+    // these tests made, by the names they give their ingredients, before adding this run's.
+    const leftover = await request.get(`/api/menu-items/${menuItem.id}/recipe`);
+    if (leftover.ok()) {
+      for (const line of ((await leftover.json()).lines ?? []) as { id: string; inventoryItem?: { name?: string } }[]) {
+        if (/^(costing|uncosted)-/.test(line.inventoryItem?.name ?? "")) {
+          await request.delete(`/api/recipe-lines/${line.id}`);
+        }
+      }
+    }
+
     for (const m of made) {
       const res = await request.post(`/api/menu-items/${menuItem.id}/recipe`, {
         data: { inventoryItemId: m.id, quantityPerUnit: m.perUnit },
