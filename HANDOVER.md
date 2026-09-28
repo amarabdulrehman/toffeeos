@@ -338,23 +338,27 @@ or could hurt a paying client.
   `src/components/kds/kds-board.tsx`, although `BranchSettings.kdsSlaSeconds` exists in the
   database. Ten minutes means something very different at a fast-food counter and at a sit-down
   restaurant; the setting should drive it, per branch. Owner: log it, don't fix it now.
-- **Offline card payments are charged at the cash rate. The worst thing found on 28 September.**
-  Offline, the payment dialog can't reprice for the chosen method: it reprices through the server
-  (`pay-preview`), so it keeps the order's stored total, which assumes cash. A card taken offline
-  from the Order Queue is charged the cash-rate total, and the server accepts it, since it only
-  refuses payments that fall short (`takePayment` in `src/server/orders.ts`).
+- **Offline card payments were charged at the cash rate. Fixed 28 September: offline, the POS
+  takes cash only.** Offline, the payment dialog can't reprice for the chosen method: it reprices
+  through the server (`pay-preview`), so it kept the order's stored total, which assumes cash. A
+  card taken offline from the Order Queue was charged the cash-rate total, and the server accepted
+  it, since it only refuses payments that fall short (`takePayment` in `src/server/orders.ts`).
 
   Measured against the dev server: a Rs 284 card-rate bill was charged **Rs 305** on the card,
-  recorded as Rs 21 overpaid. Every outage where a card is taken from the queue hits this.
+  recorded as Rs 21 overpaid.
 
-  Two ways to fix it, neither applied yet (the owner decides):
-  - Refuse non-cash methods in the dialog while offline, with the reason.
-  - Price the tender on the device. The order's `discountedSubtotalPaisa`, the cached service
-    charge, tax rules and rounding are enough to do it the way `finalizeOrder` does.
+  Now the dialog is told when the device is offline (`offline` on `PaymentDialog`). Any non-cash
+  tender shows why it can't be taken and disables Confirm; cash works as before.
+  `e2e/offline-sync.spec.ts` checks both halves: Card is refused offline with the reason, and cash
+  confirms and syncs at exactly the total.
+
+  The fuller fix, if card offline is ever needed, is to price the tender on the device. The
+  order's `discountedSubtotalPaisa`, the cached service charge, tax rules and rounding are enough to
+  do it the way `finalizeOrder` does.
 - **The POS's offline "pay now" message: fixed 28 September.** Punching an order with "Take
   Payment" while offline used to say to pay "once you're back online". It now says to take cash
-  from the Order Queue now, and to leave card and other methods for the connection, because of the
-  card problem above. `e2e/offline-sync.spec.ts` covers the path: an order punched offline, paid
+  from the Order Queue now, and to leave card and other methods for the connection, which the
+  payment dialog now enforces (above). `e2e/offline-sync.spec.ts` covers the path: an order punched offline, paid
   in cash from the queue while still offline, synced at exactly its total.
 - **Riders added from the riders screen can't sign in in production.** They get a name and phone
   number only. Phone sign-in is refused wherever no SMS or WhatsApp sender exists

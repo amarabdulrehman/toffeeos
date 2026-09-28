@@ -35,6 +35,7 @@ export function PaymentDialog({
   onClose,
   onConfirm,
   submitting,
+  offline = false,
 }: {
   open: boolean;
   /** Null while the dialog is closed/unmounting — the live preview fetch below is skipped then. */
@@ -43,6 +44,14 @@ export function PaymentDialog({
   onClose: () => void;
   onConfirm: (tenders: { method: PaymentMethod; amountPaisa: number }[]) => void;
   submitting: boolean;
+  /**
+   * The device has no connection. The total can only be repriced for a method's own tax rate by
+   * the server (pay-preview below), so offline it stays at the order's stored total, which assumes
+   * cash. A card taken at that figure was charged more than its bill: a Rs 284 card-rate bill
+   * went through as Rs 305, and the server accepts it because it only refuses payments that fall
+   * short. So offline, only cash is taken.
+   */
+  offline?: boolean;
 }) {
   // Defaulting the cash tender to the full amount only works if this component remounts for
   // every new order — the caller passes key={order.id} on <PaymentDialog> for exactly that
@@ -100,6 +109,7 @@ export function PaymentDialog({
 
   const tenderedPaisa = effectiveTenders.reduce((a, t) => a + Math.round((parseFloat(t.amountRs) || 0) * 100), 0);
   const remainingPaisa = dueTotalPaisa - tenderedPaisa;
+  const offlineNonCash = offline && effectiveTenders.some((t) => t.method !== "CASH");
   const changePaisa = Math.max(0, Math.round((parseFloat(cashGiven) || 0) * 100) - dueTotalPaisa);
 
   function updateTender(i: number, patch: Partial<Tender>) {
@@ -205,6 +215,13 @@ export function PaymentDialog({
             </div>
           )}
 
+          {offlineNonCash && (
+            <p role="status" className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm text-warning-foreground">
+              You&apos;re offline, so only cash can be taken. Card and other methods are charged at their own tax
+              rate, which needs the connection. Take cash, or wait until you&apos;re back online.
+            </p>
+          )}
+
           <div
             className={`rounded-lg px-3 py-2.5 text-center text-sm font-semibold ${
               remainingPaisa > 0
@@ -220,7 +237,7 @@ export function PaymentDialog({
           <Button variant="outline" size="lg" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="success" size="lg" onClick={confirm} disabled={remainingPaisa > 0 || submitting}>
+          <Button variant="success" size="lg" onClick={confirm} disabled={remainingPaisa > 0 || submitting || offlineNonCash}>
             {submitting ? "Processing…" : "Confirm payment"}
           </Button>
         </DialogFooter>

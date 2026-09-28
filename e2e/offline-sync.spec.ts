@@ -343,3 +343,53 @@ test("an order punched with Take Payment while offline can be paid in cash from 
   const paid = (await findPaid())!;
   expect(paid.paidPaisa).toBe(paid.totalPaisa);
 });
+
+/**
+ * Offline, the payment dialog can't reprice for a method's own tax rate (only the server can,
+ * through pay-preview), so it would ask a card for the order's cash-rate total. Measured before
+ * this guard, a Rs 284 card-rate bill was charged Rs 305. So offline it takes cash only and says
+ * why, and cash still syncs at exactly the total.
+ */
+test("offline, the payment dialog takes cash only, and says why", async ({ page, request }) => {
+  const table = await getAvailableTable(request);
+
+  await page.goto("/pos");
+  await expect(page.getByText("Online — all orders synced")).toBeVisible({ timeout: 15_000 });
+  await selectTable(page, table.label);
+  await page.getByRole("button", { name: SEED_MENU_CATEGORY, exact: true }).first().click();
+  await page.getByRole("button", { name: SEED_MENU_ITEM_2.name, exact: false }).first().click();
+  const [sendResponse] = await Promise.all([
+    page.waitForResponse((r) => r.url().includes("/send-to-kitchen")),
+    page.getByRole("button", { name: "Send to Kitchen" }).click(),
+  ]);
+  const orderId: string = (await sendResponse.json()).order.id;
+  const before = await getOrder(request, orderId);
+  await page.getByRole("button", { name: "Order Queue" }).click();
+  await expect(page.getByText(`#${before.orderNumber}`)).toBeVisible();
+
+  await page.context().setOffline(true);
+  await expect(page.getByText("You're offline")).toBeVisible();
+
+  const queueRow = page.locator("div.rounded-xl", { hasText: `#${before.orderNumber}` });
+  await queueRow.getByRole("button", { name: "Payment" }).click();
+  const dialog = page.getByRole("dialog", { name: "Take payment" });
+  const confirm = dialog.getByRole("button", { name: "Confirm payment" });
+  const onlyCash = dialog.getByText(/only cash can be taken/);
+
+  await dialog.getByRole("combobox").first().click();
+  await page.getByRole("option", { name: "Card", exact: true }).click();
+  await expect(onlyCash).toBeVisible();
+  await expect(confirm).toBeDisabled();
+
+  await dialog.getByRole("combobox").first().click();
+  await page.getByRole("option", { name: "Cash", exact: true }).click();
+  await expect(onlyCash).toHaveCount(0);
+  await confirm.click();
+
+  await page.context().setOffline(false);
+  await expect
+    .poll(async () => (await getOrder(request, orderId)).status, { timeout: 30_000, intervals: [1000] })
+    .toBe("PAID");
+  const after = await getOrder(request, orderId);
+  expect(after.paidPaisa).toBe(after.totalPaisa);
+});

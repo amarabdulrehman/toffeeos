@@ -1040,6 +1040,7 @@ export function PosTerminal({
           onClose={() => setPayingOrder(null)}
           onConfirm={handleConfirmPayment}
           submitting={paying}
+          offline={!sync.isOnline}
         />
 
         <KotDialog
