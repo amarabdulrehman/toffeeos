@@ -112,3 +112,15 @@ test("the pricing page's structured data: breadcrumbs and its own questions, and
     expect(text, "the answer is on the page").toContain(f.acceptedAnswer.text);
   }
 });
+
+test("the feature pages' structured data uses only real properties and names nothing it shouldn't", async ({ request }) => {
+  for (const path of ["/features", "/features/restaurant-pos-system", "/features/kitchen-display-system", "/features/restaurant-inventory-management"]) {
+    const blocks = ldBlocks(await (await request.get(path)).text());
+    expect(blocks.map((b) => b["@type"]), path).toEqual(["BreadcrumbList"]);
+    for (const block of blocks) {
+      checkProperties(block, `${path} ${block["@type"]}`);
+      expect(JSON.stringify(block).match(FORBIDDEN)?.[0] ?? null).toBeNull();
+      expect(JSON.stringify(block), `${path}: no price`).not.toMatch(/"(offers|price|priceCurrency)"/);
+    }
+  }
+});

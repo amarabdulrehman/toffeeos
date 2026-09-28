@@ -1,5 +1,5 @@
 import { BRAND_NAME, COMPANY_EMAIL } from "@/config/brand";
-import { GATEABLE_MODULES, TIER_LABEL, TIER_MAX_BRANCHES, tierMeets, type GateableModule, type TierKey } from "@/lib/tiers";
+import { GATEABLE_MODULES, TIER_LABEL, TIER_MAX_BRANCHES, TIER_ORDER, tierMeets, type GateableModule, type TierKey } from "@/lib/tiers";
 
 /**
  * What each plan includes, as the public site states it: the homepage's plan cards and the
@@ -71,6 +71,28 @@ export function modulesFor(tier: TierKey): string[] {
   return advertisedModules()
     .filter((m) => tierMeets(tier, m.minTier))
     .map((m) => m.label);
+}
+
+/** The lowest plan that includes every one of these modules (keys of GATEABLE_MODULES). */
+export function minTierFor(moduleKeys: string[]): TierKey {
+  let tier: TierKey = "starter";
+  for (const key of moduleKeys) {
+    const m = GATEABLE_MODULES.find((g) => g.key === key);
+    // A static page: an unknown key fails the build, and the page already live stays up.
+    if (!m) throw new Error(`Unknown module "${key}": not in GATEABLE_MODULES (src/lib/tiers.ts).`);
+    if (!tierMeets(tier, m.minTier)) tier = m.minTier;
+  }
+  return tier;
+}
+
+/** Which plans include a feature that needs these modules, as a sentence: "On every plan", or
+ * "On the Growth and Complete plans". Worked out from the tiers, never typed into the copy. */
+export function plansSentence(moduleKeys: string[]): string {
+  const from = minTierFor(moduleKeys);
+  const names = TIER_ORDER.filter((t) => tierMeets(t, from)).map((t) => TIER_LABEL[t]);
+  if (names.length === TIER_ORDER.length) return "On every plan";
+  if (names.length === 1) return `On the ${names[0]} plan`;
+  return `On the ${names.slice(0, -1).join(", ")} and ${names.at(-1)} plans`;
 }
 
 /** The branch count the app enforces for a tier, as the plans state it. */

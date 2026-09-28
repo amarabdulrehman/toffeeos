@@ -85,12 +85,47 @@ test.describe("Feature pages", () => {
     for (const path of PAGES) expect(sitemap, `sitemap lists ${path}`).toContain(`<loc>https://toffeeos.com${path}</loc>`);
   });
 
-  test("no page claims PRA e-IMS, FBR, Foodpanda, Urdu or WhatsApp", async ({ request }) => {
+  test("no page claims PRA e-IMS, FBR, Foodpanda, Urdu or WhatsApp, or anything else the homepage had to take back", async ({ request }) => {
     for (const path of PAGES) {
       const html = await (await request.get(path)).text();
       // The visible text only: script and style blocks can carry unrelated strings.
-      const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ");
+      const text = html
+        .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&#x27;/g, "'")
+        .replace(/&amp;/g, "&");
       expect(text.match(FORBIDDEN)?.[0] ?? null, `${path} names something ToffeeOS doesn't do`).toBeNull();
+      expect(text.match(TAKEN_BACK)?.[0] ?? null, `${path} repeats a claim the site has corrected`).toBeNull();
+      expect(text.match(PRICE)?.[0] ?? null, `${path} states a price; pricing is quote-only`).toBeNull();
+    }
+  });
+
+  /**
+   * Which plans include each feature, pinned. The pages work it out from the tiers (plansSentence
+   * in src/lib/marketing/plans.ts), so a tier change changes what they promise; this makes that a
+   * decision someone reads, not a side effect. The free trial runs on Starter, so a page for a
+   * feature Starter lacks has to say so instead of sending someone to a trial without it.
+   */
+  test("each page says which plans include it, and says when the free trial doesn't", async ({ page }) => {
+    const expected: Record<string, string> = {
+      "restaurant-pos-system": "On every plan.",
+      "kitchen-display-system": "On every plan.",
+      "restaurant-inventory-management": "On the Growth and Complete plans.",
+    };
+    expect(Object.keys(expected).sort()).toEqual(FEATURES.map((f) => f.slug).sort());
+    for (const [slug, plans] of Object.entries(expected)) {
+      await page.goto(`/features/${slug}`);
+      await expect(page.locator("[data-feature-plans]"), slug).toHaveText(plans);
+      await expect(page.locator("[data-trial-note]"), slug).toHaveCount(plans === "On every plan." ? 0 : 1);
     }
   });
 });
+
+// Lines the site has had to correct: a floor plan that doesn't exist, generalisations about other
+// software, a customer claim with no customers, riders "tracked" with no map, and three facts the
+// feature pages had wrong before they went live (the queue splits at the business day, not
+// midnight; a closed drawer day can be corrected more than once; "any tablet"; and the kitchen
+// doesn't get an order taken offline until the connection is back).
+const TAKEN_BACK =
+  /floor ?plan|on most systems|written somewhere else|most start here|riders?[^.]{0,40}tracked|before midnight|corrected once|runs on any tablet|keeps doing all three/i;
+const PRICE = /(Rs\.?|PKR|USD|US\$|\$)\s?\d|\d[\d,]*\s?(rupees|\/-)|\d[\d,.]*\s?(\/|per )\s?(month|mo|branch|user|seat)\b/i;

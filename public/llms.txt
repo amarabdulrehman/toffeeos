@@ -47,5 +47,9 @@
 ## Pages
 - [Home](https://toffeeos.com/)
 - [Pricing](https://toffeeos.com/pricing)
+- [Features](https://toffeeos.com/features)
+- [Restaurant POS system](https://toffeeos.com/features/restaurant-pos-system)
+- [Kitchen display system](https://toffeeos.com/features/kitchen-display-system)
+- [Restaurant inventory management](https://toffeeos.com/features/restaurant-inventory-management)
 - [Privacy policy](https://toffeeos.com/privacy)
 - [Terms of service](https://toffeeos.com/terms)

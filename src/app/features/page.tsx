@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Breadcrumbs, JsonLd, MarketingShell, breadcrumbLd } from "@/components/marketing/feature-page";
+import { Breadcrumbs, MarketingShell } from "@/components/marketing/marketing-shell";
+import { breadcrumbLd, JsonLd } from "@/components/marketing/json-ld";
 import { BRAND_NAME } from "@/config/brand";
 import { FEATURES } from "@/lib/marketing/features";
+import { plansSentence } from "@/lib/marketing/plans";
 
 const TITLE = `Restaurant Management Software Features — ${BRAND_NAME}`;
 const DESCRIPTION =
@@ -42,6 +44,7 @@ export default function FeaturesIndex() {
             >
               <h2 className="font-display text-[1.35rem] leading-tight text-[color:var(--ink)]">{f.name}</h2>
               <p className="mt-2 text-[14px] leading-[1.6] text-[color:var(--ink-3)]">{f.summary}</p>
+              <p className="mt-3 text-[12px] font-medium text-[color:var(--ink-2)]">{plansSentence(f.modules)}</p>
             </Link>
           </li>
         ))}

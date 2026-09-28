@@ -4,8 +4,8 @@ import { displaySerif } from "./fonts";
 import { BRAND_NAME, COMPANY_EMAIL, COMPANY_NAME } from "@/config/brand";
 
 /**
- * The frame for the marketing site's content pages (pricing now; the feature pages when they
- * ship). It uses the same paper-and-ink look as the homepage and the legal pages.
+ * The frame for the marketing site's content pages: pricing, the features index and each feature
+ * page. It uses the same paper-and-ink look as the homepage and the legal pages.
  *
  * Server-rendered and free of client JavaScript: the whole text is in the HTML a crawler or an AI
  * assistant fetches, and nothing here needs the homepage's animation code.
@@ -29,6 +29,9 @@ export function MarketingShell({ children }: { children: ReactNode }) {
             <span className="font-display text-[19px] tracking-tight text-[color:var(--ink)]">{BRAND_NAME}</span>
           </Link>
           <nav aria-label="Main" className="ml-auto flex items-center gap-5">
+            <Link href="/features" className={`${navLink} max-sm:hidden`}>
+              Features
+            </Link>
             <Link href="/pricing" className={`${navLink} max-sm:hidden`}>
               Pricing
             </Link>
@@ -55,6 +58,9 @@ export function MarketingShell({ children }: { children: ReactNode }) {
           <div className="flex flex-wrap gap-x-6 gap-y-2">
             <Link href="/" className={footLink}>
               Home
+            </Link>
+            <Link href="/features" className={footLink}>
+              Features
             </Link>
             <Link href="/pricing" className={footLink}>
               Pricing

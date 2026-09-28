@@ -338,6 +338,14 @@ or could hurt a paying client.
   `src/components/kds/kds-board.tsx`, although `BranchSettings.kdsSlaSeconds` exists in the
   database. Ten minutes means something very different at a fast-food counter and at a sit-down
   restaurant; the setting should drive it, per branch. Owner: log it, don't fix it now.
+- **The POS's offline "pay now" message says to wait, but you don't have to.** Punching an order
+  with "pay now" while offline queues the order and shows *"You're offline — pay this order from
+  the Order Queue once you're back online"* (`src/components/pos/pos-terminal.tsx`, around line
+  451). But the Order Queue shows orders punched offline straight away, and a payment taken there
+  while offline is queued too (`loadQueue` and `handleConfirmPayment` in the same file). The
+  message should say "pay it from the Order Queue now". The one thing not covered end to end:
+  `e2e/offline-sync.spec.ts` pays offline an order that was created online, never one that was
+  itself created offline. Found 28 September while checking the feature pages; logged, not changed.
 
 ### Public claims corrected
 
@@ -372,6 +380,34 @@ Live overclaims, so fixed rather than logged (27 September 2026).
   `TIER_MAX_BRANCHES`, so a change to tiers or modules changes what they promise without anyone
   touching the page. The test pins every line of every card. When it fails, read the cards against
   the code before updating the list, every time tiers or features change.
+
+### The feature pages (/features and three pages under it)
+
+Live from 28 September: the restaurant POS, the kitchen display and inventory, plus an index.
+Each answers the questions an owner asks, in the words they'd search, and ends with what the
+feature doesn't do. The other eight planned pages aren't written yet.
+
+- **Checked against the code before they went live.** Six lines were wrong or too loose and were
+  corrected:
+  - The Order Queue splits at the branch's business day, not midnight.
+  - A closed cash drawer day can be corrected more than once, each correction logged with the figure
+    it replaced, not "once".
+  - "Runs in a browser on a tablet", not "any tablet".
+  - Tables are "available, reserved or occupied", the same wording as the pricing page.
+  - Online and QR orders reach the kitchen "where those are switched on", since they're a
+    Complete-plan module.
+  - Offline, the POS keeps taking orders and payments, but it doesn't "keep sending to the
+    kitchen". An order taken offline reaches the kitchen screen when the connection is back, and
+    the page now says so.
+- **Each page says which plans include it,** worked out from the tiers (`plansSentence` in
+  `src/lib/marketing/plans.ts`), never typed into the copy. Inventory is Growth and Complete, while
+  the free trial runs on Starter. So that page says the trial doesn't include it and offers a quote
+  instead, rather than sending someone to a trial without the feature.
+- **One frame for every content page:** `marketing-shell.tsx`. Structured data comes from
+  `json-ld.tsx`: breadcrumbs only, every property checked against schema.org.
+- **The guard:** `e2e/marketing-pages.spec.ts` fails on the five banned claims, on anything the
+  site has already had to correct (floor plan, competitor generalisations, "tracked" riders, the
+  three facts above), on any price, and if a page's plan line changes.
 
 ### The pricing page (/pricing) — quote-based, no figures
 

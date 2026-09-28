@@ -34,6 +34,12 @@ export interface Feature {
   sections: FeatureSection[];
   /** What it doesn't do — said plainly, so nobody finds out after buying. */
   limits: string[];
+  /**
+   * The gated modules this page's feature needs (keys of GATEABLE_MODULES in src/lib/tiers.ts);
+   * empty when it's on every plan. The page states which plans include it from this, through
+   * src/lib/marketing/plans.ts, rather than naming plans in the copy.
+   */
+  modules: string[];
   related: string[];
 }
 
@@ -44,12 +50,12 @@ export const FEATURES: Feature[] = [
     keyword: "restaurant POS system",
     title: "Restaurant POS System That Works Offline — ToffeeOS",
     description:
-      "A restaurant POS that keeps taking orders and payments through internet outages, taxes cash and card correctly on one bill, and runs on any tablet.",
+      "A restaurant POS that keeps taking orders and payments through internet outages, taxes cash and card correctly on one bill, and runs in a browser on a tablet.",
     summary: "Orders, bills and payments for dine-in, takeaway and delivery — and it keeps going when the internet stops.",
     folio: "POINT OF SALE",
     h1: "A restaurant POS system that keeps selling when the internet drops",
     lead:
-      "ToffeeOS is a restaurant point of sale that runs in the browser on a tablet, phone or computer. It takes dine-in, takeaway and delivery orders, sends them to the kitchen and takes payment — and when the connection drops, it keeps doing all three and catches up when the line is back.",
+      "ToffeeOS is a restaurant point of sale that runs in the browser on a tablet, phone or computer. It takes dine-in, takeaway and delivery orders, sends them to the kitchen and takes payment — and when the connection drops, it keeps taking orders and payments, and catches up when the line is back.",
     sections: [
       {
         heading: "What happens when the internet goes down?",
@@ -59,7 +65,7 @@ export const FEATURES: Feature[] = [
           "Prices, tax, service charge and rounding are worked out on the device from the branch's own settings, so the total the cashier charges offline is the total the server records.",
           "A tablet that has opened the POS once can open it again with no connection.",
           "If someone changed the same order on another device in the meantime, the clash is set aside for a manager to settle, rather than one version quietly overwriting the other.",
-          "Two things wait for the connection: adding another round to a table's existing order, and cancelling an order the kitchen already has.",
+          "Three things wait for the connection: the kitchen screen showing an order taken offline, adding another round to a table's existing order, and cancelling an order the kitchen already has.",
         ],
       },
       {
@@ -77,7 +83,7 @@ export const FEATURES: Feature[] = [
         answer:
           "Everything a shift needs, each behind its own permission, so a waiter, a cashier and a manager each see only what their role allows.",
         points: [
-          "Tables grouped by floor, each showing whether it is free or taken; tap a taken table to open its order. Dine-in, takeaway and delivery on the same screen.",
+          "Tables grouped by floor, each showing whether it is available, reserved or occupied; tap an occupied table to open its order. Dine-in, takeaway and delivery on the same screen.",
           "Discounts on a line or the whole order, with a ceiling per branch that only someone with permission can go past.",
           "Void one item or a whole order with a reason. Cancel an order the kitchen already has, with a reason a manager reviews.",
           "Switch dine-in to takeaway, merge two tables onto one bill, or sell an order without tax with the reason printed on the bill.",
@@ -90,7 +96,7 @@ export const FEATURES: Feature[] = [
           "Yes. An order placed on a waiter's phone pops up on every till that takes payment, with a chime, and the waiter is told the moment the kitchen marks it ready.",
         points: [
           "A branch can require the counter to approve waiter orders before they reach the kitchen: the cashier sends each one on or turns it away with a reason the waiter sees.",
-          "The Order Queue shows today's orders; an unpaid order from before midnight is kept at the foot rather than lost.",
+          "The Order Queue shows this business day's orders; an unpaid order from an earlier day is kept at the foot rather than lost.",
         ],
       },
       {
@@ -105,7 +111,7 @@ export const FEATURES: Feature[] = [
       {
         heading: "How is the cash drawer kept honest?",
         answer:
-          "Each business day opens with a float and closes with a count, and the difference is there to see. A closed day can be corrected once, by an owner or manager, and opening the drawer without a sale is recorded with a reason.",
+          "Each business day opens with a float and closes with a count, and the difference is there to see. Only someone allowed to (an owner or branch manager, by default) can correct a closed day's count, and each correction is logged with the figure it replaced. Opening the drawer without a sale is recorded with a reason.",
       },
     ],
     limits: [
@@ -114,6 +120,7 @@ export const FEATURES: Feature[] = [
       "Printing goes through the device's print dialog; there's no one-tap silent printing.",
     ],
     related: ["kitchen-display-system", "restaurant-inventory-management"],
+    modules: [],
   },
   {
     slug: "kitchen-display-system",
@@ -135,7 +142,7 @@ export const FEATURES: Feature[] = [
         points: [
           "Add-ons and notes are on the ticket, not left behind at the counter — an extra shot or \"no onion\" reaches the person making it.",
           "An item voided after it was sent stays on the ticket, struck through, so the kitchen knows to stop making it.",
-          "Orders placed on the restaurant's own ordering site or from a QR code at the table arrive the same way as the counter's.",
+          "Where online or QR ordering is switched on, orders placed on the restaurant's own ordering site or from a QR code at the table arrive the same way as the counter's.",
         ],
       },
       {
@@ -164,6 +171,7 @@ export const FEATURES: Feature[] = [
       "Orders reach the board through the server: an order taken on the POS during an internet outage appears in the kitchen when the connection returns.",
     ],
     related: ["restaurant-pos-system", "restaurant-inventory-management"],
+    modules: [],
   },
   {
     slug: "restaurant-inventory-management",
@@ -223,6 +231,7 @@ export const FEATURES: Feature[] = [
       "Each ingredient is counted in one unit you choose (kg, litres, pieces); there's no converting between units, and no barcode scanning.",
     ],
     related: ["restaurant-pos-system", "kitchen-display-system"],
+    modules: ["inventory", "recipe"],
   },
 ];
 
