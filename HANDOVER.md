@@ -356,9 +356,22 @@ Live overclaims, so fixed rather than logged (27 September 2026).
   / Up to 3 branches / Any number — read from `TIER_MAX_BRANCHES` in `src/lib/tiers.ts`, which
   `prisma/seed.ts` now also writes to `Plan.maxBranches`, so the page and the limit the app
   enforces can't drift apart. Change a plan's branch limit there, then re-run the seed.
+- **Four more lines, 28 September, on the owner's call.** "Most start here" on Growth is now
+  "Recommended" — there are no customers yet to count. "On most systems this is the moment the
+  screen goes white" is now "On a cloud-only system…" — three of the four local competitors say on
+  their own sites that they work offline. "Software written somewhere else charges one rate" is now
+  "Software that charges one rate…" — not a claim about anyone in particular. And two small
+  factual fixes: in the outage story the stock comes down when the bill is paid, not when Table 7
+  orders (`deductForOrder` runs in the payment transaction), and each branch has its own prices
+  and availability, not its own menu (one menu, `BranchMenuItem` per branch).
 - **The guard:** `e2e/public-claims.spec.ts` fails if WhatsApp, PRA e-IMS, FBR, Foodpanda or Urdu
-  appear on the homepage, if riders are called tracked, if "floor plan" comes back, or if the plan
-  cards stop stating the branch counts above.
+  appear on the homepage, if riders are called tracked, if "floor plan" or either competitor
+  generalisation comes back, or if any plan card's contents change.
+- **The plans section is the highest-risk copy on the site.** WhatsApp, "floor plan" and a
+  multi-branch Starter were all found there. Its cards are built from `GATEABLE_MODULES` and
+  `TIER_MAX_BRANCHES`, so a change to tiers or modules changes what they promise without anyone
+  touching the page. The test pins every line of every card. When it fails, read the cards against
+  the code before updating the list, every time tiers or features change.
 
 ---
 

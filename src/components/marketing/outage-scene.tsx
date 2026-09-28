@@ -44,7 +44,7 @@ const PHASES: Phase[] = [
   {
     eyebrow: "8:40 pm · Friday",
     title: "The restaurant is full.",
-    body: "Table 7 orders. It goes to the kitchen, the stock comes down, the sale lands in tonight's numbers. Ordinary.",
+    body: "Table 7 orders. It goes to the kitchen; when the bill is paid, the stock comes down and the sale lands in tonight's numbers. Ordinary.",
     connection: "online",
     lines: BASE,
     queued: 0,
@@ -52,7 +52,7 @@ const PHASES: Phase[] = [
   {
     eyebrow: "8:41 pm",
     title: "The line drops.",
-    body: "No warning. On most systems this is the moment the screen goes white and the counter stops — mid-service, with a queue at the till.",
+    body: "No warning. On a cloud-only system this is the moment the screen goes white and the counter stops — mid-service, with a queue at the till.",
     connection: "offline",
     lines: BASE,
     queued: 0,

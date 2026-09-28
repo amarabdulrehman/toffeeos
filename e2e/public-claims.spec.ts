@@ -26,17 +26,60 @@ test("the homepage claims nothing ToffeeOS doesn't do", async ({ request }) => {
   expect(text.match(FORBIDDEN)?.[0] ?? null, "names something ToffeeOS doesn't do").toBeNull();
   expect(text, "riders aren't tracked on a map").not.toMatch(/riders?[^.]{0,40}tracked/i);
   expect(text, "there's no floor plan to arrange tables on").not.toMatch(/floor ?plan/i);
+  // Nothing said about competitors' software that their own sites contradict or we can't show.
+  expect(text).not.toMatch(/on most systems|written somewhere else/i);
   // Still says what it does do.
   expect(text).toContain("every delivery proved with a photo or a code");
 });
 
-test("each plan card states the branch count the app enforces", async ({ page }) => {
+/**
+ * The plan cards, pinned exactly.
+ *
+ * The plans section has been the riskiest copy on the site: WhatsApp, "floor plan" and a
+ * multi-branch Starter were all overclaims found there. The cards are built from
+ * GATEABLE_MODULES and TIER_MAX_BRANCHES, so a change to tiers or modules changes what they
+ * promise without anyone editing the page. This test lists every line on purpose. When it fails,
+ * read the cards against the code before updating it — don't just paste in the new output.
+ */
+const PLAN_CARDS = [
+  {
+    name: "Starter",
+    lines: [
+      "One branch",
+      "Point of sale & offline mode",
+      "Kitchen display",
+      "Tables, grouped by floor",
+      "Menu, variants & modifiers",
+      "Sales & staff reports",
+      "Staff, roles & permissions",
+    ],
+  },
+  { name: "Growth", lines: ["Up to 3 branches", "Inventory", "Recipe & Costing", "CRM", "Expenses", "Full Report Suite"] },
+  {
+    name: "Complete",
+    lines: [
+      "Any number of branches",
+      "Inventory",
+      "Recipe & Costing",
+      "CRM",
+      "Expenses",
+      "Full Report Suite",
+      "Delivery & Rider Management",
+      "Online Ordering",
+      "Payroll & HR",
+    ],
+  },
+];
+
+test("each plan card promises exactly what that plan unlocks, and nothing about customers", async ({ page }) => {
   await page.goto("/");
   const plans = page.locator("#plans");
-  await expect(plans).toContainText("Tables, grouped by floor");
-  // Plan.maxBranches (TIER_MAX_BRANCHES): Starter 1, Growth 3, Complete no limit.
-  for (const line of ["One branch", "Up to 3 branches", "Any number of branches"]) {
-    await expect(plans).toContainText(line);
+  await expect(plans.locator("h3")).toHaveText(PLAN_CARDS.map((c) => c.name));
+  const lists = plans.locator("ul");
+  await expect(lists).toHaveCount(PLAN_CARDS.length);
+  for (const [i, card] of PLAN_CARDS.entries()) {
+    await expect(lists.nth(i).locator("li"), `${card.name}'s card`).toHaveText(card.lines);
   }
-  await expect(plans, "Starter is one branch").not.toContainText(/multi-branch/i);
+  // No claim about what customers choose: there are none to count yet.
+  await expect(plans).not.toContainText(/most (start|choose|popular)/i);
 });

@@ -88,7 +88,7 @@ export function Plans() {
                     <h3 className="font-display text-2xl text-[color:var(--ink)]">{TIER_LABEL[tier]}</h3>
                     {featured && (
                       <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-violet-800 uppercase">
-                        Most start here
+                        Recommended
                       </span>
                     )}
                   </div>

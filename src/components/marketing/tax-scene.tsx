@@ -80,9 +80,9 @@ export function TaxScene() {
               className="font-display mt-5 text-[clamp(2.1rem,4.8vw,3.5rem)] leading-[1.02] tracking-[-0.018em] text-[color:var(--ink)]"
             />
             <p className="mt-6 max-w-md text-[15px] leading-relaxed text-[color:var(--ink-2)]">
-              Punjab charges different rates depending on how the customer pays. Software written
-              somewhere else charges one rate and leaves you to fix it at filing. Tap between them —
-              it is the same bill.
+              Punjab charges different rates depending on how the customer pays. Software that
+              charges one rate leaves you to fix it at filing. Tap between them — it is the same
+              bill.
             </p>
           </Reveal>
 
