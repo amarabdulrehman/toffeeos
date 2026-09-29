@@ -15,7 +15,7 @@ import { BRAND_NAME, COMPANY_NAME } from "@/config/brand";
 // is the page's best line, and stays its H1, but nobody searches for it.
 const TITLE = `Restaurant POS Software in Pakistan, Works Offline — ${BRAND_NAME}`;
 const DESCRIPTION =
-  "Restaurant POS software for Pakistan that keeps billing through internet outages, with kitchen display, inventory, delivery and per-branch reports.";
+  "Restaurant POS software for Pakistan that takes orders and cash payments through internet outages, with kitchen display, inventory, delivery and branch reports.";
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
   openGraph: {
     title: TITLE,
-    description: `Restaurant POS software built in Pakistan by ${COMPANY_NAME}. Keeps billing offline, prices Punjab PRA's cash and card rates correctly, and runs one branch or six.`,
+    description: `Restaurant POS software built in Pakistan by ${COMPANY_NAME}. Takes orders and cash payments offline, prices Punjab PRA's cash and card rates correctly, and runs one branch or six.`,
     type: "website",
     url: "/",
     siteName: BRAND_NAME,

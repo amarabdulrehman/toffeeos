@@ -68,22 +68,25 @@ export const FEATURES: Feature[] = [
     keyword: "restaurant POS system",
     title: "Restaurant POS System That Works Offline — ToffeeOS",
     description:
-      "A restaurant POS that keeps taking orders and payments through internet outages, taxes cash and card correctly on one bill, and runs in a browser on a tablet.",
-    summary: "Orders, bills and payments for dine-in, takeaway and delivery — and it keeps going when the internet stops.",
+      "A restaurant POS that takes orders and cash payments through internet outages, taxes cash and card correctly on one bill, and runs in a browser on a tablet.",
+    summary: "Orders, bills and payments for dine-in, takeaway and delivery — and it keeps taking orders and cash when the internet stops.",
     folio: "POINT OF SALE",
     h1: "A restaurant POS system that keeps selling when the internet drops",
     lead:
-      "ToffeeOS is a restaurant point of sale that runs in the browser on a tablet, phone or computer. It takes dine-in, takeaway and delivery orders, sends them to the kitchen and takes payment — and when the connection drops, it keeps taking orders and payments, and catches up when the line is back.",
+      "ToffeeOS is a restaurant point of sale that runs in the browser on a tablet, phone or computer. It takes dine-in, takeaway and delivery orders, sends them to the kitchen and takes payment — and when the connection drops, it keeps taking orders and cash payments, and catches up when the line is back.",
     sections: [
       {
         heading: "What happens when the internet goes down?",
         answer:
-          "The POS keeps working. Orders, payments and voids are saved on the device and sent to the server when the connection returns, each exactly once — every one carries a key the server recognises, so a retry can't turn one order into two.",
+          "The POS keeps working. Orders, cash payments and voids are saved on the device and sent to the server when the connection returns, each exactly once — every one carries a key the server recognises, so a retry can't turn one order into two.",
         points: [
           "Prices, tax, service charge and rounding are worked out on the device from the branch's own settings, so the total the cashier charges offline is the total the server records.",
           "A tablet that has opened the POS once can open it again with no connection.",
           "If someone changed the same order on another device in the meantime, the clash is set aside for a manager to settle, rather than one version quietly overwriting the other.",
           "Three things wait for the connection: the kitchen screen showing an order taken offline, adding another round to a table's existing order, and cancelling an order the kitchen already has.",
+          // Not "non-cash payments wait": the till only holds them back when the browser reports the
+          // outage. With the wifi up and the internet down it takes a card at the cash-rate total.
+          "Offline, take payment in cash. Card and wallet payments are taxed at their own rate, and the till prices that through the server, so take them once the connection is back.",
         ],
       },
       {
@@ -421,7 +424,7 @@ export const FEATURES: Feature[] = [
       {
         heading: "What do customers see?",
         answer:
-          "Your menu, with your logo and colour: each dish with its description and photo, its sizes and add-ons, at the branch's own prices. A dish that's run out at the till shows as unavailable online too.",
+          "Your menu, with your logo and colour: each dish with its description, its sizes and add-ons, at the branch's own prices. A dish that's run out at the till shows as unavailable online too.",
         points: [
           "A restaurant with several branches lets the customer choose which one to order from.",
           "Any dish can be kept off the online menu, say one that doesn't travel, and still be sold at the till.",

@@ -26,7 +26,7 @@ export const CORE_LINES: PlanLine[] = [
   {
     label: "Point of sale & offline mode",
     detail:
-      "Dine-in, takeaway and delivery on one screen, a cash drawer for each business day, and orders and payments that keep going when the internet drops.",
+      "Dine-in, takeaway and delivery on one screen, a cash drawer for each business day, and orders and cash payments that keep going when the internet drops.",
   },
   { label: "Kitchen display", detail: "Every order on a kitchen screen with a running timer, or on printed kitchen tickets if you prefer." },
   // "Grouped by floor", not "floor plan": tables are listed under their floor, with no map of the
@@ -50,7 +50,8 @@ const MODULE_DETAIL: Record<string, string> = {
   crm: "Customer profiles and loyalty points.",
   finance: "Expenses by category, and profit and loss.",
   reports: "Discount and void audit, cancellations and inventory valuation.",
-  delivery: "Riders assigned to orders, a rider app, every delivery proved with a photo, and rider performance.",
+  // Not "a rider app": riders added from the Riders screen can't sign in to it in production.
+  delivery: "Delivery board, rider assignment and photo proof of delivery, plus rider performance.",
   online: "Your own ordering site and QR ordering at the table, with no per-order fee.",
   hr: "Employee records, shifts, attendance, payroll and payslips.",
 };

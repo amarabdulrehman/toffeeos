@@ -35,7 +35,7 @@ export const softwareApplicationLd = {
   name: BRAND_NAME,
   url: SITE_URL,
   description:
-    "Restaurant management software for Pakistan: a point of sale that keeps taking orders and payments through internet outages, with a kitchen display, inventory and recipes, delivery, online ordering, reports and payroll.",
+    "Restaurant management software for Pakistan: a point of sale that keeps taking orders and cash payments through internet outages, with a kitchen display, inventory and recipes, delivery, online ordering, reports and payroll.",
   applicationCategory: "BusinessApplication",
   applicationSubCategory: "Restaurant point of sale",
   operatingSystem: "Web browser",
@@ -50,7 +50,7 @@ export const softwareApplicationLd = {
     "Recipe costing and margins",
     "Purchase orders, suppliers and transfers between branches",
     "Tables grouped by floor",
-    "Multi-branch management",
+    "Reports across all branches",
     "Online ordering site and QR table ordering with no per-order fee",
     "Delivery with riders and proof of delivery",
     "Loyalty points",

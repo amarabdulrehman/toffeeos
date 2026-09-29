@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { FEATURES } from "../src/lib/marketing/features";
 
 /**
  * The public site claims only what ToffeeOS does.
@@ -106,6 +107,159 @@ const PRICING_GROUPS = {
   "Growth and Complete add": ["Inventory", "Recipe & Costing", "CRM", "Expenses", "Full Report Suite"],
   "Complete adds": ["Delivery & Rider Management", "Online Ordering", "Payroll & HR"],
 };
+
+/**
+ * Claims the site must never make, on any public page or in anything a search engine or an
+ * assistant reads from one: the visible text, the title and descriptions, the structured data, and
+ * /llms.txt.
+ *
+ * - WhatsApp messaging: it waits on Meta's approval, and no message has ever been delivered.
+ * - Live or real-time rider tracking: there's no map, only proof of each delivery.
+ * - Reservations or table booking: a table is free or occupied, nothing else.
+ * - Dish photos: nothing in the app can set one.
+ * - Allergens: not built.
+ * - Payments offline that aren't cash: offline, the payment dialog only has the cash-rate total.
+ *   A card or wallet payment is taxed at its own rate, and the till prices that through the server.
+ *
+ * A page may state one of these as a limit, but only word for word from STATED_LIMITS, so each new
+ * one is a decision made here rather than a gap in a pattern.
+ */
+const PUBLIC_PATHS = [
+  "/",
+  "/pricing",
+  "/features",
+  ...FEATURES.map((f) => `/features/${f.slug}`),
+  "/privacy",
+  "/terms",
+  "/signup",
+  "/login",
+  "/llms.txt",
+];
+
+const STATED_LIMITS = ["There are no reservations: a table is free or occupied.", "There's no live map of where riders are."];
+
+/**
+ * WhatsApp in the terms and the privacy policy, word for word, left for the owner to decide on
+ * 29 September 2026 rather than rewritten as copy: changing a legal document is a legal decision.
+ * The terms still list "optional WhatsApp messaging" as a feature, and the privacy policy describes
+ * customers ordering "via … WhatsApp", which has never existed. Delete these once the documents
+ * are revised: any other mention of WhatsApp on either page already fails.
+ */
+const LEGAL_WHATSAPP_PENDING: Record<string, string[]> = {
+  "/privacy": [
+    "(e.g. via online/QR ordering or WhatsApp)",
+    "From End Customers (via online ordering or WhatsApp), collected on behalf of the Tenant:",
+    "Order history and content of order-related WhatsApp messages (e.g. order confirmations, thank-you messages, delivery updates), only if the Tenant has enabled that feature.",
+    "Provide the features a Tenant enables (order processing, KDS, reporting, payroll calculations, WhatsApp notifications);",
+    "Send operational communications (e.g. password reset emails, order-related WhatsApp messages a Tenant has configured);",
+    "Meta / WhatsApp Business Platform",
+    "Delivering WhatsApp messages, where a Tenant enables this feature",
+  ],
+  "/terms": [
+    "and optional WhatsApp messaging.",
+    "(e.g. phone numbers for online ordering or WhatsApp notifications)",
+    "(including via WhatsApp)",
+  ],
+};
+
+// The first that matches is reported, so "real-time rider tracking" is named as that, not as "live".
+const BANNED: { claim: string; pattern: RegExp }[] = [
+  { claim: "WhatsApp messaging", pattern: /whats\s?app/i },
+  { claim: "real-time rider tracking", pattern: /\breal[- ]?time\b[^.]{0,40}\b(track\w*|maps?|locations?|riders?)\b/i },
+  {
+    claim: "live rider tracking",
+    pattern: /\blive\b[^.]{0,30}\b(track\w*|maps?|locations?)\b|\briders?\b[^.]{0,40}\btrack\w*|\btrack\w*\b[^.]{0,40}\briders?\b/i,
+  },
+  {
+    claim: "reservations or table booking",
+    pattern:
+      /\breservations?\b|\breserv(e|ed|ing)\b[^.]{0,25}\btables?\b|\btables?\b[^.]{0,25}\breserv(e|ed|ing)\b|\bbook(s|ed|ing|ings)?\b[^.]{0,25}\btables?\b|\btables?[- ]book\w*/i,
+  },
+  {
+    claim: "dish photos",
+    pattern: /\b(dish(es)?|menu|food)\b[^.]{0,30}\b(photo|picture|image)s?\b|\b(photo|picture|image)s?\b[^.]{0,30}\b(dish(es)?|menu|food)\b/i,
+  },
+  { claim: "allergens", pattern: /\ballerg\w*/i },
+];
+
+// Offline payments: in a clause about the connection being down, every mention of paying must be
+// limited to cash ("cash payments", "payment in cash"), or be card or wallet payments said to wait.
+const OFFLINE =
+  /\boffline\b|\boutages?\b|\binternet (drops|stops|goes down|is down)\b|\bconnection (drops|goes down|returns|is back|comes back)\b|\bno connection\b|\bline (drops|is back)\b|\bback online\b/i;
+const PAYING = /\b(payments?|pay|paid|billing)\b/gi;
+const NON_CASH = /\b(cards?|wallets?|non-cash|jazzcash|easypaisa)\b/i;
+const WAITS = /\bwaits?\b|\bneeds? the connection\b|\b(once|when|until) the connection (is back|returns|comes back)\b|\bback online\b/i;
+
+function paymentNotLimitedToCash(clause: string): string | null {
+  if (!OFFLINE.test(clause)) return null;
+  for (const m of clause.matchAll(PAYING)) {
+    const before = clause.slice(0, m.index).trimEnd().split(/\s+/).slice(-3).join(" ");
+    const after = clause.slice(m.index! + m[0].length).trimStart().split(/\s+/).slice(0, 3).join(" ");
+    if (/\bcash\b/i.test(before) || /\bcash\b/i.test(after)) continue;
+    if (NON_CASH.test(before) && WAITS.test(clause)) continue;
+    return m[0];
+  }
+  return null;
+}
+
+const decode = (s: string) =>
+  s
+    .replace(/&#x27;|&#39;|&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&");
+
+// Block elements end a run of text, so a menu link or a heading never runs into the next sentence.
+const BLOCK_TAG =
+  /<\/?(p|h[1-6]|li|ul|ol|div|section|article|header|footer|nav|main|aside|table|tr|td|th|dl|dt|dd|blockquote|figure|figcaption|title|button|a|br|summary|details|form|label)\b[^>]*>/gi;
+
+/** Every piece of text a reader, a search result or an assistant gets from a page. */
+function readableText(html: string): string[] {
+  const pieces: string[] = [];
+  for (const [, content] of html.matchAll(/<meta (?:name|property)="(?:description|og:[\w:]+|twitter:[\w:]+)" content="([^"]*)"/g)) {
+    pieces.push(decode(content));
+  }
+  for (const [, json] of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) {
+    const walk = (v: unknown): void => {
+      if (typeof v === "string") pieces.push(v);
+      else if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === "object") Object.values(v).forEach(walk);
+    };
+    walk(JSON.parse(json));
+  }
+  const body = html
+    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, " ")
+    .replace(BLOCK_TAG, "\n")
+    .replace(/<[^>]+>/g, " ");
+  pieces.push(...decode(body).split("\n"));
+  return pieces.map((p) => p.replace(/\s+/g, " ").trim()).filter(Boolean);
+}
+
+test("no public page claims WhatsApp, rider tracking, reservations, dish photos, allergens, or non-cash payments offline", async ({
+  request,
+}) => {
+  const found = new Set<string>();
+  for (const path of PUBLIC_PATHS) {
+    const res = await request.get(path);
+    expect(res.status(), path).toBe(200);
+    const body = await res.text();
+    for (let piece of path.endsWith(".txt") ? body.split("\n") : readableText(body)) {
+      for (const allowed of [...STATED_LIMITS, ...(LEGAL_WHATSAPP_PENDING[path] ?? [])]) piece = piece.split(allowed).join(" ");
+      // A full stop ends a sentence, except in "e.g." and "i.e.".
+      for (const sentence of piece.split(/(?<=[.!?])(?<!\be\.g\.)(?<!\bi\.e\.)\s+/)) {
+        const banned = BANNED.find((b) => b.pattern.test(sentence));
+        if (banned) found.add(`${path} claims ${banned.claim} ("${sentence.match(banned.pattern)![0]}") in: "${sentence.trim()}"`);
+        for (const clause of sentence.split(/\s+—\s+|;\s+/)) {
+          const word = paymentNotLimitedToCash(clause);
+          if (word) found.add(`${path} claims payments work offline, not just cash ("${word}") in: "${clause.trim()}"`);
+        }
+      }
+    }
+  }
+  expect([...found], "claims ToffeeOS can't back up").toEqual([]);
+});
 
 test.describe("Pricing page", () => {
   test("states no price anywhere, and nothing ToffeeOS doesn't do", async ({ request }) => {

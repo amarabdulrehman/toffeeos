@@ -1,10 +1,10 @@
 # ToffeeOS
 
-> ToffeeOS is restaurant management software for restaurants and cafés in Pakistan, made by KRIMSOLS. It runs in a web browser on a tablet, phone or computer, and covers the point of sale, the kitchen display, inventory and recipes, delivery, online ordering, reports, staff and payroll. The point of sale keeps taking orders and payments when the internet connection drops, and syncs them when it returns.
+> ToffeeOS is restaurant management software for restaurants and cafés in Pakistan, made by KRIMSOLS. It runs in a web browser on a tablet, phone or computer, and covers the point of sale, the kitchen display, inventory and recipes, delivery, online ordering, reports, staff and payroll. The point of sale keeps taking orders and cash payments when the internet connection drops, and syncs them when it returns.
 
 ## Point of sale
 - Dine-in, takeaway and delivery orders on one screen; tables grouped by floor, each showing whether it is free or occupied.
-- Works through internet outages: orders, payments and voids are saved on the device and sent to the server once when the connection returns. Prices, tax, service charge and rounding are calculated on the device from the branch's own settings.
+- Works through internet outages: orders, cash payments and voids are saved on the device and sent to the server once when the connection returns. Card and wallet payments are taxed at their own rate, and the till prices that through the server, so they should be taken once the connection is back. Prices, tax, service charge and rounding are calculated on the device from the branch's own settings.
 - Tax rates are set per branch and per payment method. A bill paid partly in cash and partly by card is taxed at each method's rate, with the taxable amount apportioned between them. Every amount is a whole number of paisa.
 - Line and order discounts with a per-branch ceiling; voids and cancellations with reasons; refunds that reach the reports and the cash drawer.
 - A cash drawer per business day: opening float, closing count, and every no-sale opening recorded with a reason.
