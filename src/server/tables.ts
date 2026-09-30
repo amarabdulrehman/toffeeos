@@ -27,10 +27,36 @@ export interface CreateTableInput {
   seats: number;
 }
 
+/**
+ * The floor has to belong to the branch the caller is actually working in. `floorId` arrives from
+ * the client while `branchId` comes from the session, and nothing previously checked that the two
+ * agreed — RLS stops another tenant's floor, but not another branch of the same restaurant, which
+ * would file the table under a floor plan nobody working that branch can see.
+ */
+async function assertFloorInBranch(tenantId: string, branchId: string, floorId: string) {
+  const floor = await tenantDb(tenantId).floor.findUnique({ where: { id: floorId }, select: { branchId: true } });
+  if (!floor) throw new HttpError(404, "That floor doesn't exist.");
+  if (floor.branchId !== branchId) throw new HttpError(403, "That floor belongs to a different branch.");
+}
+
+/** A duplicate label is the one failure a manager can actually fix, so it says which name clashed
+ * instead of falling through to defineHandler's generic 500. Checked up front rather than only
+ * caught from the unique index, so the message can name the table by its label. */
+async function assertLabelFree(tenantId: string, floorId: string, label: string, exceptTableId?: string) {
+  const clash = await tenantDb(tenantId).restaurantTable.findFirst({
+    where: { floorId, label, ...(exceptTableId ? { NOT: { id: exceptTableId } } : {}) },
+    select: { id: true },
+  });
+  if (clash) throw new HttpError(409, `This floor already has a table called "${label}".`);
+}
+
 export async function createTable(tenantId: string, branchId: string, input: CreateTableInput) {
   const db = tenantDb(tenantId);
+  const label = input.label.trim();
+  await assertFloorInBranch(tenantId, branchId, input.floorId);
+  await assertLabelFree(tenantId, input.floorId, label);
   return db.restaurantTable.create({
-    data: { tenantId, branchId, floorId: input.floorId, label: input.label, seats: input.seats },
+    data: { tenantId, branchId, floorId: input.floorId, label, seats: input.seats },
   });
 }
 
@@ -42,7 +68,24 @@ export interface UpdateTableInput {
 
 export async function updateTable(tenantId: string, tableId: string, input: UpdateTableInput) {
   const db = tenantDb(tenantId);
-  return db.restaurantTable.update({ where: { id: tableId }, data: input });
+  const existing = await db.restaurantTable.findUnique({
+    where: { id: tableId },
+    select: { branchId: true, floorId: true, label: true },
+  });
+  if (!existing) throw new HttpError(404, "That table doesn't exist.");
+
+  // Moving a table and renaming it can happen in the same request, so both the destination floor
+  // and the name are resolved before either is checked.
+  const floorId = input.floorId ?? existing.floorId;
+  const label = input.label?.trim() ?? existing.label;
+  if (input.floorId && input.floorId !== existing.floorId) {
+    await assertFloorInBranch(tenantId, existing.branchId, input.floorId);
+  }
+  if (floorId !== existing.floorId || label !== existing.label) {
+    await assertLabelFree(tenantId, floorId, label, tableId);
+  }
+
+  return db.restaurantTable.update({ where: { id: tableId }, data: { ...input, label } });
 }
 
 export async function deleteTable(tenantId: string, tableId: string) {

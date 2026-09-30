@@ -652,7 +652,13 @@ model RestaurantTable {
 
   orders Order[]
 
-  @@unique([branchId, label])
+  /// Scoped to the floor, not the branch. A restaurant numbering its tables 1-10 on the ground
+  /// floor and 1-10 upstairs is completely normal, and a branch-wide constraint made the second
+  /// floor impossible to set up — the rejection surfaced as a bare "Internal error", so it read as
+  /// an arbitrary cap on how many tables a floor could hold rather than a name clash. Relaxing the
+  /// scope is safe for existing data: every row that satisfied branch-wide uniqueness already
+  /// satisfies floor-wide uniqueness, since a floor belongs to exactly one branch.
+  @@unique([floorId, label])
   @@index([branchId, floorId])
   @@index([tenantId])
 }

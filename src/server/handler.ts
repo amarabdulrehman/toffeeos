@@ -163,6 +163,13 @@ export function defineHandler<TSchema extends ZodType = ZodType<undefined>>(
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
+      // A unique-index violation is a user mistake (a name already in use), not an incident. It
+      // reached the client as a bare "Internal error" before, which is how a duplicate table name
+      // came to look like a cap on how many tables a floor could hold. Handlers that can say
+      // something more specific still should — this is the floor, not the ceiling.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        return NextResponse.json({ error: "That name is already taken — pick a different one." }, { status: 409 });
+      }
       // Only genuinely unexpected errors reach here — HttpError and the P2025 case above are both
       // handled (expected) outcomes, not incidents. This is the one place a real client's 500 was
       // previously invisible unless they personally reported it.
