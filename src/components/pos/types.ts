@@ -113,6 +113,12 @@ export interface OrderDto {
     nameSnapshot: string;
     quantity: number;
     lineTotalPaisa: number;
+    /** What the engine prices from. Already returned by GET /api/orders; modelled here because the
+     * till re-prices the order itself when the connection is down. Optional for the same reason as
+     * the fields below: a locally-queued order is built before any of this exists server-side. */
+    unitPricePaisa?: number;
+    discountType?: "PERCENT" | "FIXED" | null;
+    discountValue?: number | null;
     kitchenReady: boolean;
     notes?: string | null;
     modifiers?: { id: string; nameSnapshot: string; priceDeltaPaisa: number }[];

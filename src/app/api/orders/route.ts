@@ -43,7 +43,15 @@ const listSchema = z.object({
 // Line add-ons come along because the receipt has to explain its own prices: a latte with an extra
 // shot is charged at Rs 600 against a menu board that says Rs 500, and a receipt that cannot say why
 // is a dispute. Bounded by each query's take, same join the kitchen board uses.
-const LIST_INCLUDE = { lines: { include: { modifiers: true } }, table: true, payments: true } as const;
+// `discounts` is here so the till can re-price an order in the browser with the connection down:
+// finalizeOrder needs the order-level discount, and leaving it out priced an offline card at the
+// undiscounted total.
+const LIST_INCLUDE = {
+  lines: { include: { modifiers: true } },
+  table: true,
+  payments: true,
+  discounts: true,
+} as const;
 
 export const GET = defineHandler({ permission: "orders.view", input: listSchema }, async ({ session, db, input }) => {
   const notClosed = { notIn: ["VOIDED", "CANCELLED"] as ("VOIDED" | "CANCELLED")[] };

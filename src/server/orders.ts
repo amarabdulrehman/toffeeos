@@ -23,6 +23,11 @@ import {
   type TaxRuleInput,
   type TenderInput,
 } from "@/lib/pricing";
+import { pricingLinesFromStored } from "@/lib/pricing";
+
+// Re-exported so the routes that already import it from here keep working; the definition now
+// lives in @/lib/pricing because the browser needs it too when the connection is down.
+export { pricingLinesFromStored };
 
 /** Closes whatever is still waiting for approval on an order that is being voided or cancelled. */
 async function closePendingApprovals(tx: TenantTransactionClient, orderId: string, actorId: string, why: string) {
@@ -343,35 +348,6 @@ function toPricingLines(resolved: ResolvedLine[]): PricingLineInput[] {
     unitPricePaisa: l.unitPricePaisa,
     quantity: l.quantity,
     discount: l.discount,
-  }));
-}
-
-/**
- * Pricing input rebuilt from lines already saved on an order.
- *
- * Every place that re-prices a saved order goes through this — adding a course, previewing a
- * payment, taking it, printing a bill. They used to each build the input by hand, and all three
- * left out the line's own discount: it was saved on the line when the order was created and
- * counted in the total the cart showed, then quietly dropped when the order was re-priced, so the
- * item was charged at full price. One builder means the discount cannot be forgotten in one place
- * and remembered in another.
- */
-export function pricingLinesFromStored(
-  lines: {
-    id: string;
-    unitPricePaisa: number;
-    quantity: number;
-    isVoided: boolean;
-    discountType: "PERCENT" | "FIXED" | null;
-    discountValue: number | null;
-  }[]
-): PricingLineInput[] {
-  return lines.map((l) => ({
-    id: l.id,
-    unitPricePaisa: l.unitPricePaisa,
-    quantity: l.quantity,
-    isVoided: l.isVoided,
-    discount: l.discountType && l.discountValue != null ? { type: l.discountType, value: l.discountValue } : undefined,
   }));
 }
 
@@ -771,6 +747,22 @@ export async function takePayment(
   const tenderedPaisa = totals.tenders.reduce((a, t) => a + t.amountPaisa, 0);
   if (tenderedPaisa < totals.totalPaisa) {
     throw new HttpError(400, `Tendered amount (${tenderedPaisa}) is less than the order total (${totals.totalPaisa}).`);
+  }
+
+  // Over-tendering is only meaningful in cash, where the difference goes back as change. A card or
+  // a wallet has no change: anything above the bill is money taken off the customer and never
+  // returned. Nothing enforced this, so a card sent at the order's stored cash-rate total was
+  // accepted and settled — a Rs 284 card bill charged as Rs 305. The till no longer offers that
+  // figure, but a queued payment from an older device, a replay, or any direct call still can, and
+  // this is the only place that can refuse it for all of them.
+  const nonCashTenderedPaisa = totals.tenders
+    .filter((t) => t.method !== "CASH")
+    .reduce((a, t) => a + t.amountPaisa, 0);
+  if (nonCashTenderedPaisa > totals.totalPaisa) {
+    throw new HttpError(
+      400,
+      `A ${totals.tenders.find((t) => t.method !== "CASH")?.method.toLowerCase().replace("_", " ")} payment can't be more than the order total — ${nonCashTenderedPaisa} was sent for a bill of ${totals.totalPaisa}.`
+    );
   }
 
   const result = await withActionIdempotency(

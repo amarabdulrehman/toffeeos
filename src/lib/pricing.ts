@@ -372,3 +372,36 @@ export function finalizeOrder(
 export function computeChange(tenderedPaisa: Paisa, amountDuePaisa: Paisa): Paisa {
   return Math.max(0, tenderedPaisa - amountDuePaisa);
 }
+
+/**
+ * Pricing input rebuilt from lines already saved on an order.
+ *
+ * Lives here rather than beside the server's order code because the POS re-prices the same
+ * saved order in the browser when the connection is down, and the two must build the input
+ * identically — a second copy is how the till comes to show one total and charge another.
+ *
+ * Every place that re-prices a saved order goes through this — adding a course, previewing a
+ * payment, taking it, printing a bill. They used to each build the input by hand, and all three
+ * left out the line's own discount: it was saved on the line when the order was created and
+ * counted in the total the cart showed, then quietly dropped when the order was re-priced, so the
+ * item was charged at full price. One builder means the discount cannot be forgotten in one place
+ * and remembered in another.
+ */
+export function pricingLinesFromStored(
+  lines: {
+    id: string;
+    unitPricePaisa: number;
+    quantity: number;
+    isVoided: boolean;
+    discountType: "PERCENT" | "FIXED" | null;
+    discountValue: number | null;
+  }[]
+): PricingLineInput[] {
+  return lines.map((l) => ({
+    id: l.id,
+    unitPricePaisa: l.unitPricePaisa,
+    quantity: l.quantity,
+    isVoided: l.isVoided,
+    discount: l.discountType && l.discountValue != null ? { type: l.discountType, value: l.discountValue } : undefined,
+  }));
+}

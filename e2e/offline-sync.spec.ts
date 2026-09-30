@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { authFile, SEED_MENU_CATEGORY, SEED_MENU_ITEM_2 } from "./fixtures/test-data";
 import { getAvailableTable, getOrder } from "./fixtures/api";
+import { formatPkr } from "@/lib/money";
 
 /**
  * Real offline/online transitions via Playwright's network emulation (CDP-level — this actually
@@ -300,12 +301,12 @@ test("an add-on chosen offline survives the sync, at the price the cashier charg
 
 /**
  * What the offline "Take Payment" message tells a cashier to do: the order punched offline is in
- * the Order Queue straight away, cash can be taken for it there while still offline, and once the
- * connection is back the order and its payment both reach the server, the payment at exactly the
- * order's total. The test above pays offline an order created online; this one pays an order that
+ * the Order Queue straight away, payment can be taken for it there while still offline, and once
+ * the connection is back the order and its payment both reach the server, the payment at exactly
+ * the order's total. The test above pays offline an order created online; this one pays an order that
  * never reached the server before it was paid.
  */
-test("an order punched with Take Payment while offline can be paid in cash from the Order Queue straight away", async ({
+test("an order punched with Take Payment while offline can be paid from the Order Queue straight away", async ({
   page,
   request,
 }) => {
@@ -323,7 +324,7 @@ test("an order punched with Take Payment while offline can be paid in cash from 
   await expect(page.getByText("You're offline")).toBeVisible();
 
   await page.getByRole("button", { name: "Take Payment" }).click();
-  await expect(page.getByText(/Take cash for it from the Order Queue now/)).toBeVisible();
+  await expect(page.getByText(/Take payment for it from the Order Queue now/)).toBeVisible();
 
   await page.getByRole("button", { name: "Order Queue" }).click();
   const queueRow = page.locator("div.rounded-xl", { hasText: "#-1" });
@@ -345,12 +346,18 @@ test("an order punched with Take Payment while offline can be paid in cash from 
 });
 
 /**
- * Offline, the payment dialog can't reprice for a method's own tax rate (only the server can,
- * through pay-preview), so it would ask a card for the order's cash-rate total. Measured before
- * this guard, a Rs 284 card-rate bill was charged Rs 305. So offline it takes cash only and says
- * why, and cash still syncs at exactly the total.
+ * Offline, a card is charged the card rate.
+ *
+ * The till used to refuse every method but cash with the line down, because only the server could
+ * reprice an order for a method's own tax rate, and a card taken at the order's stored cash-rate
+ * figure overcharged — a Rs 284 card bill went through as Rs 305. It now prices the order on the
+ * device with the same engine the server uses (see localTotals in payment-dialog.tsx), so the
+ * amount owed is the same number either way and the sale does not have to wait for the line.
+ *
+ * What is asserted is the money: the figure offered for a card offline is the card-rate one, and
+ * what finally lands on the server is that figure and not the cash-rate total.
  */
-test("offline, the payment dialog takes cash only, and says why", async ({ page, request }) => {
+test("offline, a card is offered the card-rate total and syncs at it", async ({ page, request }) => {
   const table = await getAvailableTable(request);
 
   await page.goto("/pos");
@@ -364,6 +371,17 @@ test("offline, the payment dialog takes cash only, and says why", async ({ page,
   ]);
   const orderId: string = (await sendResponse.json()).order.id;
   const before = await getOrder(request, orderId);
+
+  // What the server says a card costs — the number the device has to arrive at on its own.
+  const cardTotal = (
+    await (
+      await request.post(`/api/orders/${orderId}/pay-preview`, { data: { tenders: [{ method: "CARD", amountPaisa: 0 }] } })
+    ).json()
+  ).totals.totalPaisa as number;
+  expect(cardTotal, "the card rate is lower than the cash rate the order was stored at").toBeLessThan(
+    before.totalPaisa
+  );
+
   await page.getByRole("button", { name: "Order Queue" }).click();
   await expect(page.getByText(`#${before.orderNumber}`)).toBeVisible();
 
@@ -374,22 +392,78 @@ test("offline, the payment dialog takes cash only, and says why", async ({ page,
   await queueRow.getByRole("button", { name: "Payment" }).click();
   const dialog = page.getByRole("dialog", { name: "Take payment" });
   const confirm = dialog.getByRole("button", { name: "Confirm payment" });
-  const onlyCash = dialog.getByText(/only cash can be taken/);
 
   await dialog.getByRole("combobox").first().click();
   await page.getByRole("option", { name: "Card", exact: true }).click();
-  await expect(onlyCash).toBeVisible();
-  await expect(confirm).toBeDisabled();
 
-  await dialog.getByRole("combobox").first().click();
-  await page.getByRole("option", { name: "Cash", exact: true }).click();
-  await expect(onlyCash).toHaveCount(0);
+  // The heart of it: offline, with no server to ask, the amount shown is the card-rate one.
+  await expect(dialog.locator("div.text-3xl")).toHaveText(formatPkr(cardTotal));
+  await expect(confirm).toBeEnabled();
   await confirm.click();
+  await expect(page.getByText(/queued offline/)).toBeVisible();
 
   await page.context().setOffline(false);
   await expect
-    .poll(async () => (await getOrder(request, orderId)).status, { timeout: 30_000, intervals: [1000] })
+    .poll(async () => (await getOrder(request, orderId)).status, { timeout: 45_000, intervals: [1000] })
     .toBe("PAID");
   const after = await getOrder(request, orderId);
-  expect(after.paidPaisa).toBe(after.totalPaisa);
+  expect(after.paidPaisa, "the card paid the card total, not the cash total").toBe(cardTotal);
+  expect(after.paidPaisa).not.toBe(before.totalPaisa);
+});
+
+/**
+ * The outage the browser cannot see: the wifi is up and the internet is down, so navigator.onLine
+ * stays true and the offline banner never appears. This was the worse half of the same bug — the
+ * preview request failed silently and the dialog fell back to the order's stored cash-rate total
+ * with nothing on screen to say so, so a card was offered Rs 305 on a Rs 284 bill.
+ *
+ * Pricing on the device removes the fallback entirely: there is no longer a path where a failed
+ * request leaves the cash figure on screen. The server's own refusal of an overpayment is checked
+ * too, since it is the last line of defence if that ever regresses.
+ */
+test("with the wifi up and the internet down, a card still gets the card-rate total", async ({ page, request }) => {
+  const table = await getAvailableTable(request);
+
+  await page.goto("/pos");
+  await expect(page.getByText("Online — all orders synced")).toBeVisible({ timeout: 15_000 });
+  await selectTable(page, table.label);
+  await page.getByRole("button", { name: SEED_MENU_CATEGORY, exact: true }).first().click();
+  await page.getByRole("button", { name: SEED_MENU_ITEM_2.name, exact: false }).first().click();
+  const [sendResponse] = await Promise.all([
+    page.waitForResponse((r) => r.url().includes("/send-to-kitchen")),
+    page.getByRole("button", { name: "Send to Kitchen" }).click(),
+  ]);
+  const orderId: string = (await sendResponse.json()).order.id;
+  const before = await getOrder(request, orderId);
+  const cardTotal = (
+    await (
+      await request.post(`/api/orders/${orderId}/pay-preview`, { data: { tenders: [{ method: "CARD", amountPaisa: 0 }] } })
+    ).json()
+  ).totals.totalPaisa as number;
+  expect(cardTotal).toBeLessThan(before.totalPaisa);
+
+  // The server refuses a card for more than the bill, whatever sent it.
+  const overcharge = await request.post(`/api/orders/${orderId}/pay`, {
+    data: { tenders: [{ method: "CARD", amountPaisa: before.totalPaisa }] },
+  });
+  expect(overcharge.status(), "a card at the cash-rate total").toBe(400);
+  expect(await overcharge.text()).toContain("can't be more than the order total");
+
+  await page.getByRole("button", { name: "Order Queue" }).click();
+  await expect(page.getByText(`#${before.orderNumber}`)).toBeVisible();
+
+  // Every request fails; the browser still says online, so nothing warns the cashier.
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  expect(await page.evaluate(() => navigator.onLine)).toBe(true);
+
+  const queueRow = page.locator("div.rounded-xl", { hasText: `#${before.orderNumber}` });
+  await queueRow.getByRole("button", { name: "Payment" }).click();
+  const dialog = page.getByRole("dialog", { name: "Take payment" });
+
+  await dialog.getByRole("combobox").first().click();
+  await page.getByRole("option", { name: "Card", exact: true }).click();
+
+  // The figure the cashier keys into the card machine, with every request failing.
+  await expect(dialog.locator("div.text-3xl")).toHaveText(formatPkr(cardTotal));
+  await expect(dialog.locator("div.text-3xl")).not.toHaveText(formatPkr(before.totalPaisa));
 });
