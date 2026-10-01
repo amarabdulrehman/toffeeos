@@ -107,6 +107,13 @@ export interface PlaceOnlineOrderInput {
  */
 async function assertAllOnline(tenantId: string, lines: { menuItemId: string }[]) {
   const ids = [...new Set(lines.map((l) => l.menuItemId))];
+  const removed = await tenantDb(tenantId).menuItem.findMany({
+    where: { id: { in: ids }, isActive: false },
+    select: { name: true },
+  });
+  if (removed.length > 0) {
+    throw new HttpError(400, `${removed.map((h) => h.name).join(", ")} is no longer on the menu. Please refresh the page.`);
+  }
   const hidden = await tenantDb(tenantId).menuItem.findMany({
     where: { id: { in: ids }, isAvailableOnline: false },
     select: { name: true },

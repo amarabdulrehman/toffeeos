@@ -43,7 +43,9 @@ export async function listMenuItemsRecipeStatus(tenantId: string, branchId: stri
   return items.map((i) => ({
     id: i.id,
     name: i.name,
+    categoryId: i.categoryId,
     categoryName: i.category.name,
+    description: i.description,
     basePricePaisa: i.basePricePaisa,
     hasRecipe: i.recipeLines.length > 0,
     isAvailable: i.branchMenuItems[0]?.isAvailable ?? true,

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { BookOpen, ChefHat, Lock, SlidersHorizontal, X } from "lucide-react";
+import { BookOpen, ChefHat, Lock, Pencil, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,9 @@ import { MenuImportDialog } from "./menu-import-dialog";
 interface MenuItemRow {
   id: string;
   name: string;
+  categoryId: string;
   categoryName: string;
+  description: string | null;
   basePricePaisa: number;
   hasRecipe: boolean;
   isAvailable: boolean;
@@ -45,6 +47,27 @@ export function MenuView({ recipeEnabled, canPricePerBranch = false }: { recipeE
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<MenuItemRow | null>(null);
+  const [detailsItem, setDetailsItem] = useState<MenuItemRow | null>(null);
+  const [deletingItem, setDeletingItem] = useState<MenuItemRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function deleteItem() {
+    if (!deletingItem) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/menu-items/${deletingItem.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? "Could not delete this item.");
+        return;
+      }
+      toast.success(`${deletingItem.name} removed from the menu.`);
+      setDeletingItem(null);
+      load();
+    } finally {
+      setDeleting(false);
+    }
+  }
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [optionsItem, setOptionsItem] = useState<MenuItemRow | null>(null);
@@ -187,6 +210,10 @@ export function MenuView({ recipeEnabled, canPricePerBranch = false }: { recipeE
                       </Badge>
                     </TableCell>
                     <TableCell className="space-x-2 text-right">
+                      <Button size="sm" variant="outline" onClick={() => setDetailsItem(item)}>
+                        <Pencil className="size-3.5" />
+                        Edit details
+                      </Button>
                       <Button size="sm" variant="outline" onClick={() => toggleAvailability(item)}>
                         {item.isAvailable ? "Mark unavailable" : "Mark available"}
                       </Button>
@@ -205,6 +232,16 @@ export function MenuView({ recipeEnabled, canPricePerBranch = false }: { recipeE
                           Branch prices
                         </Button>
                       )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => setDeletingItem(item)}
+                        aria-label={`Delete ${item.name}`}
+                      >
+                        <Trash2 className="size-3.5" />
+                        Delete
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -213,6 +250,41 @@ export function MenuView({ recipeEnabled, canPricePerBranch = false }: { recipeE
           )}
         </CardContent>
       </Card>
+
+      <EditItemDialog
+        key={detailsItem?.id ?? "closed"}
+        item={detailsItem}
+        categories={categories}
+        onClose={() => setDetailsItem(null)}
+        onSaved={() => {
+          setDetailsItem(null);
+          load();
+        }}
+      />
+
+      <Dialog open={!!deletingItem} onOpenChange={(o) => !o && setDeletingItem(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading">Delete {deletingItem?.name}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            It comes off the till and the online menu straight away. Past orders, receipts and sales
+            reports that include it are kept exactly as they are.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Only out for today? Use <span className="font-medium text-foreground">Mark unavailable</span> instead — that is
+            undone with one click.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletingItem(null)} disabled={deleting}>
+              Never mind
+            </Button>
+            <Button variant="destructive" onClick={deleteItem} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete item"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <RecipeDialog
         item={editingItem}
@@ -311,6 +383,114 @@ function AddCategoryDialog({
         <DialogFooter>
           <Button onClick={submit} disabled={submitting || !name.trim()}>
             {submitting ? "Adding…" : "Add category"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Name, category, price and description of an existing item — the fields chosen when it was made. */
+function EditItemDialog({
+  item,
+  categories,
+  onClose,
+  onSaved,
+}: {
+  item: MenuItemRow | null;
+  categories: CategoryRow[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  // Remounted per item (key on the caller), so these start from the item every time it opens.
+  const [name, setName] = useState(item?.name ?? "");
+  const [categoryId, setCategoryId] = useState(item?.categoryId ?? "");
+  const [price, setPrice] = useState(item ? String(item.basePricePaisa / 100) : "");
+  const [description, setDescription] = useState(item?.description ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const priceNumber = Number(price);
+  const valid = name.trim() !== "" && categoryId !== "" && price.trim() !== "" && Number.isFinite(priceNumber) && priceNumber >= 0;
+
+  async function save() {
+    if (!item || !valid) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/menu-items/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          categoryId,
+          basePricePaisa: Math.round(priceNumber * 100),
+          description: description.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? "Could not save changes.");
+        return;
+      }
+      toast.success("Changes saved.");
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!item} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-heading">Edit {item?.name}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="editItemName">Item name</Label>
+            <Input id="editItemName" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Category</Label>
+            <Select value={categoryId} onValueChange={(v) => v && setCategoryId(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a category">
+                  {(v: string) => categories.find((c) => c.id === v)?.name ?? item?.categoryName ?? v}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="editItemPrice">Price (Rs)</Label>
+            <Input
+              id="editItemPrice"
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step="0.01"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+            />
+            {/* Orders already on the floor keep the price they were rung up at; only new ones change. */}
+            <p className="text-xs text-muted-foreground">Applies to new orders. Orders already placed keep their price.</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="editItemDescription">Description (optional)</Label>
+            <Input id="editItemDescription" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={saving || !valid}>
+            {saving ? "Saving…" : "Save changes"}
           </Button>
         </DialogFooter>
       </DialogContent>
