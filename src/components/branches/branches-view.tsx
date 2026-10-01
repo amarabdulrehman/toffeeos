@@ -372,7 +372,8 @@ function OrderSettingsCard({ canManageServiceCharge }: { canManageServiceCharge:
           </Select>
           <p className="text-xs text-muted-foreground">
             Sales made after midnight but before this time count toward the previous day — in Daily Sales,
-            the reports and the cash drawer. Leave it at midnight if you close before then.
+            the reports and the cash drawer. 3am suits most places; choose a time after your last bill
+            and before you open.
           </p>
         </div>
 

@@ -331,9 +331,14 @@ model BranchSettings {
   waiterOrdersNeedApproval      Boolean      @default(false)
   /// When this branch's business day starts, in minutes after midnight (0 = midnight, 240 = 4am).
   /// A café trading until 2am wants 1:30am counted as tonight — in its takings, its cash drawer and
-  /// its closing summary — not as tomorrow. 0 keeps plain calendar days, so no branch changes until
-  /// an owner sets it. Capped at 6am by a CHECK constraint; see src/lib/business-day.ts.
-  dayStartMinutes               Int          @default(0)
+  /// its closing summary — not as tomorrow. Capped at 6am by a CHECK constraint; see
+  /// src/lib/business-day.ts.
+  ///
+  /// New branches start at 3am (180). Midnight split every café open past twelve into two days by
+  /// default, and the owner had to find this setting to fix it; 3am is harmless for anywhere that
+  /// closes earlier, since nothing is sold between midnight and 3am. Branches that existed before
+  /// the change keep whatever they had — changing theirs would silently re-file their history.
+  dayStartMinutes               Int          @default(180)
   locale                        String       @default("en")
   /// Which StockLocation recipe consumption deducts from on order payment. Not a DB relation
   /// (deliberately soft) — src/server/recipes.ts falls back to the branch's oldest active
