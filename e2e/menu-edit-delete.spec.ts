@@ -144,3 +144,83 @@ test("the menu screen edits and deletes through the dialogs", async ({ page, req
     await purge(id);
   }
 });
+
+/**
+ * Deleting an item and then importing a menu that has it.
+ *
+ * The import works out what "already exists" by category and name. It counted deleted items too,
+ * which never mattered while nothing could be deleted. Once something could, two things went wrong:
+ * a deleted dish in the file was taken as already on the menu and never came back, and a dish that
+ * was deleted and then added again by hand had a hidden twin with the same name, so the import's
+ * price change could land on the hidden one while the visible one kept its old price.
+ */
+async function importCsv(request: APIRequestContext, csv: string) {
+  const res = await request.post("/api/menu/import", { data: { csv } });
+  expect(res.ok(), await res.text()).toBeTruthy();
+  return res.json();
+}
+
+async function createCategory(request: APIRequestContext, name: string) {
+  const res = await request.post("/api/menu", { data: { name } });
+  expect(res.ok(), await res.text()).toBeTruthy();
+}
+
+test.describe("importing after a delete", () => {
+  test("a deleted item in the file comes back on the menu", async ({ request }) => {
+    const category = `E2E Reimport ${uniqueSuffix()}`;
+    const name = "Comeback Dish";
+    await importCsv(request, `Category,Item,Size,Price,Description\n${category},${name},,500,`);
+    const first = await withDb(async (c) =>
+      (await c.query('SELECT id FROM "MenuItem" WHERE name = $1 AND "isActive" ORDER BY "createdAt" DESC LIMIT 1', [name])).rows[0].id
+    );
+    const ids = [first as string];
+    try {
+      expect((await request.delete(`/api/menu-items/${first}`)).ok()).toBeTruthy();
+
+      await importCsv(request, `Category,Item,Size,Price,Description\n${category},${name},,650,`);
+
+      const { items } = await (await request.get("/api/menu-items")).json();
+      const live = (items as { id: string; name: string; categoryName: string; basePricePaisa: number }[]).filter(
+        (i) => i.name === name && i.categoryName === category
+      );
+      ids.push(...live.map((l) => l.id));
+      expect(live, "the dish must be back on the menu").toHaveLength(1);
+      expect(live[0].basePricePaisa).toBe(65_000);
+    } finally {
+      for (const id of ids) await purge(id);
+    }
+  });
+
+  test("a price change in the file reaches the visible item, not a deleted twin", async ({ request }) => {
+    const category = `E2E Twin ${uniqueSuffix()}`;
+    const name = "Twin Dish";
+    await createCategory(request, category);
+    const categoryId = await withDb(async (c) =>
+      (await c.query('SELECT id FROM "Category" WHERE name = $1 LIMIT 1', [category])).rows[0].id as string
+    );
+    const mk = async () => {
+      const r = await request.post("/api/menu-items", { data: { name, categoryId, basePricePaisa: 50_000 } });
+      expect(r.ok(), await r.text()).toBeTruthy();
+      return (await r.json()).id as string;
+    };
+    // Delete, then add again by hand — exactly what an owner does to "reset" an item.
+    const deleted = await mk();
+    expect((await request.delete(`/api/menu-items/${deleted}`)).ok()).toBeTruthy();
+    const visible = await mk();
+    try {
+      await importCsv(request, `Category,Item,Size,Price,Description\n${category},${name},,725,`);
+      const prices = await withDb(async (c) =>
+        Object.fromEntries(
+          (await c.query('SELECT id, "basePricePaisa" FROM "MenuItem" WHERE id = ANY($1)', [[deleted, visible]])).rows.map(
+            (r) => [r.id, r.basePricePaisa]
+          )
+        )
+      );
+      expect(prices[visible], "the item on the menu gets the new price").toBe(72_500);
+      expect(prices[deleted], "the deleted one is left alone").toBe(50_000);
+    } finally {
+      await purge(deleted);
+      await purge(visible);
+    }
+  });
+});

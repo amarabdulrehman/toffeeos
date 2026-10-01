@@ -188,11 +188,22 @@ function itemKey(category: string, name: string): string {
   return `${category.toLowerCase()}::${name.toLowerCase()}`;
 }
 
+/**
+ * The menu as it stands — deleted items and categories excluded.
+ *
+ * It counted deleted ones too, which never mattered while nothing could be deleted. Once an item
+ * could be, a deleted dish named in the file was taken as "already on the menu" and never came
+ * back, and a dish deleted and then re-added by hand left a hidden twin under the same name — so
+ * the file's price change could land on the hidden copy while the visible one kept its old price.
+ * Matching only live rows makes a deleted item exactly as absent here as it is everywhere else.
+ */
 async function loadExisting(tenantId: string) {
   const db = tenantDb(tenantId);
   const categories = await db.category.findMany({
+    where: { isActive: true },
     include: {
       items: {
+        where: { isActive: true },
         select: {
           id: true,
           name: true,
