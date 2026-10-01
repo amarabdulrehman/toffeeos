@@ -224,3 +224,90 @@ test.describe("importing after a delete", () => {
     }
   });
 });
+
+/**
+ * Deleting a whole category. Its items come off the menu with it, in one step, and nothing that
+ * has already been sold is touched.
+ */
+test.describe("deleting a category", () => {
+  async function setUp(request: APIRequestContext) {
+    const category = `E2E Cat ${uniqueSuffix()}`;
+    await createCategory(request, category);
+    const categoryId = await withDb(async (c) =>
+      (await c.query('SELECT id FROM "Category" WHERE name = $1 LIMIT 1', [category])).rows[0].id as string
+    );
+    const ids: string[] = [];
+    for (const n of ["One", "Two"]) {
+      const r = await request.post("/api/menu-items", { data: { name: `${category} ${n}`, categoryId, basePricePaisa: 30_000 } });
+      expect(r.ok(), await r.text()).toBeTruthy();
+      ids.push((await r.json()).id);
+    }
+    return { category, categoryId, ids };
+  }
+
+  async function purgeCategory(categoryId: string, ids: string[]) {
+    for (const id of ids) await purge(id);
+    await withDb(async (c) => {
+      const left = await c.query('SELECT 1 FROM "MenuItem" WHERE "categoryId" = $1 LIMIT 1', [categoryId]);
+      if (left.rowCount === 0) await c.query('DELETE FROM "Category" WHERE id = $1', [categoryId]);
+    });
+  }
+
+  test("takes the category and its items off the till, and keeps what was sold", async ({ request }) => {
+    const { categoryId, ids } = await setUp(request);
+    try {
+      const listed = (await (await request.get("/api/menu/categories")).json()).categories as { id: string; itemCount: number }[];
+      expect(listed.find((c) => c.id === categoryId)?.itemCount, "the count shown before deleting").toBe(2);
+
+      const order = await request.post("/api/orders", {
+        data: { type: "TAKEAWAY", idempotencyKey: `e2e-${uniqueSuffix()}`, lines: [{ menuItemId: ids[0], quantity: 1 }] },
+      });
+      expect(order.ok(), await order.text()).toBeTruthy();
+      const orderId = (await order.json()).order.id as string;
+
+      const del = await request.delete(`/api/menu/categories/${categoryId}`);
+      expect(del.ok(), await del.text()).toBeTruthy();
+      expect((await del.json()).itemsRemoved).toBe(2);
+
+      const { categories } = await (await request.get("/api/menu")).json();
+      expect((categories as { id: string }[]).some((c) => c.id === categoryId), "gone from the till").toBe(false);
+      for (const id of ids) expect(await onTill(request, id)).toBeUndefined();
+      const after = (await (await request.get("/api/menu/categories")).json()).categories as { id: string }[];
+      expect(after.some((c) => c.id === categoryId), "gone from the menu screen").toBe(false);
+
+      const line = await withDb(async (c) =>
+        (await c.query('SELECT 1 FROM "OrderLine" WHERE "orderId" = $1 AND "menuItemId" = $2', [orderId, ids[0]])).rowCount
+      );
+      expect(line, "the order that sold it still has its line").toBe(1);
+
+      expect((await request.delete(`/api/menu/categories/${categoryId}`)).status(), "nothing left to delete").toBe(404);
+    } finally {
+      await purgeCategory(categoryId, ids);
+    }
+  });
+
+  test("a cashier can't delete a category", async ({ browser, baseURL, request }) => {
+    const { categoryId, ids } = await setUp(request);
+    const ctx = await browser.newContext({ baseURL, storageState: authFile("cashier") });
+    try {
+      expect((await ctx.request.delete(`/api/menu/categories/${categoryId}`)).status()).toBe(403);
+    } finally {
+      await ctx.close();
+      await purgeCategory(categoryId, ids);
+    }
+  });
+
+  test("the menu screen deletes a category through the Categories dialog", async ({ page, request }) => {
+    const { category, categoryId, ids } = await setUp(request);
+    try {
+      await page.goto("/app/menu");
+      await page.getByRole("button", { name: "Categories", exact: true }).click();
+      await page.getByRole("button", { name: `Delete category ${category}` }).click();
+      await page.getByRole("button", { name: "Delete category and 2 items" }).click();
+      await expect(page.getByText(`${category} and its 2 items removed from the menu.`)).toBeVisible();
+      await expect(page.getByRole("row", { name: new RegExp(category) })).toHaveCount(0);
+    } finally {
+      await purgeCategory(categoryId, ids);
+    }
+  });
+});

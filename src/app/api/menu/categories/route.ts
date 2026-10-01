@@ -8,7 +8,9 @@ export const GET = defineHandler({ permission: "menu.view" }, async ({ db }) => 
   const categories = await db.category.findMany({
     where: { isActive: true },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: { id: true, name: true },
+    select: { id: true, name: true, _count: { select: { items: { where: { isActive: true } } } } },
   });
-  return { categories };
+  // The item count is what a manager needs before deleting one: an empty category and one holding
+  // forty dishes are very different things to remove.
+  return { categories: categories.map((c) => ({ id: c.id, name: c.name, itemCount: c._count.items })) };
 });

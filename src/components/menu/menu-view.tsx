@@ -29,6 +29,9 @@ interface MenuItemRow {
 interface CategoryRow {
   id: string;
   name: string;
+  /** Live items in it — shown before a delete, since an empty category and a full one are very
+   * different things to remove. */
+  itemCount?: number;
 }
 interface InventoryItem {
   id: string;
@@ -73,6 +76,7 @@ export function MenuView({ recipeEnabled, canPricePerBranch = false }: { recipeE
   const [optionsItem, setOptionsItem] = useState<MenuItemRow | null>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
 
   const loadCategories = useCallback(async () => {
     const r = await fetch("/api/menu/categories");
@@ -141,6 +145,9 @@ export function MenuView({ recipeEnabled, canPricePerBranch = false }: { recipeE
           </Button>
           <Button variant="outline" onClick={() => setGroupsOpen(true)}>
             Add-on groups
+          </Button>
+          <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
+            Categories
           </Button>
           <Button variant="outline" onClick={() => setAddCategoryOpen(true)}>
             + Add category
@@ -250,6 +257,16 @@ export function MenuView({ recipeEnabled, canPricePerBranch = false }: { recipeE
           )}
         </CardContent>
       </Card>
+
+      <CategoriesDialog
+        open={categoriesOpen}
+        categories={categories}
+        onClose={() => setCategoriesOpen(false)}
+        onChanged={() => {
+          loadCategories();
+          load();
+        }}
+      />
 
       <EditItemDialog
         key={detailsItem?.id ?? "closed"}
@@ -385,6 +402,125 @@ function AddCategoryDialog({
             {submitting ? "Adding…" : "Add category"}
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Every category with how many items it holds, and a way to delete one.
+ *
+ * Deleting takes the category's items off the menu with it — the alternative, refusing until each
+ * item has been removed by hand, is a chore nobody deleting a whole section wants. The confirm step
+ * says how many items go before anything happens.
+ */
+function CategoriesDialog({
+  open,
+  categories,
+  onClose,
+  onChanged,
+}: {
+  open: boolean;
+  categories: CategoryRow[];
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [confirming, setConfirming] = useState<CategoryRow | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function remove() {
+    if (!confirming) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/menu/categories/${confirming.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not delete this category.");
+        return;
+      }
+      toast.success(
+        data.itemsRemoved > 0
+          ? `${confirming.name} and its ${data.itemsRemoved} item${data.itemsRemoved === 1 ? "" : "s"} removed from the menu.`
+          : `${confirming.name} removed.`
+      );
+      setConfirming(null);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const count = confirming?.itemCount ?? 0;
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) {
+          setConfirming(null);
+          onClose();
+        }
+      }}
+    >
+      <DialogContent>
+        {confirming ? (
+          <>
+            <DialogHeader>
+              <DialogTitle className="font-heading">Delete {confirming.name}?</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              {count > 0 ? (
+                <>
+                  Its <span className="font-medium text-foreground">{count} item{count === 1 ? "" : "s"}</span> come off
+                  the till and the online menu with it.
+                </>
+              ) : (
+                <>It has no items on the menu.</>
+              )}{" "}
+              Past orders, receipts and sales reports are kept exactly as they are.
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConfirming(null)} disabled={busy}>
+                Never mind
+              </Button>
+              <Button variant="destructive" onClick={remove} disabled={busy}>
+                {busy ? "Deleting…" : count > 0 ? `Delete category and ${count} item${count === 1 ? "" : "s"}` : "Delete category"}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="font-heading">Categories</DialogTitle>
+            </DialogHeader>
+            {categories.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">No categories yet.</p>
+            ) : (
+              <ul className="max-h-[60dvh] divide-y overflow-y-auto">
+                {categories.map((c) => (
+                  <li key={c.id} className="flex items-center justify-between gap-3 py-2.5">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{c.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {c.itemCount ?? 0} item{c.itemCount === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => setConfirming(c)}
+                      aria-label={`Delete category ${c.name}`}
+                    >
+                      <Trash2 className="size-3.5" />
+                      Delete
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
