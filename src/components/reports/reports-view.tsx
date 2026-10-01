@@ -416,7 +416,9 @@ function SalesTab({ qs }: { qs: string }) {
 }
 
 function ItemWiseTab({ qs }: { qs: string }) {
-  const { data, error, loading } = useReportFetch<{ items: { menuItemId: string; name: string; quantity: number; revenuePaisa: number }[] }>(
+  const { data, error, loading } = useReportFetch<{
+    items: { menuItemId: string; variantId: string | null; name: string; quantity: number; revenuePaisa: number }[];
+  }>(
     `/api/reports/item-wise?${qs}`
   );
   const items = data?.items ?? [];
@@ -446,7 +448,7 @@ function ItemWiseTab({ qs }: { qs: string }) {
               )}
               {!loading &&
                 items.map((i) => (
-                  <TableRow key={i.menuItemId}>
+                  <TableRow key={`${i.menuItemId}:${i.variantId ?? ""}`}>
                     <TableCell className="font-medium">{i.name}</TableCell>
                     <TableCell className="tabular-nums">{i.quantity}</TableCell>
                     <TableCell className="text-right font-medium tabular-nums">{formatPkr(i.revenuePaisa)}</TableCell>

@@ -31,7 +31,7 @@ const ORDER_SELECT = {
   discountedSubtotalPaisa: true,
   paidAt: true,
   createdById: true,
-  lines: { select: { menuItemId: true, nameSnapshot: true, quantity: true, lineTotalPaisa: true, isVoided: true } },
+  lines: { select: { menuItemId: true, variantId: true, nameSnapshot: true, quantity: true, lineTotalPaisa: true, isVoided: true } },
   payments: { select: { method: true, amountPaisa: true } },
 } as const;
 
@@ -45,7 +45,7 @@ type PaidOrder = {
   discountedSubtotalPaisa: number;
   paidAt: Date | null;
   createdById: string | null;
-  lines: { menuItemId: string; nameSnapshot: string; quantity: number; lineTotalPaisa: number; isVoided: boolean }[];
+  lines: { menuItemId: string; variantId: string | null; nameSnapshot: string; quantity: number; lineTotalPaisa: number; isVoided: boolean }[];
   payments: { method: string; amountPaisa: number }[];
 };
 
@@ -162,13 +162,17 @@ export async function dayReport(tenantId: string, branchIds: string[], requested
 
     for (const l of o.lines) {
       if (l.isVoided) continue;
-      const item = byItem.get(l.menuItemId) ?? { name: l.nameSnapshot, quantity: 0, revenuePaisa: 0 };
+      // One row per dish and size: the name carries the size ("Mutton Karahi (Half)"), and keying on
+      // the dish alone added Half and Full plates into a row named after whichever came first.
+      const key = `${l.menuItemId}:${l.variantId ?? ""}`;
+      const item = byItem.get(key) ?? { name: l.nameSnapshot, quantity: 0, revenuePaisa: 0 };
       item.quantity += l.quantity;
       item.revenuePaisa += l.lineTotalPaisa;
-      byItem.set(l.menuItemId, item);
+      byItem.set(key, item);
     }
 
-    const staffId = o.createdById ?? "unknown";
+    // Online and QR orders are placed by the customer, so no staff member rang them up.
+    const staffId = o.createdById ?? "customer";
     const s = byStaffMap.get(staffId) ?? { orderCount: 0, netPaisa: 0 };
     s.orderCount += 1;
     s.netPaisa += o.totalPaisa - o.refundedPaisa;
@@ -178,7 +182,7 @@ export async function dayReport(tenantId: string, branchIds: string[], requested
   const orderVoids = voidEvents.filter((v) => v.type === "VOIDED");
   const itemVoids = voidEvents.filter((v) => v.type === "LINE_VOIDED");
 
-  const staffIds = [...byStaffMap.keys()].filter((id) => id !== "unknown");
+  const staffIds = [...byStaffMap.keys()].filter((id) => id !== "customer");
   const users = staffIds.length
     ? await db.user.findMany({ where: { id: { in: staffIds } }, select: { id: true, name: true } })
     : [];
@@ -198,7 +202,7 @@ export async function dayReport(tenantId: string, branchIds: string[], requested
     byHour,
     topItems: [...byItem.values()].sort((a, b) => b.revenuePaisa - a.revenuePaisa).slice(0, 10),
     byStaff: [...byStaffMap.entries()]
-      .map(([id, v]) => ({ name: nameOf.get(id) ?? "Unknown", ...v }))
+      .map(([id, v]) => ({ name: id === "customer" ? "Online and QR orders" : (nameOf.get(id) ?? "Unknown"), ...v }))
       .sort((a, b) => b.netPaisa - a.netPaisa),
     voids: {
       count: orderVoids.length,

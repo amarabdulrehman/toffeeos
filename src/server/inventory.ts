@@ -47,7 +47,7 @@ export async function archiveItem(tenantId: string, itemId: string) {
 export async function stockReport(tenantId: string, branchId: string, opts: { belowThresholdOnly?: boolean } = {}) {
   const db = tenantDb(tenantId);
   const [locations, items] = await Promise.all([
-    db.stockLocation.findMany({ where: { branchId, isActive: true } }),
+    db.stockLocation.findMany({ where: { branchId, isActive: true }, orderBy: { createdAt: "asc" } }),
     db.inventoryItem.findMany({ where: { isActive: true } }),
   ]);
   const levels = await db.stockLevel.findMany({
@@ -56,18 +56,26 @@ export async function stockReport(tenantId: string, branchId: string, opts: { be
   // Rounded defensively at read time too, for StockLevel rows written before the rounding fix in
   // applyStockDelta landed — old rows can still carry accumulated float drift (e.g. -2.8e-15).
   const levelByKey = new Map(levels.map((l) => [`${l.locationId}:${l.itemId}`, Math.round(l.quantity * 1000) / 1000]));
+  const keptInBranch = new Set(levels.map((l) => l.itemId));
 
-  const rows = locations.flatMap((location) =>
-    items.map((item) => ({
-      locationId: location.id,
-      locationName: location.name,
-      itemId: item.id,
-      itemName: item.name,
-      unitOfMeasure: item.unitOfMeasure,
-      quantity: levelByKey.get(`${location.id}:${item.id}`) ?? 0,
-      thresholdQty: item.lowStockThresholdQty,
-      belowThreshold: (levelByKey.get(`${location.id}:${item.id}`) ?? 0) < item.lowStockThresholdQty,
-    }))
+  // An ingredient is listed in each storeroom it's kept in (has a stock level there). One never
+  // received anywhere in the branch is listed once, in the branch's first storeroom, so it can
+  // still be seen and given a level. Listing every ingredient in every storeroom made a branch
+  // with a main store and a cold room show the cold-room chicken as "0 kg, low stock" in the main
+  // store: 24 of 44 rows below threshold when 2 really were. With one storeroom nothing changes.
+  const rows = locations.flatMap((location, i) =>
+    items
+      .filter((item) => levelByKey.has(`${location.id}:${item.id}`) || (i === 0 && !keptInBranch.has(item.id)))
+      .map((item) => ({
+        locationId: location.id,
+        locationName: location.name,
+        itemId: item.id,
+        itemName: item.name,
+        unitOfMeasure: item.unitOfMeasure,
+        quantity: levelByKey.get(`${location.id}:${item.id}`) ?? 0,
+        thresholdQty: item.lowStockThresholdQty,
+        belowThreshold: (levelByKey.get(`${location.id}:${item.id}`) ?? 0) < item.lowStockThresholdQty,
+      }))
   );
 
   return opts.belowThresholdOnly ? rows.filter((r) => r.belowThreshold) : rows;

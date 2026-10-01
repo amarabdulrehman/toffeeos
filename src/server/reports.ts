@@ -156,11 +156,24 @@ export async function salesReport(tenantId: string, branchIds: string[], range: 
   const db = tenantDb(tenantId);
   const previous = previousEquivalentRange(range);
 
-  const [orders, prevAgg, menuItems, categories] = await Promise.all([
+  // Lines and payments are summed in the database, and each order is read as the five figures the
+  // days and branches need. Loading every order in the range with all its lines and payments, inside
+  // the tenant transaction's 10-second limit, failed with "Internal error" for a fortnight at about
+  // 75 orders a day.
+  const where = paidOrdersWhere(branchIds, range);
+  const [orders, lineGroups, paymentGroups, branches, prevAgg, menuItems, categories] = await Promise.all([
     db.order.findMany({
-      where: paidOrdersWhere(branchIds, range),
-      include: { lines: true, payments: true, branch: { select: { id: true, name: true } } },
+      where,
+      select: { branchId: true, paidAt: true, createdAt: true, totalPaisa: true, refundedPaisa: true },
     }),
+    db.orderLine.groupBy({
+      by: ["menuItemId"],
+      where: { isVoided: false, order: where },
+      _sum: { lineTotalPaisa: true },
+      _count: { _all: true },
+    }),
+    db.payment.groupBy({ by: ["method"], where: { order: where }, _sum: { amountPaisa: true } }),
+    db.branch.findMany({ where: { id: { in: branchIds } }, select: { id: true, name: true } }),
     db.order.aggregate({
       where: { branchId: { in: branchIds }, status: "PAID", paidAt: { gte: previous.from, lt: previous.to } },
       _sum: { totalPaisa: true, refundedPaisa: true },
@@ -171,6 +184,7 @@ export async function salesReport(tenantId: string, branchIds: string[], range: 
   ]);
   const categoryByMenuItem = new Map(menuItems.map((m) => [m.id, m.categoryId]));
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
+  const branchName = new Map(branches.map((b) => [b.id, b.name]));
 
   let totalPaisa = 0;
   /**
@@ -200,25 +214,29 @@ export async function salesReport(tenantId: string, branchIds: string[], range: 
     dayEntry.refundedPaisa += o.refundedPaisa;
     byDay.set(day, dayEntry);
 
-    const branchEntry =
-      byBranch.get(o.branchId) ?? { branchName: o.branch.name, orders: 0, totalPaisa: 0, refundedPaisa: 0 };
+    const branchEntry = byBranch.get(o.branchId) ?? {
+      branchName: branchName.get(o.branchId) ?? "",
+      orders: 0,
+      totalPaisa: 0,
+      refundedPaisa: 0,
+    };
     branchEntry.orders += 1;
     branchEntry.totalPaisa += o.totalPaisa;
     branchEntry.refundedPaisa += o.refundedPaisa;
     byBranch.set(o.branchId, branchEntry);
+  }
 
-    for (const line of o.lines) {
-      if (line.isVoided) continue;
-      const catId = categoryByMenuItem.get(line.menuItemId);
-      const name = catId ? (categoryName.get(catId) ?? "Uncategorized") : "Uncategorized";
-      const catEntry = byCategory.get(name) ?? { orders: 0, revenuePaisa: 0 };
-      catEntry.orders += 1;
-      catEntry.revenuePaisa += line.lineTotalPaisa;
-      byCategory.set(name, catEntry);
-    }
-    for (const p of o.payments) {
-      byPaymentMethod.set(p.method, (byPaymentMethod.get(p.method) ?? 0) + p.amountPaisa);
-    }
+  // A category's "orders" has always counted its lines, one per line sold, not distinct orders.
+  for (const g of lineGroups) {
+    const catId = categoryByMenuItem.get(g.menuItemId);
+    const name = catId ? (categoryName.get(catId) ?? "Uncategorized") : "Uncategorized";
+    const catEntry = byCategory.get(name) ?? { orders: 0, revenuePaisa: 0 };
+    catEntry.orders += g._count._all;
+    catEntry.revenuePaisa += g._sum.lineTotalPaisa ?? 0;
+    byCategory.set(name, catEntry);
+  }
+  for (const g of paymentGroups) {
+    byPaymentMethod.set(g.method, (byPaymentMethod.get(g.method) ?? 0) + (g._sum.amountPaisa ?? 0));
   }
 
   // Net against net. Comparing this period's takings after refunds to last period's before them
@@ -347,28 +365,40 @@ export async function transactionsReport(tenantId: string, branchIds: string[], 
   };
 }
 
-/** Quantity sold and revenue per menu item across paid orders in the range, highest revenue
- * first — shared by the Item-wise report route and the WhatsApp daily summary's "top items" line
- * (src/server/whatsapp/triggers.ts), so the two never compute it differently. */
+/** Quantity sold and revenue per menu item and size across paid orders in the range, highest
+ * revenue first — shared by the Item-wise report route and the WhatsApp daily summary's "top items"
+ * line (src/server/whatsapp/triggers.ts), so the two never compute it differently.
+ *
+ * Summed in the database. It used to load every paid order's lines and add them up here, inside
+ * the tenant transaction's 10-second limit: a month at about 75 orders a day failed with "Internal
+ * error". And one row per size, named with it: keyed on the dish alone, Half and Full plates were
+ * added into a row named after whichever size came first. */
 export async function itemWiseReport(tenantId: string, branchIds: string[], range: DateRange) {
   const db = tenantDb(tenantId);
-  const orders = await db.order.findMany({
-    where: { branchId: { in: branchIds }, status: "PAID", paidAt: { gte: range.from, lte: range.to } },
-    select: { lines: { where: { isVoided: false }, select: { menuItemId: true, nameSnapshot: true, quantity: true, lineTotalPaisa: true } } },
+  const groups = await db.orderLine.groupBy({
+    by: ["menuItemId", "variantId", "nameSnapshot"],
+    where: { isVoided: false, order: paidOrdersWhere(branchIds, range) },
+    _sum: { quantity: true, lineTotalPaisa: true },
   });
 
-  const byItem = new Map<string, { name: string; quantity: number; revenuePaisa: number }>();
-  for (const order of orders) {
-    for (const line of order.lines) {
-      const entry = byItem.get(line.menuItemId) ?? { name: line.nameSnapshot, quantity: 0, revenuePaisa: 0 };
-      entry.quantity += line.quantity;
-      entry.revenuePaisa += line.lineTotalPaisa;
-      byItem.set(line.menuItemId, entry);
+  // The name is part of the grouping only to carry it out; a dish renamed mid-range would split, so
+  // groups for the same dish and size are merged back under the name sold most.
+  const byItem = new Map<string, { menuItemId: string; variantId: string | null; name: string; nameQty: number; quantity: number; revenuePaisa: number }>();
+  for (const g of groups) {
+    const key = `${g.menuItemId}:${g.variantId ?? ""}`;
+    const quantity = g._sum.quantity ?? 0;
+    const entry = byItem.get(key) ?? { menuItemId: g.menuItemId, variantId: g.variantId, name: g.nameSnapshot, nameQty: 0, quantity: 0, revenuePaisa: 0 };
+    if (quantity > entry.nameQty) {
+      entry.name = g.nameSnapshot;
+      entry.nameQty = quantity;
     }
+    entry.quantity += quantity;
+    entry.revenuePaisa += g._sum.lineTotalPaisa ?? 0;
+    byItem.set(key, entry);
   }
 
-  return Array.from(byItem.entries())
-    .map(([menuItemId, v]) => ({ menuItemId, ...v }))
+  return [...byItem.values()]
+    .map(({ menuItemId, variantId, name, quantity, revenuePaisa }) => ({ menuItemId, variantId, name, quantity, revenuePaisa }))
     .sort((a, b) => b.revenuePaisa - a.revenuePaisa);
 }
 
