@@ -26,6 +26,7 @@ export function OrderQueuePanel({
   orders,
   earlierUnpaid = [],
   onPay,
+  onAddItems,
   onVoid,
   canVoid,
   onCancel,
@@ -48,6 +49,9 @@ export function OrderQueuePanel({
   /** An earlier day's orders still unpaid: listed apart, folded away, so they can't be lost. */
   earlierUnpaid?: OrderDto[];
   onPay: (order: OrderDto) => void;
+  /** Put another round on an open order — any order, not only one with a table. Omit to hide it
+   * (pos.order.editItems). */
+  onAddItems?: (order: OrderDto) => void;
   onVoid?: (order: OrderDto) => void;
   canVoid?: boolean;
   /** Cancelling an order already sent to the kitchen — a separate action from Void (mandatory
@@ -81,6 +85,13 @@ export function OrderQueuePanel({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 font-heading text-sm font-semibold">
           #{o.orderNumber} · {o.type.replace("_", " ")}
+          {/* The first thing a server looks for in the queue is which table an order belongs to;
+              the number alone means going back to the floor plan to find out. */}
+          {o.table?.label && (
+            <Badge variant="secondary" className="font-semibold">
+              Table {o.table.label}
+            </Badge>
+          )}
           {o.source && o.source !== "POS" && (
             <Badge variant="outline" className="text-2xs font-medium">
               {o.source}
@@ -105,6 +116,11 @@ export function OrderQueuePanel({
           ) : (
             <Button variant="success" className="flex-1" onClick={() => onPay(o)}>
               Payment
+            </Button>
+          )}
+          {onAddItems && !awaitingApprovalIds?.has(o.id) && (
+            <Button variant="outline" onClick={() => onAddItems(o)}>
+              Add items
             </Button>
           )}
           {/* Only once it has actually gone to the kitchen — a ticket for an order the

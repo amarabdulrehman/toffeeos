@@ -42,7 +42,7 @@ export interface CreateOrderAction extends QueuedActionBase {
 
 export interface PayOrderAction extends QueuedActionBase {
   type: "pay";
-  payload: { tenders: { method: string; amountPaisa: number }[] };
+  payload: { tenders: { method: string; amountPaisa: number }[]; cashTenderedPaisa?: number };
   expectedVersion?: number;
 }
 

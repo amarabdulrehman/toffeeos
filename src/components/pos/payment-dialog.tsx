@@ -60,7 +60,8 @@ export function PaymentDialog({
   pricingSnapshot: BranchPricingSnapshot;
   totalPaisa: number;
   onClose: () => void;
-  onConfirm: (tenders: { method: PaymentMethod; amountPaisa: number }[]) => void;
+  /** cashTenderedPaisa: what the customer handed over in cash, when it was entered. */
+  onConfirm: (tenders: { method: PaymentMethod; amountPaisa: number }[], cashTenderedPaisa?: number) => void;
   submitting: boolean;
   /**
    * The device has no connection.
@@ -178,7 +179,16 @@ export function PaymentDialog({
 
   const tenderedPaisa = effectiveTenders.reduce((a, t) => a + Math.round((parseFloat(t.amountRs) || 0) * 100), 0);
   const remainingPaisa = dueTotalPaisa - tenderedPaisa;
-  const changePaisa = Math.max(0, Math.round((parseFloat(cashGiven) || 0) * 100) - dueTotalPaisa);
+  // Change comes out of the cash part only. On a split bill it used to be worked out against the
+  // whole total, so Rs 500 handed over for the cash half of a Rs 600 bill showed no change at all.
+  const cashPartPaisa = effectiveTenders
+    .filter((t) => t.method === "CASH")
+    .reduce((a, t) => a + Math.round((parseFloat(t.amountRs) || 0) * 100), 0);
+  const cashGivenPaisa = Math.round((parseFloat(cashGiven) || 0) * 100);
+  const changePaisa = Math.max(0, cashGivenPaisa - cashPartPaisa);
+  // Typed something, but not enough to cover what is owed in cash: that is a mistake to catch here,
+  // not a figure to save — the server refuses it too.
+  const cashShort = cashGiven.trim() !== "" && cashPartPaisa > 0 && cashGivenPaisa < cashPartPaisa;
 
   function updateTender(i: number, patch: Partial<Tender>) {
     setTenders((prev) => prev.map((t, idx) => (idx === i ? { ...t, ...patch } : t)));
@@ -196,7 +206,8 @@ export function PaymentDialog({
     onConfirm(
       effectiveTenders
         .map((t) => ({ method: t.method, amountPaisa: Math.round((parseFloat(t.amountRs) || 0) * 100) }))
-        .filter((t) => t.amountPaisa > 0)
+        .filter((t) => t.amountPaisa > 0),
+      cashPartPaisa > 0 && cashGivenPaisa > 0 ? cashGivenPaisa : undefined
     );
   }
 
@@ -283,6 +294,11 @@ export function PaymentDialog({
               </div>
             </div>
           )}
+          {cashShort && (
+            <p role="alert" className="text-sm font-medium text-destructive">
+              That&apos;s less than the {formatPkr(cashPartPaisa)} owed in cash.
+            </p>
+          )}
 
           {offline && (
             <p role="status" className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm text-warning-foreground">
@@ -306,7 +322,7 @@ export function PaymentDialog({
           <Button variant="outline" size="lg" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="success" size="lg" onClick={confirm} disabled={remainingPaisa > 0 || submitting}>
+          <Button variant="success" size="lg" onClick={confirm} disabled={remainingPaisa > 0 || submitting || cashShort}>
             {submitting ? "Processing…" : "Confirm payment"}
           </Button>
         </DialogFooter>

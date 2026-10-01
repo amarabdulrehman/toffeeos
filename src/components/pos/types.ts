@@ -141,7 +141,9 @@ export interface OrderDto {
   /** Already returned by GET /api/orders — the kitchen ticket prints it as the time the order
    * reached the kitchen, which is what a cook reads first to know how long it has been waiting. */
   sentToKitchenAt?: string | null;
-  payments?: { method: PaymentMethod; amountPaisa: number }[];
+  /** tenderedPaisa/changePaisa are set on a cash row only, when the cashier entered what was handed
+   * over — already returned by GET /api/orders, modelled here so the receipt can print them. */
+  payments?: { method: PaymentMethod; amountPaisa: number; tenderedPaisa?: number | null; changePaisa?: number | null }[];
   /** Why this order is sold without tax (pos.tax.exempt); null or absent for every ordinary order. */
   taxExemptReason?: string | null;
   /** Only on GET /api/orders/[orderId]. */

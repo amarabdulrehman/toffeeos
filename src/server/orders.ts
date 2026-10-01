@@ -704,6 +704,13 @@ export async function markOrderServed(tenantId: string, branchId: string, orderI
 
 export interface TakePaymentInput {
   tenders: TenderInput[];
+  /**
+   * What the customer physically handed over in cash, when the cashier entered it. The cash tender
+   * itself is only ever the bill's share — change is not revenue and never reaches paidPaisa or the
+   * drawer's expected balance — so this is kept beside it on the payment row, as the record of how
+   * much came in and how much went back.
+   */
+  cashTenderedPaisa?: number;
 }
 
 /** Authoritative final pricing pass (see finalizeOrder in pricing.ts) — this is where a split
@@ -758,6 +765,19 @@ export async function takePayment(
   const nonCashTenderedPaisa = totals.tenders
     .filter((t) => t.method !== "CASH")
     .reduce((a, t) => a + t.amountPaisa, 0);
+  const cashTender = totals.tenders.find((t) => t.method === "CASH");
+  if (input.cashTenderedPaisa != null) {
+    if (!cashTender) {
+      throw new HttpError(400, "Cash received was entered, but no part of this payment is in cash.");
+    }
+    if (input.cashTenderedPaisa < cashTender.amountPaisa) {
+      throw new HttpError(
+        400,
+        `Cash received (${input.cashTenderedPaisa}) is less than the cash part of the bill (${cashTender.amountPaisa}).`
+      );
+    }
+  }
+
   if (nonCashTenderedPaisa > totals.totalPaisa) {
     throw new HttpError(
       400,
@@ -823,6 +843,8 @@ export async function takePayment(
       });
 
       for (const t of totals.tenders) {
+        // Only the cash row can carry money handed over and money handed back; a card has neither.
+        const recordsCash = t === cashTender && input.cashTenderedPaisa != null;
         await tx.payment.create({
           data: {
             tenantId,
@@ -831,6 +853,12 @@ export async function takePayment(
             amountPaisa: t.amountPaisa,
             taxRateBasisPoints: t.rateBasisPoints,
             receivedById: actorId,
+            ...(recordsCash
+              ? {
+                  tenderedPaisa: input.cashTenderedPaisa,
+                  changePaisa: (input.cashTenderedPaisa as number) - t.amountPaisa,
+                }
+              : {}),
           },
         });
       }

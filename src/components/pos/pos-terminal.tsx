@@ -62,6 +62,7 @@ export function PosTerminal({
   receiptHeader,
   pricingSnapshot,
   canTakePayment,
+  canAddItems,
   canApplyDiscount,
   canVoid,
   canCancel,
@@ -87,6 +88,8 @@ export function PosTerminal({
   receiptHeader: string | null;
   pricingSnapshot: BranchPricingSnapshot;
   canTakePayment: boolean;
+  /** pos.order.editItems — what the server checks before it will add to an order. */
+  canAddItems: boolean;
   canApplyDiscount: boolean;
   canVoid: boolean;
   canCancel: boolean;
@@ -119,7 +122,11 @@ export function PosTerminal({
   const [discount, setDiscount] = useState<Discount | null>(null);
   const [tablesOpen, setTablesOpen] = useState(false);
   const [resumed, setResumed] = useState<{ table: RestaurantTableDto; order: OrderDto } | null>(null);
-  const [addingItemsToOrder, setAddingItemsToOrder] = useState(false);
+  // The order the next round is going on. It used to be a flag that only meant "the table open on
+  // the right", which is why the only way to add to an order was to find its table: a takeaway or
+  // delivery order had no table to open, so it could not be added to at all. The server never had
+  // that restriction (addLinesToOrder only refuses a closed order); this was the till's alone.
+  const [addingTo, setAddingTo] = useState<OrderDto | null>(null);
   /** The server's answer, tagged with the local figure it was computed for, so a stale reply for a
    *  cart that has since changed can be recognised and ignored rather than shown. */
   const [serverTotals, setServerTotals] = useState<{ for: object | null; totals: PreviewTotals } | null>(null);
@@ -322,9 +329,9 @@ export function PosTerminal({
   function addLine(item: MenuItemDto, variantId?: string, modifierIds: string[] = []) {
     // A table already eating is open on the right: a dish tapped now is the next round. It used to
     // go into the hidden new-order cart instead, and pressing "Add items" then threw it away.
-    if (resumed && !addingItemsToOrder && resumed.order.status !== "PAID") {
+    if (resumed && !addingTo && resumed.order.status !== "PAID") {
       setLines([]);
-      setAddingItemsToOrder(true);
+      setAddingTo(resumed.order);
     }
     const variant = variantId ? item.variants.find((v) => v.id === variantId) : undefined;
     const chosen = item.modifierGroups.flatMap((g) => g.modifiers).filter((m) => modifierIds.includes(m.id));
@@ -535,14 +542,15 @@ export function PosTerminal({
   // types (createOrder/pay/void), so there's no replay path for it yet if the device goes offline
   // mid-submission. Blocked up front rather than half-attempted.
   async function handleAddItemsSubmit() {
-    if (!resumed || lines.length === 0) return;
+    const target = addingTo;
+    if (!target || lines.length === 0) return;
     if (!sync.isOnline) {
       toast.error("You're offline — adding items to an order needs a connection.");
       return;
     }
     setSending(true);
     try {
-      const res = await fetch(`/api/orders/${resumed.order.id}/lines`, {
+      const res = await fetch(`/api/orders/${target.id}/lines`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -562,21 +570,24 @@ export function PosTerminal({
         return;
       }
       if (data.awaitingApproval) {
-        toast.success(`More items for order #${resumed.order.orderNumber} sent to the counter for approval.`, {
+        toast.success(`More items for order #${target.orderNumber} sent to the counter for approval.`, {
           description: "They go on the order and to the kitchen once approved.",
         });
-        setAddingItemsToOrder(false);
+        setAddingTo(null);
         setLines([]);
+        if (showQueue) loadQueue();
         return;
       }
-      toast.success(`Added to order #${resumed.order.orderNumber}.`);
+      toast.success(`Added to order #${target.orderNumber}.`);
       // addLinesToOrder's response is the bare updated Order row (no .lines — see
       // src/server/orders.ts) — refetch the full order the same way the order queue already does,
       // rather than teaching that endpoint a response shape nothing else needs.
       const refreshed = await fetch("/api/orders").then((r) => r.json());
-      const updatedOrder: OrderDto = (refreshed.orders ?? []).find((o: OrderDto) => o.id === resumed.order.id) ?? resumed.order;
-      setResumed({ table: resumed.table, order: updatedOrder });
-      setAddingItemsToOrder(false);
+      const updatedOrder: OrderDto = (refreshed.orders ?? []).find((o: OrderDto) => o.id === target.id) ?? target;
+      // Only touch the table panel if that is where this round came from; from the queue there is
+      // no table open, and inventing one would put the order on the wrong side of the screen.
+      if (resumed && resumed.order.id === target.id) setResumed({ table: resumed.table, order: updatedOrder });
+      setAddingTo(null);
       setLines([]);
       if (showQueue) loadQueue();
     } catch {
@@ -586,13 +597,29 @@ export function PosTerminal({
     }
   }
 
-  async function handleConfirmPayment(tenders: { method: PaymentMethod; amountPaisa: number }[]) {
+  /**
+   * The figure the cashier has to act on next, said once and loudly. Change was worked out in the
+   * payment dialog and then thrown away when it closed, so the moment the drawer opened there was
+   * nothing left on screen saying how much to hand back.
+   */
+  function announceChange(tenders: { method: PaymentMethod; amountPaisa: number }[], cashTenderedPaisa?: number) {
+    if (cashTenderedPaisa == null) return;
+    const cashPart = tenders.filter((t) => t.method === "CASH").reduce((a, t) => a + t.amountPaisa, 0);
+    const change = cashTenderedPaisa - cashPart;
+    toast.success(change > 0 ? `Give back ${formatPkr(change)} change` : "Exact cash — no change", {
+      description: `Cash received ${formatPkr(cashTenderedPaisa)} for ${formatPkr(cashPart)}.`,
+      duration: 15_000,
+    });
+  }
+
+  async function handleConfirmPayment(tenders: { method: PaymentMethod; amountPaisa: number }[], cashTenderedPaisa?: number) {
     if (!payingOrder) return;
     setPaying(true);
     try {
       if (!sync.isOnline) {
-        await queuePayOrder(payingOrder.id, tenders, payingOrder.version);
+        await queuePayOrder(payingOrder.id, tenders, payingOrder.version, cashTenderedPaisa);
         toast.success(`Payment for order #${payingOrder.orderNumber} queued offline.`);
+        announceChange(tenders, cashTenderedPaisa);
         setPayingOrder(null);
         setResumed(null);
         loadQueue();
@@ -603,7 +630,7 @@ export function PosTerminal({
         const res = await fetch(`/api/orders/${payingOrder.id}/pay`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tenders }),
+          body: JSON.stringify({ tenders, cashTenderedPaisa }),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -611,6 +638,7 @@ export function PosTerminal({
           return;
         }
         toast.success(`Order #${payingOrder.orderNumber} paid.`);
+        announceChange(tenders, cashTenderedPaisa);
         const paidOrderId = payingOrder.id;
         setPayingOrder(null);
         setResumed(null);
@@ -618,8 +646,9 @@ export function PosTerminal({
         await openReceiptFor(paidOrderId);
       } catch (err) {
         if (!isNetworkFailure(err)) throw err;
-        await queuePayOrder(payingOrder.id, tenders, payingOrder.version);
+        await queuePayOrder(payingOrder.id, tenders, payingOrder.version, cashTenderedPaisa);
         toast.success(`Payment for order #${payingOrder.orderNumber} queued offline.`);
+        announceChange(tenders, cashTenderedPaisa);
         setPayingOrder(null);
         setResumed(null);
         loadQueue();
@@ -883,16 +912,16 @@ export function PosTerminal({
           {/* *:h-full: the panels below used to fill a grid cell by being stretched; inside this
               wrapper they have to be told, or the queue and the resumed order stop scrolling. */}
           <div className="min-h-0 flex-1 *:h-full">
-        {resumed && addingItemsToOrder ? (
+        {addingTo ? (
           <div className="min-h-0 border-l bg-card">
             <AddItemsPanel
-              orderNumber={resumed.order.orderNumber}
+              orderNumber={addingTo.orderNumber}
               lines={lines}
               onQuantityChange={handleQuantityChange}
               onRemoveLine={(key) => setLines((prev) => prev.filter((l) => l.key !== key))}
               onNoteChange={setLineNote}
               onCancel={() => {
-                setAddingItemsToOrder(false);
+                setAddingTo(null);
                 setLines([]);
               }}
               onSubmit={handleAddItemsSubmit}
@@ -914,7 +943,7 @@ export function PosTerminal({
               onManage={canManage ? () => setManagingOrderId(resumed.order.id) : undefined}
               onAddItems={() => {
                 setLines([]);
-                setAddingItemsToOrder(true);
+                setAddingTo(resumed.order);
               }}
             />
           </div>
@@ -932,6 +961,14 @@ export function PosTerminal({
             orders={queue}
             earlierUnpaid={earlierUnpaid}
             onPay={(o) => setPayingOrder(o)}
+            onAddItems={
+              canAddItems
+                ? (o) => {
+                    setLines([]);
+                    setAddingTo(o);
+                  }
+                : undefined
+            }
             onVoid={handleVoidOrder}
             canVoid={canVoid}
             onCancel={(o) => setCancellingOrder(o)}

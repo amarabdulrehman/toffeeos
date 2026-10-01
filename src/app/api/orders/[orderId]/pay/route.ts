@@ -9,6 +9,9 @@ const tenderSchema = z.object({
 
 const paySchema = z.object({
   tenders: z.array(tenderSchema).min(1),
+  // The note the customer handed over, so the change given back is on record. Optional: a cashier
+  // who takes exact money and types nothing is not made to.
+  cashTenderedPaisa: z.number().int().positive().max(1_000_000_00).optional(),
   // Only ever sent by the offline sync queue replaying a payment taken while disconnected — see
   // the note on takePayment in src/server/orders.ts.
   actionId: z.string().min(1).optional(),
@@ -34,7 +37,7 @@ export const POST = defineHandler(
       session.branchId,
       params.orderId,
       session.id,
-      { tenders: input.tenders },
+      { tenders: input.tenders, cashTenderedPaisa: input.cashTenderedPaisa },
       input.actionId,
       input.expectedVersion
     );

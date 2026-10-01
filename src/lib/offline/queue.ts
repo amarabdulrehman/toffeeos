@@ -129,12 +129,17 @@ export async function queueCreateOrder(args: {
   return localOrder;
 }
 
-export async function queuePayOrder(orderId: string, tenders: { method: string; amountPaisa: number }[], expectedVersion?: number) {
+export async function queuePayOrder(
+  orderId: string,
+  tenders: { method: string; amountPaisa: number }[],
+  expectedVersion?: number,
+  cashTenderedPaisa?: number
+) {
   const action: PayOrderAction = {
     actionId: crypto.randomUUID(),
     orderId,
     type: "pay",
-    payload: { tenders },
+    payload: { tenders, ...(cashTenderedPaisa != null ? { cashTenderedPaisa } : {}) },
     expectedVersion,
     createdAt: Date.now(),
     status: "pending",
@@ -241,6 +246,7 @@ async function replayCreateOrder(action: CreateOrderAction) {
 async function replayPay(action: PayOrderAction) {
   const res = await postJson(`/api/orders/${action.orderId}/pay`, {
     tenders: action.payload.tenders,
+    cashTenderedPaisa: action.payload.cashTenderedPaisa,
     actionId: action.actionId,
     expectedVersion: action.expectedVersion,
   });

@@ -67,6 +67,7 @@ export default async function PosPage() {
       receiptHeader={settings?.receiptHeader ?? null}
       pricingSnapshot={pricingSnapshot}
       canTakePayment={user.permissions.includes("pos.payment.take")}
+      canAddItems={user.permissions.includes("pos.order.editItems")}
       canApplyDiscount={user.permissions.includes("pos.discount.applyOrder")}
       canVoid={user.permissions.includes("pos.order.void")}
       canRefund={user.permissions.includes("pos.payment.refund")}

@@ -175,7 +175,23 @@ export function Receipt({
                 <span className="tabular-nums">{formatPkr(p.amountPaisa, { showPaisa: true })}</span>
               </div>
             ))}
-            {standing.state === "PAID" && standing.changePaisa > 0 && (
+            {/* What was handed over and what went back, as recorded at the till. A customer
+                checking their change reads this line before any other. */}
+            {payments
+              .filter((p) => p.tenderedPaisa != null)
+              .map((p, i) => (
+                <div key={`cash-${i}`}>
+                  <div className="flex justify-between">
+                    <span>Cash received</span>
+                    <span className="tabular-nums">{formatPkr(p.tenderedPaisa as number, { showPaisa: true })}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold">
+                    <span>Change</span>
+                    <span className="tabular-nums">{formatPkr(p.changePaisa ?? 0, { showPaisa: true })}</span>
+                  </div>
+                </div>
+              ))}
+            {!payments.some((p) => p.tenderedPaisa != null) && standing.state === "PAID" && standing.changePaisa > 0 && (
               <div className="flex justify-between">
                 <span>Change</span>
                 <span className="tabular-nums">{formatPkr(standing.changePaisa, { showPaisa: true })}</span>
