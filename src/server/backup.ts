@@ -83,6 +83,7 @@ const ALL_MODELS = [
   "Expense",
   "RecurringExpense",
   "CashDrawerDay",
+  "OrderDeletion",
   "NoSaleOpening",
   "OrderApproval",
   "Supplier",

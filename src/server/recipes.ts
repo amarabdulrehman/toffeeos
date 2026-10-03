@@ -241,3 +241,49 @@ export async function deductForOrder(
   }
   return newAlerts;
 }
+
+/**
+ * Puts a deleted order's ingredients back into stock, when the owner says the food was never made.
+ *
+ * The movements made at payment aren't tied to the order (StockMovement has no orderId), so the
+ * quantities are worked out the same way deductForOrder worked them out: each live line's quantity
+ * times its recipe. Recorded as positive ADJUSTMENTs naming the order, so the stock history says
+ * why stock came back. Uses the recipe as it stands now; one changed since the sale returns today's
+ * quantities, which is the closest available figure.
+ */
+export async function restockForDeletedOrder(
+  tx: TenantTransactionClient,
+  tenantId: string,
+  branchId: string,
+  orderLines: { menuItemId: string; quantity: number }[],
+  actorId: string,
+  orderNumber: number
+): Promise<number> {
+  const locationId = await resolveConsumptionLocation(tx, tenantId, branchId);
+  if (!locationId) return 0;
+
+  const menuItemIds = [...new Set(orderLines.map((l) => l.menuItemId))];
+  const recipeLines = await tx.recipeLine.findMany({ where: { menuItemId: { in: menuItemIds }, tenantId } });
+  let movements = 0;
+  for (const orderLine of orderLines) {
+    for (const ingredient of recipeLines.filter((r) => r.menuItemId === orderLine.menuItemId)) {
+      const delta = ingredient.quantityPerUnit * orderLine.quantity;
+      if (delta <= 0) continue;
+      await tx.stockMovement.create({
+        data: {
+          tenantId,
+          branchId,
+          itemId: ingredient.inventoryItemId,
+          locationId,
+          type: "ADJUSTMENT",
+          quantityDelta: delta,
+          reason: `Order #${orderNumber} deleted — food was not made`,
+          actorId,
+        },
+      });
+      await applyStockDelta(tx, tenantId, branchId, locationId, ingredient.inventoryItemId, delta);
+      movements++;
+    }
+  }
+  return movements;
+}

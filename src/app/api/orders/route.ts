@@ -54,7 +54,7 @@ const LIST_INCLUDE = {
 } as const;
 
 export const GET = defineHandler({ permission: "orders.view", input: listSchema }, async ({ session, db, input }) => {
-  const notClosed = { notIn: ["VOIDED", "CANCELLED"] as ("VOIDED" | "CANCELLED")[] };
+  const notClosed = { notIn: ["VOIDED", "CANCELLED", "DELETED"] as ("VOIDED" | "CANCELLED" | "DELETED")[] };
   if (input.day !== "today") {
     const orders = await db.order.findMany({
       where: { branchId: session.branchId, status: notClosed },

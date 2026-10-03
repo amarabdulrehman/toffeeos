@@ -4,6 +4,7 @@ import { tenantDb } from "@/server/db";
 import { HttpError } from "@/server/handler";
 import { issueImpersonationToken } from "@/server/auth/impersonation-store";
 import { TIER_ORDER, GATEABLE_MODULES, defaultModulesForTier, type TierKey } from "@/server/tier";
+import { GRANT_ONLY_KEYS } from "@/lib/tiers";
 import { getBillingStatus, effectiveMonthlyRatePaisa } from "@/lib/billing";
 import { listTenantPayments } from "@/server/billing";
 import { TENANT_OWNED_TABLES } from "@/lib/tenant-tables";
@@ -226,7 +227,8 @@ export async function changeTenantTier(
 
   const fromTier = subscription.plan.key;
   const fromModules = subscription.enabledModules;
-  const toModules = defaultModulesForTier(planKey);
+  // A plan sets the defaults; it doesn't decide grant-only features, so those survive the change.
+  const toModules = [...new Set([...defaultModulesForTier(planKey), ...fromModules.filter((k) => GRANT_ONLY_KEYS.includes(k))])];
   await platformDb.subscription.update({
     where: { tenantId },
     data: { planId: plan.id, branchLimit: plan.maxBranches, enabledModules: toModules },

@@ -15,6 +15,7 @@ import { BillDialog } from "./bill-dialog";
 // get one at the till, which is most small cafés.
 import { KotDialog } from "@/components/kds/kot-dialog";
 import { OrderQueuePanel } from "./order-queue-panel";
+import { DeleteOrderDialog, type DeletableOrder } from "@/components/orders/delete-order-dialog";
 import { CancelOrderDialog } from "./cancel-order-dialog";
 import { OrderManageDialog, canManageAnything, type ManagePermissions } from "./order-manage-dialog";
 import { NoSaleDialog } from "./no-sale-dialog";
@@ -63,6 +64,7 @@ export function PosTerminal({
   pricingSnapshot,
   canTakePayment,
   canAddItems,
+  canDeleteOrders,
   canApplyDiscount,
   canVoid,
   canCancel,
@@ -90,6 +92,8 @@ export function PosTerminal({
   canTakePayment: boolean;
   /** pos.order.editItems — what the server checks before it will add to an order. */
   canAddItems: boolean;
+  /** Owner, feature switched on by the platform, not impersonating. */
+  canDeleteOrders: boolean;
   canApplyDiscount: boolean;
   canVoid: boolean;
   canCancel: boolean;
@@ -127,6 +131,7 @@ export function PosTerminal({
   // delivery order had no table to open, so it could not be added to at all. The server never had
   // that restriction (addLinesToOrder only refuses a closed order); this was the till's alone.
   const [addingTo, setAddingTo] = useState<OrderDto | null>(null);
+  const [deletingOrder, setDeletingOrder] = useState<DeletableOrder | null>(null);
   /** The server's answer, tagged with the local figure it was computed for, so a stale reply for a
    *  cart that has since changed can be recognised and ignored rather than shown. */
   const [serverTotals, setServerTotals] = useState<{ for: object | null; totals: PreviewTotals } | null>(null);
@@ -969,6 +974,17 @@ export function PosTerminal({
                   }
                 : undefined
             }
+            onDelete={
+              canDeleteOrders
+                ? (o) =>
+                    setDeletingOrder({
+                      id: o.id,
+                      orderNumber: o.orderNumber,
+                      totalPaisa: o.totalPaisa,
+                      paid: o.status === "PAID" || o.paidPaisa > 0,
+                    })
+                : undefined
+            }
             onVoid={handleVoidOrder}
             canVoid={canVoid}
             onCancel={(o) => setCancellingOrder(o)}
@@ -1078,6 +1094,15 @@ export function PosTerminal({
           onConfirm={handleConfirmPayment}
           submitting={paying}
           offline={!sync.isOnline}
+        />
+
+        <DeleteOrderDialog
+          order={deletingOrder}
+          onClose={() => setDeletingOrder(null)}
+          onDeleted={() => {
+            setDeletingOrder(null);
+            loadQueue();
+          }}
         />
 
         <KotDialog

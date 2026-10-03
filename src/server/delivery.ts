@@ -114,7 +114,7 @@ export async function markDelivered(
 export async function listMyDeliveries(tenantId: string, riderId: string) {
   const db = tenantDb(tenantId);
   return db.order.findMany({
-    where: { assignedRiderId: riderId, deliveredAt: null, status: { notIn: ["VOIDED", "CANCELLED"] } },
+    where: { assignedRiderId: riderId, deliveredAt: null, status: { notIn: ["VOIDED", "CANCELLED", "DELETED"] } },
     orderBy: { riderAssignedAt: "asc" },
     include: { lines: true, customer: true, table: false },
   });
@@ -126,7 +126,7 @@ export async function listDeliveryBoard(tenantId: string, branchId: string) {
     where: {
       branchId,
       type: "DELIVERY",
-      status: { notIn: ["VOIDED", "CANCELLED", "OPEN"] },
+      status: { notIn: ["VOIDED", "CANCELLED", "DELETED", "OPEN"] },
     },
     orderBy: { createdAt: "desc" },
     take: 200,

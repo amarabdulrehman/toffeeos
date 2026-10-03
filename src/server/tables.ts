@@ -91,7 +91,7 @@ export async function updateTable(tenantId: string, tableId: string, input: Upda
 export async function deleteTable(tenantId: string, tableId: string) {
   const db = tenantDb(tenantId);
   const openOrder = await db.order.findFirst({
-    where: { tableId, status: { notIn: ["PAID", "VOIDED", "CANCELLED", "DELIVERED"] } },
+    where: { tableId, status: { notIn: ["PAID", "VOIDED", "CANCELLED", "DELETED", "DELIVERED"] } },
   });
   if (openOrder) throw new HttpError(400, "This table has an open order — close it before deleting the table.");
   return db.restaurantTable.delete({ where: { id: tableId } });
@@ -116,7 +116,7 @@ export async function setTableStatus(
 export async function findActiveOrderForTable(tenantId: string, tableId: string) {
   const db = tenantDb(tenantId);
   return db.order.findFirst({
-    where: { tableId, status: { notIn: ["PAID", "VOIDED", "CANCELLED", "DELIVERED"] } },
+    where: { tableId, status: { notIn: ["PAID", "VOIDED", "CANCELLED", "DELETED", "DELIVERED"] } },
     orderBy: { createdAt: "desc" },
     include: { lines: true },
   });

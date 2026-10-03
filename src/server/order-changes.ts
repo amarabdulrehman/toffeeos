@@ -473,7 +473,7 @@ export async function recentlyBumped(tenantId: string, branchId: string) {
     where: {
       branchId,
       readyAt: { gte: since },
-      status: { notIn: ["VOIDED", "CANCELLED", "DELIVERED"] },
+      status: { notIn: ["VOIDED", "CANCELLED", "DELETED", "DELIVERED"] },
     },
     orderBy: { readyAt: "desc" },
     take: 20,

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/server/auth";
 import { getTenantModulesForTenant } from "@/server/tier";
 import { ReportsView } from "@/components/reports/reports-view";
+import { tenantDb } from "@/server/db";
 
 // Individual tabs each require their own narrower permission (checked server-side by their own
 // API route — see src/app/api/reports/*/route.ts) since a role can reasonably see some report
@@ -33,5 +34,20 @@ export default async function ReportsPage() {
   // wholesale, since most tenants can see *some* of this page regardless.
   const enabledModules = await getTenantModulesForTenant(user.tenantId);
 
-  return <ReportsView enabledModules={enabledModules} canExport={user.permissions.includes("reports.export")} />;
+  // Deleting orders: the owner, on a restaurant the platform has switched it on for, and not while a
+  // platform admin is signed in as them. The server checks all of it again, plus the password.
+  const isOwner = user.roleKey === "owner" && !user.impersonatedByPlatformUserId;
+  const canDeleteOrders = isOwner && enabledModules.includes("orderDelete");
+  // The log stays visible if the feature is later switched off — the record outlives the switch.
+  const showDeletionLog =
+    isOwner && (canDeleteOrders || (await tenantDb(user.tenantId).orderDeletion.count()) > 0);
+
+  return (
+    <ReportsView
+      enabledModules={enabledModules}
+      canExport={user.permissions.includes("reports.export")}
+      canDeleteOrders={canDeleteOrders}
+      showDeletionLog={showDeletionLog}
+    />
+  );
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowLeft, ClipboardList, CreditCard, Lock, Pencil, ShieldCheck, UserRound, UsersRound } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ClipboardList, CreditCard, Lock, Pencil, ShieldCheck, Trash2, UserRound, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -138,6 +138,18 @@ export default function TenantDetailPage() {
       await load();
     })();
   }, [load]);
+
+  // The restaurant's deleted-orders log, read from the platform side: the owner who deletes orders
+  // is not the only one who can see that they did.
+  const [deletions, setDeletions] = useState<
+    { id: string; orderNumber: number; totalPaisa: number; reason: string; deletedByName: string; createdAt: string; restocked: boolean }[]
+  >([]);
+  useEffect(() => {
+    fetch(`/api/platform/tenants/${params.tenantId}/order-deletions`)
+      .then((r) => (r.ok ? r.json() : { deletions: [] }))
+      .then((d) => setDeletions(d.deletions ?? []))
+      .catch(() => {});
+  }, [params.tenantId]);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmSlug, setConfirmSlug] = useState("");
@@ -417,6 +429,47 @@ export default function TenantDetailPage() {
           </CardContent>
         </Card>
 
+        {deletions.length > 0 && (
+          <Card className="shadow-sm lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 font-heading">
+                <Trash2 className="size-4" />
+                Deleted orders ({deletions.length})
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">Removed by the restaurant&apos;s owner. A permanent record.</p>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>When</TableHead>
+                    <TableHead>Order</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead>Reason</TableHead>
+                    <TableHead>By</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {deletions.map((d) => (
+                    <TableRow key={d.id}>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {new Date(d.createdAt).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="tabular-nums">#{d.orderNumber}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatPkr(d.totalPaisa)}</TableCell>
+                      <TableCell>
+                        {d.reason}
+                        {d.restocked && <span className="ml-1.5 text-xs text-muted-foreground">· stock put back</span>}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{d.deletedByName}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
         <Card className="shadow-sm transition-shadow hover:shadow-md lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 font-heading">
@@ -638,7 +691,9 @@ export default function TenantDetailPage() {
                     >
                       <div>
                         <div className="text-sm font-medium">{mod.label}</div>
-                        <div className="text-xs text-muted-foreground">Default on {TIER_LABEL[mod.minTier]}+</div>
+                        <div className="text-xs text-muted-foreground">
+                          {mod.grantOnly ? "Off unless you turn it on — not part of any plan" : `Default on ${TIER_LABEL[mod.minTier]}+`}
+                        </div>
                       </div>
                       <Switch
                         checked={enabled}
@@ -673,7 +728,7 @@ export default function TenantDetailPage() {
             {pendingTier && defaultModulesForTier(pendingTier).length > 0
               ? GATEABLE_MODULES.filter((m) => defaultModulesForTier(pendingTier).includes(m.key)).map((m) => m.label).join(", ")
               : "no gated features"}
-            . Any per-feature customization you&apos;ve made will be overwritten. This can&apos;t be undone automatically —
+            . Any per-feature customization you&apos;ve made will be overwritten, except Delete orders, which stays as you set it. This can&apos;t be undone automatically —
             you&apos;d need to re-toggle anything custom afterward.
           </p>
           <DialogFooter>

@@ -88,7 +88,7 @@ async function cashMovement(tenantId: string, branchId: string, day: string, tim
     // of today's till, and a drawer that counted it against yesterday would show short today and
     // over yesterday, with nothing to explain either.
     db.refund.findMany({
-      where: { method: "CASH", createdAt: { gte: from, lte: to }, order: { branchId } },
+      where: { method: "CASH", createdAt: { gte: from, lte: to }, order: { branchId, status: { not: "DELETED" } } },
       select: { amountPaisa: true },
     }),
   ]);

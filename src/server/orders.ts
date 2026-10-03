@@ -30,7 +30,7 @@ import { pricingLinesFromStored } from "@/lib/pricing";
 export { pricingLinesFromStored };
 
 /** Closes whatever is still waiting for approval on an order that is being voided or cancelled. */
-async function closePendingApprovals(tx: TenantTransactionClient, orderId: string, actorId: string, why: string) {
+export async function closePendingApprovals(tx: TenantTransactionClient, orderId: string, actorId: string, why: string) {
   await tx.orderApproval.updateMany({
     where: { orderId, status: "PENDING" },
     data: { status: "REJECTED", decidedById: actorId, decidedAt: new Date(), rejectReason: why },
@@ -40,7 +40,7 @@ async function closePendingApprovals(tx: TenantTransactionClient, orderId: strin
 /** Statuses where the order is done — never occupying its table, never payable/voidable again.
  * Shared by createOrder's table-conflict check, takePayment's double-pay guard, and voidOrder's
  * double-void guard, so the definition of "closed" can't drift between the three. */
-export const TERMINAL_ORDER_STATUSES = ["PAID", "DELIVERED", "VOIDED", "CANCELLED"] as const;
+export const TERMINAL_ORDER_STATUSES = ["PAID", "DELIVERED", "VOIDED", "CANCELLED", "DELETED"] as const;
 
 /**
  * pos.order.create/pos.order.editItems only cover punching an order or adding items to one — they

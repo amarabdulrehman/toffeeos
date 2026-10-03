@@ -315,7 +315,7 @@ function MergeSection({ order, busy, act }: { order: OrderDto; busy: boolean; ac
       .then((d) => {
         if (cancelled) return;
         const open = ((d.orders ?? []) as OrderDto[]).filter(
-          (o) => o.id !== order.id && o.type === "DINE_IN" && o.tableId && !["PAID", "VOIDED", "CANCELLED"].includes(o.status)
+          (o) => o.id !== order.id && o.type === "DINE_IN" && o.tableId && !["PAID", "VOIDED", "CANCELLED", "DELETED"].includes(o.status)
         );
         setOthers(open);
       })

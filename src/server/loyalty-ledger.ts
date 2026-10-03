@@ -95,3 +95,32 @@ export async function giveBackRedemption(tx: TenantTransactionClient, tenantId: 
   await recordPoints(tx, tenantId, { customerId: order.customerId, orderId, kind: "REVERSE", points: spent, reason: "points given back", actorId });
 }
 
+/**
+ * A deleted order is no longer a sale, so whatever it earned and hasn't already been taken back by a
+ * refund comes off the customer's balance. Separate from reverseForRefund because a deletion takes
+ * the whole of it, not a share; reason "order deleted" so it can be told apart in the ledger.
+ */
+export async function reverseForDeletion(
+  tx: TenantTransactionClient,
+  tenantId: string,
+  order: { id: string; customerId: string | null },
+  actorId: string | null
+) {
+  if (!order.customerId) return;
+  const entries = await tx.loyaltyTransaction.findMany({
+    where: { orderId: order.id, OR: [{ kind: "EARN" }, { kind: "REVERSE", reason: { in: ["refunded", "order deleted"] } }] },
+    select: { kind: true, points: true },
+  });
+  const earned = entries.filter((e) => e.kind === "EARN").reduce((s, e) => s + e.points, 0);
+  const alreadyTaken = -entries.filter((e) => e.kind === "REVERSE").reduce((s, e) => s + e.points, 0);
+  const takeNow = earned - alreadyTaken;
+  if (takeNow <= 0) return;
+  await recordPoints(tx, tenantId, {
+    customerId: order.customerId,
+    orderId: order.id,
+    kind: "REVERSE",
+    points: -takeNow,
+    reason: "order deleted",
+    actorId,
+  });
+}

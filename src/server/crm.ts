@@ -72,7 +72,9 @@ export async function getCustomerDetail(tenantId: string, customerId: string) {
   if (!customer) throw new HttpError(404, "Customer not found.");
 
   const orders = await db.order.findMany({
-    where: { customerId },
+    // Voided and cancelled orders stay visible here as part of the customer's story; a deleted one
+    // was removed from the books by the owner, and is only shown in the deletion log.
+    where: { customerId, status: { not: "DELETED" } },
     orderBy: { createdAt: "desc" },
     take: 100,
     select: {

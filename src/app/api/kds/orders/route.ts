@@ -19,7 +19,7 @@ export const GET = defineHandler({ permission: "kds.access" }, async ({ session,
     where: {
       branchId: session.branchId,
       sentToKitchenAt: { not: null },
-      status: { notIn: ["DELIVERED", "VOIDED", "CANCELLED"] },
+      status: { notIn: ["DELIVERED", "VOIDED", "CANCELLED", "DELETED"] },
       OR: [{ status: { in: ["SENT_TO_KITCHEN", "READY"] } }, { readyAt: null }],
     },
     orderBy: { sentToKitchenAt: "asc" },

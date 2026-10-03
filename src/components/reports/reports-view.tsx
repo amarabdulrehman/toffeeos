@@ -15,6 +15,7 @@ import {
   Truck,
   Users,
   XCircle,
+  Trash2,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +31,7 @@ import { AreaTrendChart } from "@/components/charts/area-trend-chart";
 import { RankedBarChart } from "@/components/charts/ranked-bar-chart";
 import { formatPkr, paisaToRupees } from "@/lib/money";
 import { downloadCsv } from "@/lib/csv";
+import { DeleteOrderDialog, type DeletableOrder } from "@/components/orders/delete-order-dialog";
 
 // Sales/staff/items stay always-on; the rest of the "full report suite" each need their own module
 // toggle, per the same mapping used server-side to gate the underlying API routes (this is the UI
@@ -154,7 +156,17 @@ function DateRangePicker({
  */
 const CanExport = createContext(false);
 
-export function ReportsView({ enabledModules, canExport = false }: { enabledModules: string[]; canExport?: boolean }) {
+export function ReportsView({
+  enabledModules,
+  canExport = false,
+  canDeleteOrders = false,
+  showDeletionLog = false,
+}: {
+  enabledModules: string[];
+  canExport?: boolean;
+  canDeleteOrders?: boolean;
+  showDeletionLog?: boolean;
+}) {
   const range = useDateRange();
   const has = (tab: string) => {
     const mod = TAB_MODULE[tab];
@@ -207,6 +219,9 @@ export function ReportsView({ enabledModules, canExport = false }: { enabledModu
           {has("riders") && (
             <TabsTrigger value="riders" className="gap-1.5"><Truck className="size-3.5" />Riders</TabsTrigger>
           )}
+          {showDeletionLog && (
+            <TabsTrigger value="deleted" className="gap-1.5"><Trash2 className="size-3.5" />Deleted orders</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="sales" className="mt-4">
@@ -218,8 +233,13 @@ export function ReportsView({ enabledModules, canExport = false }: { enabledModu
           </TabsContent>
         )}
         <TabsContent value="transactions" className="mt-4">
-          <TransactionsTab qs={range.qs} />
+          <TransactionsTab qs={range.qs} canDeleteOrders={canDeleteOrders} />
         </TabsContent>
+        {showDeletionLog && (
+          <TabsContent value="deleted" className="mt-4">
+            <DeletedOrdersTab />
+          </TabsContent>
+        )}
         <TabsContent value="items" className="mt-4">
           <ItemWiseTab qs={range.qs} />
         </TabsContent>
@@ -933,8 +953,13 @@ interface TransactionsReport {
  * on, so nothing is dropped there. Money is exported in rupees rather than paisa because the
  * destination is a spreadsheet, where a person sums the column and expects rupees.
  */
-function TransactionsTab({ qs }: { qs: string }) {
-  const { data, error, loading } = useReportFetch<TransactionsReport>(`/api/reports/transactions?${qs}`);
+function TransactionsTab({ qs, canDeleteOrders = false }: { qs: string; canDeleteOrders?: boolean }) {
+  // Bumped after a delete so the list, its count and its total all come back without the order.
+  const [reloadKey, setReloadKey] = useState(0);
+  const [deleting, setDeleting] = useState<DeletableOrder | null>(null);
+  const { data, error, loading } = useReportFetch<TransactionsReport>(
+    `/api/reports/transactions?${qs}${reloadKey ? `&r=${reloadKey}` : ""}`
+  );
 
   if (error) {
     return (
@@ -985,76 +1010,102 @@ function TransactionsTab({ qs }: { qs: string }) {
   }));
 
   return (
+    <>
     <Card className="shadow-md">
-      <CardHeader className="flex flex-row items-center justify-between gap-3">
-        <div>
-          <CardTitle className="font-heading">Every sale in this period</CardTitle>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {data.rows.length.toLocaleString()} {data.rows.length === 1 ? "sale" : "sales"} ·{" "}
-            {formatPkr(data.totalPaisa)}
-          </p>
-        </div>
-        <ExportButton rows={exportRows} filename="transactions" />
-      </CardHeader>
-      <CardContent>
-        {data.truncated && (
-          <p className="mb-3 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning-foreground">
-            Showing the most recent {data.limit.toLocaleString()} sales. Narrow the date range to see
-            the rest — the export covers only what is shown.
-          </p>
-        )}
-        {data.rows.length === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">No sales in this period.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Order</TableHead>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Branch</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Items</TableHead>
-                  <TableHead>Served by</TableHead>
-                  <TableHead>Payment</TableHead>
-                  <TableHead className="text-right">Discount</TableHead>
-                  <TableHead className="text-right">Tax</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.rows.map((r) => (
-                  <TableRow key={r.orderId}>
-                    <TableCell className="font-medium tabular-nums">#{r.orderNumber}</TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {new Date(r.paidAt).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">{r.branchName}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{r.type}</Badge>
-                    </TableCell>
-                    {/* The full list is in the export; on screen it is truncated so one large order
-                        cannot push every money column off the right edge. */}
-                    <TableCell className="max-w-[22rem] truncate" title={r.items}>
-                      {r.items || <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">{r.servedBy ?? "—"}</TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">{r.paymentMethods || "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {r.discountPaisa > 0 ? `-${formatPkr(r.discountPaisa)}` : "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {formatPkr(r.taxPaisa)}
-                    </TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">{formatPkr(r.totalPaisa)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div>
+            <CardTitle className="font-heading">Every sale in this period</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {data.rows.length.toLocaleString()} {data.rows.length === 1 ? "sale" : "sales"} ·{" "}
+              {formatPkr(data.totalPaisa)}
+            </p>
           </div>
-        )}
-      </CardContent>
-    </Card>
+          <ExportButton rows={exportRows} filename="transactions" />
+        </CardHeader>
+        <CardContent>
+          {data.truncated && (
+            <p className="mb-3 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning-foreground">
+              Showing the most recent {data.limit.toLocaleString()} sales. Narrow the date range to see
+              the rest — the export covers only what is shown.
+            </p>
+          )}
+          {data.rows.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">No sales in this period.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Order</TableHead>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Branch</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Items</TableHead>
+                    <TableHead>Served by</TableHead>
+                    <TableHead>Payment</TableHead>
+                    <TableHead className="text-right">Discount</TableHead>
+                    <TableHead className="text-right">Tax</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    {canDeleteOrders && <TableHead className="w-0" />}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.rows.map((r) => (
+                    <TableRow key={r.orderId}>
+                      <TableCell className="font-medium tabular-nums">#{r.orderNumber}</TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {new Date(r.paidAt).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{r.branchName}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{r.type}</Badge>
+                      </TableCell>
+                      {/* The full list is in the export; on screen it is truncated so one large order
+                          cannot push every money column off the right edge. */}
+                      <TableCell className="max-w-[22rem] truncate" title={r.items}>
+                        {r.items || <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">{r.servedBy ?? "—"}</TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">{r.paymentMethods || "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {r.discountPaisa > 0 ? `-${formatPkr(r.discountPaisa)}` : "—"}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {formatPkr(r.taxPaisa)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">{formatPkr(r.totalPaisa)}</TableCell>
+                      {canDeleteOrders && (
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            aria-label={`Delete order #${r.orderNumber}`}
+                            onClick={() =>
+                              setDeleting({ id: r.orderId, orderNumber: r.orderNumber, totalPaisa: r.totalPaisa, paid: true })
+                            }
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      <DeleteOrderDialog
+        order={deleting}
+        onClose={() => setDeleting(null)}
+        onDeleted={() => {
+          setDeleting(null);
+          setReloadKey((k) => k + 1);
+        }}
+      />
+    </>
   );
 }
 
@@ -1236,5 +1287,114 @@ function PnlTab({ qs }: { qs: string }) {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+interface OrderDeletionRow {
+  id: string;
+  orderNumber: number;
+  branchName: string;
+  orderType: string;
+  previousStatus: string;
+  totalPaisa: number;
+  paidPaisa: number;
+  refundedPaisa: number;
+  payments: { method: string; amountPaisa: number }[];
+  lines: { name: string; quantity: number; lineTotalPaisa: number }[];
+  orderCreatedAt: string;
+  reason: string;
+  restocked: boolean;
+  deletedByName: string;
+  createdAt: string;
+}
+
+/**
+ * Every order the owner has deleted: what it was, who removed it, when and why. Nothing on this
+ * screen — or anywhere in the app — can remove an entry; the database won't let the app.
+ */
+function DeletedOrdersTab() {
+  const { data, error, loading } = useReportFetch<{ deletions: OrderDeletionRow[] }>("/api/orders/deletions");
+
+  if (error) {
+    return (
+      <Card className="shadow-sm">
+        <CardContent className="pt-6">
+          <ReportError message={error} />
+        </CardContent>
+      </Card>
+    );
+  }
+  if (loading || !data) {
+    return (
+      <Card className="shadow-md">
+        <CardContent className="space-y-2 pt-6">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="shadow-md">
+      <CardHeader>
+        <CardTitle className="font-heading">Deleted orders</CardTitle>
+        <p className="mt-1 text-xs text-muted-foreground">
+          A permanent record. Entries can&apos;t be edited or removed.
+        </p>
+      </CardHeader>
+      <CardContent>
+        {data.deletions.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">No orders have been deleted.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Deleted</TableHead>
+                  <TableHead>Order</TableHead>
+                  <TableHead>Branch</TableHead>
+                  <TableHead>Items</TableHead>
+                  <TableHead>Paid by</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>By</TableHead>
+                  <TableHead>Stock</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.deletions.map((d) => (
+                  <TableRow key={d.id}>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {new Date(d.createdAt).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <span className="font-medium tabular-nums">#{d.orderNumber}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {d.previousStatus.replace(/_/g, " ").toLowerCase()} · {new Date(d.orderCreatedAt).toLocaleDateString()}
+                      </span>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">{d.branchName}</TableCell>
+                    <TableCell className="max-w-[18rem] truncate" title={d.lines.map((l) => `${l.quantity}x ${l.name}`).join(", ")}>
+                      {d.lines.map((l) => `${l.quantity}x ${l.name}`).join(", ") || "—"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {d.payments.length > 0 ? d.payments.map((p) => p.method).join(", ") : "Unpaid"}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">{formatPkr(d.totalPaisa)}</TableCell>
+                    <TableCell className="max-w-[16rem]">{d.reason}</TableCell>
+                    <TableCell className="whitespace-nowrap">{d.deletedByName}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {d.restocked ? "Put back" : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/server/auth";
 import { tenantDb } from "@/server/db";
+import { getTenantModulesForTenant } from "@/server/tier";
 import { PosTerminal } from "@/components/pos/pos-terminal";
 import {
   DEFAULT_BRANCH_PRICING,
@@ -68,6 +69,12 @@ export default async function PosPage() {
       pricingSnapshot={pricingSnapshot}
       canTakePayment={user.permissions.includes("pos.payment.take")}
       canAddItems={user.permissions.includes("pos.order.editItems")}
+      // Only the button's visibility. The server checks all of this again, and the password, itself.
+      canDeleteOrders={
+        user.roleKey === "owner" &&
+        !user.impersonatedByPlatformUserId &&
+        (await getTenantModulesForTenant(user.tenantId)).includes("orderDelete")
+      }
       canApplyDiscount={user.permissions.includes("pos.discount.applyOrder")}
       canVoid={user.permissions.includes("pos.order.void")}
       canRefund={user.permissions.includes("pos.payment.refund")}

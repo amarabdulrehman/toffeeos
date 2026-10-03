@@ -88,6 +88,12 @@ export interface GateableModule {
   label: string;
   minTier: TierKey;
   storageKeys: string[];
+  /**
+   * Never switched on by a plan — only by a platform admin, restaurant by restaurant. For features
+   * whose risk isn't about price: a plan upgrade must not hand one out, and a plan change must not
+   * take one away (see changeTenantTier, which carries these over).
+   */
+  grantOnly?: boolean;
 }
 
 export const GATEABLE_MODULES: GateableModule[] = [
@@ -100,14 +106,20 @@ export const GATEABLE_MODULES: GateableModule[] = [
   { key: "online", label: "Online Ordering", minTier: "complete", storageKeys: ["online"] },
   { key: "whatsapp", label: "WhatsApp Messaging", minTier: "complete", storageKeys: ["whatsapp"] },
   { key: "hr", label: "Payroll & HR", minTier: "complete", storageKeys: ["hr"] },
+  // Deleting orders removes sales from the books, so it is given out deliberately rather than with
+  // a plan — and even then only the owner can use it, with their password, leaving a permanent log.
+  { key: "orderDelete", label: "Delete orders (owner)", minTier: "starter", storageKeys: ["orderDelete"], grantOnly: true },
 ];
+
+/** Storage keys that only a platform admin turns on. */
+export const GRANT_ONLY_KEYS: string[] = GATEABLE_MODULES.filter((m) => m.grantOnly).flatMap((m) => m.storageKeys);
 
 /** The tier's preset — reused as the default `enabledModules` set whenever a tenant is created or
  * its tier is changed. Reproduces the exact Phase D bundles (every module a tier already unlocked
  * is on by default), per the brief: "reuse the existing Phase D mapping as the default for each
  * tier." */
 export function defaultModulesForTier(tier: TierKey): string[] {
-  return GATEABLE_MODULES.filter((m) => tierMeets(tier, m.minTier)).flatMap((m) => m.storageKeys);
+  return GATEABLE_MODULES.filter((m) => !m.grantOnly && tierMeets(tier, m.minTier)).flatMap((m) => m.storageKeys);
 }
 
 /** Given a permission key, returns the raw storage module key that gates it (matching an entry in

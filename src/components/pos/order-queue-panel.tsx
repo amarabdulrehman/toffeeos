@@ -27,6 +27,7 @@ export function OrderQueuePanel({
   earlierUnpaid = [],
   onPay,
   onAddItems,
+  onDelete,
   onVoid,
   canVoid,
   onCancel,
@@ -52,6 +53,8 @@ export function OrderQueuePanel({
   /** Put another round on an open order — any order, not only one with a table. Omit to hide it
    * (pos.order.editItems). */
   onAddItems?: (order: OrderDto) => void;
+  /** Owner only, and only where the platform has switched deleting on. Omit to hide it. */
+  onDelete?: (order: OrderDto) => void;
   onVoid?: (order: OrderDto) => void;
   canVoid?: boolean;
   /** Cancelling an order already sent to the kitchen — a separate action from Void (mandatory
@@ -172,6 +175,18 @@ export function OrderQueuePanel({
               Refund
             </Button>
           )}
+        </div>
+      )}
+      {onDelete && (
+        // Set apart and quieter than the everyday actions: it is a correction, not part of service.
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={() => onDelete(o)}
+            className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-destructive hover:underline"
+          >
+            Delete order
+          </button>
         </div>
       )}
     </div>

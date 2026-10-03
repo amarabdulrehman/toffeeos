@@ -1,8 +1,8 @@
 import { request as playwrightRequest } from "@playwright/test";
 import { authFile } from "./test-data";
 
-/** The suite's own server — fixed in playwright.config.ts, never the interactive dev ports. */
-const BASE_URL = "http://localhost:3100";
+/** The suite's own server — the port playwright.config.ts uses (E2E_PORT, else 3100), never the interactive dev ports. */
+const BASE_URL = `http://localhost:${Number(process.env.E2E_PORT) || 3100}`;
 
 /**
  * Voids every open test order and returns every table to AVAILABLE.

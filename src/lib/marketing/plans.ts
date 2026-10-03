@@ -56,9 +56,14 @@ const MODULE_DETAIL: Record<string, string> = {
   hr: "Employee records, shifts, attendance, payroll and payslips.",
 };
 
-/** Every module the site advertises, in the order the app lists them. */
+/**
+ * Every module the site advertises, in the order the app lists them.
+ *
+ * Grant-only modules are left out by construction: no plan includes them (a platform admin turns
+ * them on one restaurant at a time), so a plan card listing one would be a claim the plan can't keep.
+ */
 export function advertisedModules(): (GateableModule & { detail: string })[] {
-  return GATEABLE_MODULES.filter((m) => !NOT_ADVERTISED.has(m.key)).map((m) => {
+  return GATEABLE_MODULES.filter((m) => !m.grantOnly && !NOT_ADVERTISED.has(m.key)).map((m) => {
     const detail = MODULE_DETAIL[m.key];
     // A new module must be described before it's advertised. The pricing page is static, so this
     // fails the build (and the old page stays live) rather than printing a blank row.

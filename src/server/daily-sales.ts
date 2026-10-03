@@ -143,7 +143,7 @@ export async function dayReport(tenantId: string, branchIds: string[], requested
     db.order.findMany({
       where: {
         branchId: { in: branchIds },
-        status: { notIn: ["PAID", "VOIDED", "CANCELLED"] },
+        status: { notIn: ["PAID", "VOIDED", "CANCELLED", "DELETED"] },
         createdAt: { gte: range.from, lte: range.to },
       },
       select: { totalPaisa: true },

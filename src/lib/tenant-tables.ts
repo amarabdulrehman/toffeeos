@@ -20,6 +20,7 @@
  * its own, and Tenant itself is deleted last, separately.
  */
 export const TENANT_OWNED_TABLES = [
+  "OrderDeletion",
   "OrderEvent",
   "Payment",
   // Children of Order, so before it and after nothing. Deleting a tenant with refunds on record

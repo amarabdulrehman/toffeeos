@@ -93,7 +93,7 @@ export async function orderActivity(tenantId: string, branchId: string, since: D
 
   const [created, appended, ready, awaitingPayment, requested, decided, pendingApprovals] = await Promise.all([
     db.order.findMany({
-      where: { branchId, createdAt: { gte: from }, status: { notIn: ["VOIDED", "CANCELLED"] } },
+      where: { branchId, createdAt: { gte: from }, status: { notIn: ["VOIDED", "CANCELLED", "DELETED"] } },
       orderBy: { createdAt: "asc" },
       take: 50,
       select: {
@@ -122,7 +122,7 @@ export async function orderActivity(tenantId: string, branchId: string, since: D
       },
     }),
     db.order.findMany({
-      where: { branchId, readyAt: { gte: from }, status: { notIn: ["VOIDED", "CANCELLED"] } },
+      where: { branchId, readyAt: { gte: from }, status: { notIn: ["VOIDED", "CANCELLED", "DELETED"] } },
       orderBy: { readyAt: "asc" },
       take: 50,
       select: {

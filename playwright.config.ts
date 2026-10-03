@@ -5,7 +5,10 @@ import { defineConfig, devices } from "@playwright/test";
 // needs to own its server's lifecycle without racing another session's dev server. AUTH_URL /
 // NEXT_PUBLIC_APP_URL are overridden only for the spawned webServer process below, never written
 // to .env/.env.local, so this has zero effect on anyone's normal `npm run dev`.
-const PORT = 3100;
+// E2E_PORT overrides it for a machine where 3100 is taken by something else. reuseExistingServer
+// attaches to whatever already answers on the port, so a different app there doesn't fail to
+// start — it silently becomes the app under test, and every request gets that app's 404 page.
+const PORT = Number(process.env.E2E_PORT) || 3100;
 const BASE_URL = `http://localhost:${PORT}`;
 
 export default defineConfig({

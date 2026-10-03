@@ -988,6 +988,9 @@ enum OrderStatus {
   DELIVERED
   VOIDED
   CANCELLED
+  /// Removed by the restaurant owner (see OrderDeletion). Out of every sale, report and list, and
+  /// treated as terminal everywhere TERMINAL_ORDER_STATUSES is checked.
+  DELETED
 }
 
 enum DeliveryProofMethod {
@@ -1671,4 +1674,39 @@ model CashDrawerDay {
   /// cashiers opening the same morning twice with different floats.
   @@unique([branchId, businessDate])
   @@index([tenantId, branchId, businessDate])
+}
+
+/// Permanent record of an order the owner deleted.
+///
+/// Deleting a paid order is exactly what tax authorities call sales suppression, and the only thing
+/// that separates a correction from that is a trail: who, when, why, and what the order was. So this
+/// is append-only at the database level — the app's role (app_user) is granted SELECT and INSERT only
+/// (see the migration), so nothing the app does, including a bug, can edit or erase a row. The order
+/// row itself is kept too, at status DELETED; this snapshot is what the log reads, so it is unaffected
+/// by anything that later happens to the order's lines or the menu.
+model OrderDeletion {
+  id             String      @id @default(uuid())
+  tenantId       String
+  branchId       String
+  orderId        String      @unique
+  orderNumber    Int
+  orderType      OrderType
+  previousStatus OrderStatus
+  totalPaisa     Int
+  paidPaisa      Int
+  refundedPaisa  Int
+  /// [{ method, amountPaisa }] as paid.
+  payments       Json
+  /// [{ name, quantity, lineTotalPaisa }], live lines only.
+  lines          Json
+  orderCreatedAt DateTime
+  orderPaidAt    DateTime?
+  reason         String
+  /// Whether the owner chose to put the order's ingredients back into stock.
+  restocked      Boolean
+  deletedById    String
+  deletedByName  String
+  createdAt      DateTime    @default(now())
+
+  @@index([tenantId, branchId, createdAt])
 }
