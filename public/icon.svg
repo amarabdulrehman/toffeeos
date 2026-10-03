@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ToffeeOS">
-  <rect width="512" height="512" rx="112" fill="#1c1917"/>
-  <text x="50%" y="50%" dy="0.34em" text-anchor="middle"
-        font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
-        font-size="248" font-weight="700" fill="#faf9f7">T</text>
+  <!-- The header's brand mark: a "T" on ink. Drawn as shapes, not text, so it looks the same
+       everywhere — a font-based "T" renders differently (or not at all) per device. -->
+  <rect width="512" height="512" rx="112" fill="#181626"/>
+  <rect x="132" y="124" width="248" height="68" rx="10" fill="#faf9fd"/>
+  <rect x="222" y="124" width="68" height="264" rx="10" fill="#faf9fd"/>
 </svg>

@@ -27,7 +27,9 @@ export const metadata: Metadata = {
   // tab — which also makes an accidental refresh, the thing that used to kill an offline shift,
   // much harder to trigger.
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/icon.svg" },
+  // favicon.ico (src/app) is the tab icon for browsers that skip the SVG; apple-icon.png is the
+  // home-screen icon on an iPad. Named here because declaring icons turns off the automatic links.
+  icons: { icon: "/icon.svg", apple: "/apple-icon.png" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
