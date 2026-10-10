@@ -1,7 +1,7 @@
 "use server";
 
 import { auth } from "@/server/auth";
-import { rawDb, platformDb } from "@/server/db";
+import { platformDb, runInTenantTransaction } from "@/server/db";
 
 /**
  * Server-side session revocation for a stateless (JWT) auth setup.
@@ -32,8 +32,16 @@ export async function revokeMySessions(): Promise<void> {
     await platformDb.platformUser.update({ where: { id: user.id }, data: { sessionsValidFrom: now } });
     return;
   }
-  // rawDb, not tenantDb: this is a write to the caller's own row keyed by primary key, and it must
-  // still succeed for a user whose tenant has since been suspended — they should be able to sign
-  // out of an account they can no longer otherwise use.
-  await rawDb.user.update({ where: { id: user.id }, data: { sessionsValidFrom: now } });
+  // A platform admin signing out of someone's account they were looking into ends their own visit,
+  // not the staff member's real sessions on the till.
+  if (user.impersonatedByPlatformUserId) return;
+
+  // With the restaurant set on the connection. This used rawDb, as the app's own database role with
+  // no restaurant set, and row-level security on "User" (tenant_isolation, FORCE) hides every row
+  // from that: the update matched nothing and threw "No record was found for an update" on every
+  // sign-out since September, which the button swallowed. Suspension doesn't come into it — the
+  // policy only compares the row's restaurant with the connection's.
+  await runInTenantTransaction(user.tenantId, (tx) =>
+    tx.user.update({ where: { id: user.id }, data: { sessionsValidFrom: now } })
+  );
 }

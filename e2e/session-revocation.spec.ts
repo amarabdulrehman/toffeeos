@@ -113,6 +113,36 @@ test.describe("Session revocation", () => {
     }
   });
 
+  /**
+   * The button itself, not the database stamp it is meant to set. Every test above bumps
+   * sessionsValidFrom by hand, so none of them noticed that Sign out never managed to: it updated
+   * the User row through the app's database role with no restaurant set, row-level security hid the
+   * row, and every sign-out since September failed with "No record was found for an update". The
+   * button swallowed the error and cleared the cookie, so it looked fine, and every copy of the
+   * session stayed alive.
+   */
+  test("pressing Sign out ends every copy of the session, not just this browser's", async ({ baseURL, browser }) => {
+    const { userId, email } = await createStaff();
+    const elsewhere = await login(baseURL!, email);
+    const context = await browser.newContext({ storageState: await elsewhere.storageState() });
+    const page = await context.newPage();
+
+    try {
+      expect((await elsewhere.get(PROBE)).status(), "the copied session works before signing out").toBe(200);
+
+      await page.goto("/pos");
+      await page.getByRole("button", { name: "Sign out" }).first().click();
+      await page.waitForURL(/\/login/);
+
+      const after = await elsewhere.get(PROBE);
+      expect(after.status(), "the other copy must be rejected once the button is pressed").toBe(401);
+    } finally {
+      await context.close();
+      await elsewhere.dispose();
+      await removeStaff(userId);
+    }
+  });
+
   test("deactivating a staff member revokes their live session immediately", async ({ baseURL }) => {
     const { userId, email } = await createStaff();
     const ctx = await login(baseURL!, email);
