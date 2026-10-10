@@ -35,6 +35,9 @@ export function CustomerPicker({
       const res = await fetch(`/api/customers?q=${encodeURIComponent(q)}`);
       const data = await res.json();
       setMatches(data.customers ?? []);
+    } catch {
+      // Offline: no matches to show; the order can go ahead without a customer.
+      setMatches([]);
     } finally {
       setSearching(false);
     }
@@ -61,6 +64,8 @@ export function CustomerPicker({
       }
       onSelect(data.customer);
       close();
+    } catch {
+      toast.error("Can't reach the server, so the customer wasn't saved. The order can go ahead without one.");
     } finally {
       setSaving(false);
     }

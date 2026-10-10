@@ -119,6 +119,8 @@ export function TablesDialog({
         return;
       }
       onResumeOrder(table, data.order);
+    } catch {
+      toast.error("Can't reach the server to open this table's order. Take payment from the Order Queue, which works offline.");
     } finally {
       setLoadingTableId(null);
     }

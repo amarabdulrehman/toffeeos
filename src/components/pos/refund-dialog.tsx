@@ -73,6 +73,11 @@ function RefundBody({
   const [method, setMethod] = useState<PaymentMethod>(order.payments?.[0]?.method ?? "CASH");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Refunds are only ever taken online: the server checks what is left to give back. Without the
+  // connection the earlier refunds can't be read, so the window says so instead of offering a
+  // figure it can't stand behind. (Offline, this fetch used to throw unhandled and leave the
+  // window blank; found by e2e/pos-resilience.spec.ts.)
+  const [unreachable, setUnreachable] = useState(false);
 
   const refundedPaisa = already.reduce((sum, r) => sum + r.amountPaisa, 0);
   const remainingPaisa = Math.max(0, paidPaisa - refundedPaisa);
@@ -87,7 +92,11 @@ function RefundBody({
           // Default to whatever is left, which is the whole amount on a first refund.
           const left = paidPaisa - rows.reduce((sum, r) => sum + r.amountPaisa, 0);
           setAmount(left > 0 ? String(left / 100) : "");
+        } else {
+          setUnreachable(true);
         }
+      } catch {
+        setUnreachable(true);
       } finally {
         setLoaded(true);
       }
@@ -110,12 +119,19 @@ function RefundBody({
     }
 
     setSubmitting(true);
-    const res = await fetch(`/api/orders/${order.id}/refund`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amountPaisa: paisa, method, reason: reason.trim() }),
-    });
-    setSubmitting(false);
+    let res: Response;
+    try {
+      res = await fetch(`/api/orders/${order.id}/refund`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amountPaisa: paisa, method, reason: reason.trim() }),
+      });
+    } catch {
+      toast.error("Couldn't reach the server, so no refund was recorded. Try again once you're back online.");
+      return;
+    } finally {
+      setSubmitting(false);
+    }
 
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -156,7 +172,12 @@ function RefundBody({
           </div>
         )}
 
-        {remainingPaisa === 0 && loaded ? (
+        {unreachable ? (
+          <p role="status" className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm text-warning-foreground">
+            The server can&apos;t be reached, so a refund can&apos;t be taken right now. Try again once you&apos;re back
+            online.
+          </p>
+        ) : remainingPaisa === 0 && loaded ? (
           <p className="text-sm text-muted-foreground">This order has been fully refunded.</p>
         ) : (
           <>
@@ -214,7 +235,7 @@ function RefundBody({
         </Button>
         <Button
           variant="destructive"
-          disabled={submitting || remainingPaisa === 0 || !reason.trim()}
+          disabled={submitting || unreachable || remainingPaisa === 0 || !reason.trim()}
           onClick={submit}
         >
           Refund

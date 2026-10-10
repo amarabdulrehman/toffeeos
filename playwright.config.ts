@@ -66,7 +66,12 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev",
+    // E2E_PROD=1 runs against a production build instead of the dev server: the till's service
+    // worker, and so everything it does offline across a reload, only exists in production. Build
+    // first for the same port, e.g.
+    //   npx cross-env NEXT_PUBLIC_APP_URL=http://localhost:3300 next build
+    //   npx cross-env E2E_PROD=1 E2E_PORT=3300 playwright test e2e/pos-resilience.spec.ts
+    command: process.env.E2E_PROD ? `npx next start -p ${PORT}` : "npm run dev",
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

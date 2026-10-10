@@ -24,6 +24,7 @@ import { ApprovalsSection, type PendingApproval } from "./approvals-section";
 import { setSoundOn, useSoundOn } from "@/lib/chime";
 import { TablesDialog, ResumedOrderPanel, AddItemsPanel } from "./tables-dialog";
 import { OfflineBanner } from "./offline-banner";
+import { PanelBoundary } from "@/components/errors/panel-boundary";
 import { useSync } from "@/lib/offline/use-sync";
 import { cacheMenu, cacheOpenOrders, getCachedMenu, getCachedOpenOrders, listQueue, type CreateOrderAction } from "@/lib/offline/db";
 import { queueCreateOrder, queuePayOrder, queueVoidOrder } from "@/lib/offline/queue";
@@ -44,6 +45,16 @@ import type {
   PreviewTotals,
   RestaurantTableDto,
 } from "./types";
+
+/**
+ * An order every panel can draw. The queue's orders come from the server, from a cache an older
+ * version of the till may have written, and from the offline queue; an order arriving without its
+ * lines (the bare row some endpoints return) made the queue throw while drawing, and before each
+ * panel had its own boundary that blanked the whole till.
+ */
+function drawable(o: OrderDto): OrderDto {
+  return Array.isArray(o.lines) ? o : { ...o, lines: [] };
+}
 
 /** True only when fetch never reached the server at all — the signal that tells the POS to queue
  * the action locally instead of surfacing it as a business error. */
@@ -168,6 +179,63 @@ export function PosTerminal({
   const idempotencyKey = useRef(crypto.randomUUID());
   const localOrderCounter = useRef(-1);
 
+  /**
+   * The order being rung up survives the till failing or reloading.
+   *
+   * It lived only in memory, so whenever the POS fell over — and "Try again" remounts it — or the
+   * page was reloaded, the half-entered order was gone and had to be punched again with the
+   * customer waiting. Kept in this tab's session storage, under this person at this branch, and
+   * with its idempotency key: if the crash came after a send that did reach the server, sending
+   * the restored order again returns that same order instead of making a second one.
+   */
+  const draftKey = `toffeeos:pos-draft:${tenantId}:${branchId}:${userId}`;
+  const draftRestored = useRef(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = sessionStorage.getItem(draftKey);
+        const d = raw
+          ? (JSON.parse(raw) as {
+              lines: CartLine[];
+              orderType: OrderType;
+              table: RestaurantTableDto | null;
+              deliveryAddress: string;
+              customer: CustomerDto | null;
+              discount: Discount | null;
+              idempotencyKey: string;
+            })
+          : null;
+        if (d && Array.isArray(d.lines) && d.lines.length > 0) {
+          setLines(d.lines);
+          setOrderType(d.orderType);
+          setTable(d.table);
+          setDeliveryAddress(d.deliveryAddress ?? "");
+          setCustomer(d.customer);
+          setDiscount(d.discount);
+          if (d.idempotencyKey) idempotencyKey.current = d.idempotencyKey;
+          toast("The order you were ringing up is back", { description: "Carry on where you left off." });
+        }
+      } catch {
+        // Storage refused or unreadable: start with an empty cart, as before.
+      }
+      draftRestored.current = true;
+    })();
+  }, [draftKey]);
+  useEffect(() => {
+    if (!draftRestored.current) return;
+    try {
+      // A round for an existing order isn't a new order; it isn't kept as one.
+      if (lines.length === 0 || addingTo) sessionStorage.removeItem(draftKey);
+      else
+        sessionStorage.setItem(
+          draftKey,
+          JSON.stringify({ lines, orderType, table, deliveryAddress, customer, discount, idempotencyKey: idempotencyKey.current })
+        );
+    } catch {
+      // Full or blocked storage only loses the safety net, never the order on screen.
+    }
+  }, [draftKey, lines, orderType, table, deliveryAddress, customer, discount, addingTo]);
+
   useEffect(() => {
     fetch("/api/menu")
       .then((r) => r.json())
@@ -192,7 +260,7 @@ export function PosTerminal({
     const localCreates = (await listQueue()).filter(
       (a): a is CreateOrderAction => a.type === "createOrder" && a.status !== "conflict" && a.status !== "failed"
     );
-    const localOrders = localCreates.map((a) => a.localOrder);
+    const localOrders = localCreates.map((a) => drawable(a.localOrder));
 
     if (canTakePayment) {
       fetch("/api/orders/approvals")
@@ -206,13 +274,13 @@ export function PosTerminal({
       // day's unpaid order comes back apart (see GET /api/orders).
       const res = await fetch("/api/orders?day=today");
       const data = await res.json();
-      const serverOrders: OrderDto[] = data.orders ?? [];
-      setEarlierUnpaid(data.earlierUnpaid ?? []);
+      const serverOrders: OrderDto[] = (data.orders ?? []).map(drawable);
+      setEarlierUnpaid((data.earlierUnpaid ?? []).map(drawable));
       await cacheOpenOrders(serverOrders);
       const serverIds = new Set(serverOrders.map((o) => o.id));
       setQueue([...serverOrders, ...localOrders.filter((o) => !serverIds.has(o.id))]);
     } catch {
-      const cached = (await getCachedOpenOrders()) ?? [];
+      const cached = ((await getCachedOpenOrders()) ?? []).map(drawable);
       const cachedIds = new Set(cached.map((o) => o.id));
       setQueue([...cached, ...localOrders.filter((o) => !cachedIds.has(o.id))]);
     }
@@ -782,6 +850,18 @@ export function PosTerminal({
     }
   }
 
+  /**
+   * A dialog that fails closes itself and says so, rather than taking the till with it. The cart,
+   * the queue and anything already rung up are untouched; the cashier opens it again.
+   */
+  const closeAfterFailure = (what: string, close: () => void) => () => {
+    close();
+    toast.error(`The ${what} hit a problem and was closed`, {
+      description: "Nothing already rung up was lost. Open it again to carry on.",
+    });
+  };
+  const panelName = addingTo ? "Adding items" : resumed ? "This table's order" : showQueue ? "The Order Queue" : "The order";
+
   return (
     <div className="flex h-full flex-col">
       <OfflineBanner sync={sync} />
@@ -790,6 +870,7 @@ export function PosTerminal({
       <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[1fr_300px] lg:grid-cols-[1fr_340px] xl:grid-cols-[1fr_380px]">
         <div className="flex min-h-0 flex-col">
           <div className="min-h-0 flex-1">
+            <PanelBoundary name="The menu">
             <ProductGrid
               categories={categories}
               loading={menuLoading}
@@ -858,6 +939,7 @@ export function PosTerminal({
                 )
               }
             />
+            </PanelBoundary>
           </div>
 
           {/* The order, summarised, on screens where the panel is a sheet. Adding an item does not
@@ -917,6 +999,36 @@ export function PosTerminal({
           {/* *:h-full: the panels below used to fill a grid cell by being stretched; inside this
               wrapper they have to be told, or the queue and the resumed order stop scrolling. */}
           <div className="min-h-0 flex-1 *:h-full">
+        <PanelBoundary
+          name={panelName}
+          // Fresh data is a fresh try: once the queue reloads without whatever it couldn't draw, the
+          // panel comes back by itself rather than waiting for someone to press Try again.
+          resetKeys={[showQueue, resumed?.order, addingTo?.id, queue, earlierUnpaid]}
+          fallback={(retry) => (
+            <div role="alert" className="flex flex-col items-center justify-center gap-2 border-l bg-card p-6 text-center">
+              <p className="text-sm font-semibold">{panelName} hit a problem</p>
+              <p className="max-w-xs text-xs text-muted-foreground">
+                The rest of the till is fine, and nothing already rung up has been lost.
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={retry}>
+                  Try again
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setShowQueue(false);
+                    setResumed(null);
+                    setAddingTo(null);
+                  }}
+                >
+                  Back to the order
+                </Button>
+              </div>
+            </div>
+          )}
+        >
         {addingTo ? (
           <div className="min-h-0 border-l bg-card">
             <AddItemsPanel
@@ -1027,135 +1139,164 @@ export function PosTerminal({
             sending={sending}
           />
         )}
+        </PanelBoundary>
           </div>
         </div>
 
-        <TablesDialog
-          open={tablesOpen}
-          tenantId={tenantId}
-          branchId={branchId}
-          onClose={() => setTablesOpen(false)}
-          onStartOrder={(t) => {
-            setTable(t);
-            setResumed(null);
-            setTablesOpen(false);
-          }}
-          onResumeOrder={(t, order) => {
-            setResumed({ table: t, order });
-            setPaneOpen(true);
-            setTablesOpen(false);
-          }}
-        />
+        <PanelBoundary name="Tables" fallback={null} resetKeys={[tablesOpen]} onCaught={closeAfterFailure("table list", () => setTablesOpen(false))}>
+          <TablesDialog
+            open={tablesOpen}
+            tenantId={tenantId}
+            branchId={branchId}
+            onClose={() => setTablesOpen(false)}
+            onStartOrder={(t) => {
+              setTable(t);
+              setResumed(null);
+              setTablesOpen(false);
+            }}
+            onResumeOrder={(t, order) => {
+              setResumed({ table: t, order: drawable(order) });
+              setPaneOpen(true);
+              setTablesOpen(false);
+            }}
+          />
+        </PanelBoundary>
 
-        <OrderManageDialog
-          orderId={managingOrderId}
-          permissions={managePermissions}
-          onClose={() => setManagingOrderId(null)}
-          onChanged={(changed) => {
-            void loadQueue();
-            // The table panel follows the order — unless it has left that table (made takeaway, or
-            // merged into another bill), in which case the panel for this table has nothing to show.
-            setResumed((prev) => {
-              if (!prev || prev.order.id !== changed.id) return prev;
-              if (changed.tableId !== prev.table.id || changed.status === "CANCELLED") return null;
-              return { ...prev, order: changed };
-            });
-          }}
-        />
+        <PanelBoundary
+          name="Manage order"
+          fallback={null}
+          resetKeys={[managingOrderId]}
+          onCaught={closeAfterFailure("order window", () => setManagingOrderId(null))}
+        >
+          <OrderManageDialog
+            orderId={managingOrderId}
+            permissions={managePermissions}
+            onClose={() => setManagingOrderId(null)}
+            onChanged={(changed) => {
+              void loadQueue();
+              // The table panel follows the order — unless it has left that table (made takeaway, or
+              // merged into another bill), in which case the panel for this table has nothing to show.
+              setResumed((prev) => {
+                if (!prev || prev.order.id !== changed.id) return prev;
+                if (changed.tableId !== prev.table.id || changed.status === "CANCELLED") return null;
+                return { ...prev, order: changed };
+              });
+            }}
+          />
+        </PanelBoundary>
 
-        <NoSaleDialog open={noSaleOpen} branchName={branchName} onClose={() => setNoSaleOpen(false)} />
+        <PanelBoundary name="No sale" fallback={null} resetKeys={[noSaleOpen]} onCaught={closeAfterFailure("no-sale window", () => setNoSaleOpen(false))}>
+          <NoSaleDialog open={noSaleOpen} branchName={branchName} onClose={() => setNoSaleOpen(false)} />
+        </PanelBoundary>
 
-        <RefundDialog
-          order={refundingOrder}
-          onClose={() => setRefundingOrder(null)}
-          onRefunded={() => {
-            // Reload the queue so the card reflects the refund without a manual refresh.
-            void loadQueue();
-          }}
-        />
+        <PanelBoundary name="Refund" fallback={null} resetKeys={[refundingOrder]} onCaught={closeAfterFailure("refund window", () => setRefundingOrder(null))}>
+          <RefundDialog
+            order={refundingOrder}
+            onClose={() => setRefundingOrder(null)}
+            onRefunded={() => {
+              // Reload the queue so the card reflects the refund without a manual refresh.
+              void loadQueue();
+            }}
+          />
+        </PanelBoundary>
 
-        <OptionsDialog
-          item={optionsItem}
-          onClose={() => setOptionsItem(null)}
-          onConfirm={({ variantId, modifierIds }) => {
-            if (optionsItem) addLine(optionsItem, variantId, modifierIds);
-            setOptionsItem(null);
-          }}
-        />
+        <PanelBoundary name="Item options" fallback={null} resetKeys={[optionsItem]} onCaught={closeAfterFailure("options window", () => setOptionsItem(null))}>
+          <OptionsDialog
+            item={optionsItem}
+            onClose={() => setOptionsItem(null)}
+            onConfirm={({ variantId, modifierIds }) => {
+              if (optionsItem) addLine(optionsItem, variantId, modifierIds);
+              setOptionsItem(null);
+            }}
+          />
+        </PanelBoundary>
 
-        <PaymentDialog
-          key={payingOrder?.id ?? "closed"}
-          open={!!payingOrder}
-          orderId={payingOrder?.id ?? null}
-          order={payingOrder}
-          pricingSnapshot={pricingSnapshot}
-          totalPaisa={payingOrder?.totalPaisa ?? 0}
-          onClose={() => setPayingOrder(null)}
-          onConfirm={handleConfirmPayment}
-          submitting={paying}
-          offline={!sync.isOnline}
-        />
+        <PanelBoundary name="Payment" fallback={null} resetKeys={[payingOrder]} onCaught={closeAfterFailure("payment window", () => setPayingOrder(null))}>
+          <PaymentDialog
+            key={payingOrder?.id ?? "closed"}
+            open={!!payingOrder}
+            orderId={payingOrder?.id ?? null}
+            order={payingOrder}
+            pricingSnapshot={pricingSnapshot}
+            totalPaisa={payingOrder?.totalPaisa ?? 0}
+            onClose={() => setPayingOrder(null)}
+            onConfirm={handleConfirmPayment}
+            submitting={paying}
+            offline={!sync.isOnline}
+          />
+        </PanelBoundary>
 
-        <DeleteOrderDialog
-          order={deletingOrder}
-          onClose={() => setDeletingOrder(null)}
-          onDeleted={() => {
-            setDeletingOrder(null);
-            loadQueue();
-          }}
-        />
+        <PanelBoundary name="Delete order" fallback={null} resetKeys={[deletingOrder]} onCaught={closeAfterFailure("delete window", () => setDeletingOrder(null))}>
+          <DeleteOrderDialog
+            order={deletingOrder}
+            onClose={() => setDeletingOrder(null)}
+            onDeleted={() => {
+              setDeletingOrder(null);
+              loadQueue();
+            }}
+          />
+        </PanelBoundary>
 
-        <KotDialog
-          order={
-            kotOrder
-              ? {
-                  orderNumber: kotOrder.orderNumber,
-                  type: kotOrder.type,
-                  source: kotOrder.source ?? "POS",
-                  sentToKitchenAt: kotOrder.sentToKitchenAt ?? null,
-                  table: kotOrder.table ?? null,
-                  lines: kotOrder.lines.map((l) => ({
-                    id: l.id,
-                    nameSnapshot: l.nameSnapshot,
-                    quantity: l.quantity,
-                    notes: l.notes ?? null,
-                    modifiers: l.modifiers,
-                    isVoided: l.isVoided,
-                  })),
-                }
-              : null
-          }
-          branchName={branchName}
-          onClose={() => setKotOrder(null)}
-        />
+        <PanelBoundary name="Kitchen ticket" fallback={null} resetKeys={[kotOrder]} onCaught={closeAfterFailure("kitchen ticket", () => setKotOrder(null))}>
+          <KotDialog
+            order={
+              kotOrder
+                ? {
+                    orderNumber: kotOrder.orderNumber,
+                    type: kotOrder.type,
+                    source: kotOrder.source ?? "POS",
+                    sentToKitchenAt: kotOrder.sentToKitchenAt ?? null,
+                    table: kotOrder.table ?? null,
+                    // Guarded: this runs while the till itself renders, outside the boundary above.
+                    lines: (kotOrder.lines ?? []).map((l) => ({
+                      id: l.id,
+                      nameSnapshot: l.nameSnapshot,
+                      quantity: l.quantity,
+                      notes: l.notes ?? null,
+                      modifiers: l.modifiers,
+                      isVoided: l.isVoided,
+                    })),
+                  }
+                : null
+            }
+            branchName={branchName}
+            onClose={() => setKotOrder(null)}
+          />
+        </PanelBoundary>
 
-        <BillDialog
-          orderId={billOrderId}
-          tenantName={tenantName}
-          branchName={branchName}
-          logoUrl={logoUrl}
-          showLogo={showLogoOnReceipt}
-          receiptHeader={receiptHeader}
-          showCredit={showReceiptCredit}
-          onClose={() => setBillOrderId(null)}
-        />
+        <PanelBoundary name="Bill" fallback={null} resetKeys={[billOrderId]} onCaught={closeAfterFailure("bill", () => setBillOrderId(null))}>
+          <BillDialog
+            orderId={billOrderId}
+            tenantName={tenantName}
+            branchName={branchName}
+            logoUrl={logoUrl}
+            showLogo={showLogoOnReceipt}
+            receiptHeader={receiptHeader}
+            showCredit={showReceiptCredit}
+            onClose={() => setBillOrderId(null)}
+          />
+        </PanelBoundary>
 
-        <ReceiptDialog
-          order={receiptOrder}
-          tenantName={tenantName}
-          branchName={branchName}
-          logoUrl={logoUrl}
-          showLogo={showLogoOnReceipt}
-          receiptHeader={receiptHeader}
-          showCredit={showReceiptCredit}
-          onClose={() => setReceiptOrder(null)}
-        />
+        <PanelBoundary name="Receipt" fallback={null} resetKeys={[receiptOrder]} onCaught={closeAfterFailure("receipt", () => setReceiptOrder(null))}>
+          <ReceiptDialog
+            order={receiptOrder}
+            tenantName={tenantName}
+            branchName={branchName}
+            logoUrl={logoUrl}
+            showLogo={showLogoOnReceipt}
+            receiptHeader={receiptHeader}
+            showCredit={showReceiptCredit}
+            onClose={() => setReceiptOrder(null)}
+          />
+        </PanelBoundary>
 
-        <CancelOrderDialog
-          order={cancellingOrder}
-          onClose={() => setCancellingOrder(null)}
-          onConfirm={handleCancelOrder}
-        />
+        <PanelBoundary name="Cancel order" fallback={null} resetKeys={[cancellingOrder]} onCaught={closeAfterFailure("cancel window", () => setCancellingOrder(null))}>
+          <CancelOrderDialog
+            order={cancellingOrder}
+            onClose={() => setCancellingOrder(null)}
+            onConfirm={handleCancelOrder}
+          />
+        </PanelBoundary>
       </div>
     </div>
   );

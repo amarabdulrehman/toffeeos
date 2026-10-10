@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { reportClientError } from "@/lib/report-client-error";
 
 /**
  * Shared fallback for route-segment error.tsx files. Next.js requires error.tsx to be its own file
@@ -23,6 +24,10 @@ export function SectionError({
 }) {
   useEffect(() => {
     Sentry.captureException(error, { tags: { section: label } });
+    // Without a browser Sentry client (see /api/client-errors) that call sends nothing, which is how
+    // a till crashing mid-service on 9 October 2026 left no trace. A server error already reached
+    // Sentry on the server; this is for the ones that happen here.
+    if (!error.digest) reportClientError(label, error);
     console.error(`[${label}]`, error);
   }, [error, label]);
 

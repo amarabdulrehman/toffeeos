@@ -69,7 +69,13 @@ function useElapsedSeconds(since: string | null, until: string | null): number {
 
 /** Brings a bumped order back onto the board (kds.order.recall). */
 async function recall(orderId: string, orderNumber: number): Promise<boolean> {
-  const res = await fetch(`/api/orders/${orderId}/recall`, { method: "POST" });
+  let res: Response;
+  try {
+    res = await fetch(`/api/orders/${orderId}/recall`, { method: "POST" });
+  } catch {
+    toast.error("No connection, so that order wasn't brought back. Try again in a moment.");
+    return false;
+  }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     toast.error(data.error ?? "Could not bring that order back.");
@@ -102,22 +108,32 @@ function OrderCard({
   const late = !isReady && elapsed > SLA_SECONDS;
   const style = TYPE_STYLE[order.type];
 
+  // A kitchen's wifi drops too. Offline these used to throw unhandled and do nothing visible, so a
+  // cook tapping Mark Ready saw no change and no reason.
   async function toggleLine(lineId: string) {
-    const res = await fetch(`/api/order-lines/${lineId}/ready`, { method: "POST" });
-    if (!res.ok) {
-      toast.error("Could not update item.");
-      return;
+    try {
+      const res = await fetch(`/api/order-lines/${lineId}/ready`, { method: "POST" });
+      if (!res.ok) {
+        toast.error("Could not update item.");
+        return;
+      }
+      onChanged();
+    } catch {
+      toast.error("No connection, so the item wasn't updated. Try again in a moment.");
     }
-    onChanged();
   }
 
   async function markOrderReady() {
-    const res = await fetch(`/api/orders/${order.id}/ready`, { method: "POST" });
-    if (!res.ok) {
-      toast.error("Could not mark order ready.");
-      return;
+    try {
+      const res = await fetch(`/api/orders/${order.id}/ready`, { method: "POST" });
+      if (!res.ok) {
+        toast.error("Could not mark order ready.");
+        return;
+      }
+      onChanged();
+    } catch {
+      toast.error("No connection, so the order wasn't marked ready. Try again in a moment.");
     }
-    onChanged();
   }
 
   return (

@@ -26,6 +26,8 @@ export function RiderOrdersView() {
     fetch("/api/rider/orders")
       .then((r) => r.json())
       .then((d) => setOrders(d.orders ?? []))
+      // No signal on the road is normal: keep showing the last list and try again on the next tick.
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
@@ -57,9 +59,16 @@ export function RiderOrdersView() {
 }
 
 async function markPickedUp(orderId: string) {
-  const res = await fetch(`/api/rider/orders/${orderId}/picked-up`, { method: "POST" });
-  return res.ok;
+  try {
+    const res = await fetch(`/api/rider/orders/${orderId}/picked-up`, { method: "POST" });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
+
+/** Every rider action needs the server; with no signal it says so instead of failing silently. */
+const NO_SIGNAL = "No signal, so that wasn't saved. Try again in a moment.";
 
 function OrderCard({ order, onChanged }: { order: RiderOrder; onChanged: () => void }) {
   const [mode, setMode] = useState<"idle" | "photo" | "otp">("idle");
@@ -72,7 +81,7 @@ function OrderCard({ order, onChanged }: { order: RiderOrder; onChanged: () => v
     try {
       const ok = await markPickedUp(order.id);
       if (!ok) {
-        toast.error("Could not mark picked up.");
+        toast.error(navigator.onLine ? "Could not mark picked up." : NO_SIGNAL);
         return;
       }
       onChanged();
@@ -93,6 +102,8 @@ function OrderCard({ order, onChanged }: { order: RiderOrder; onChanged: () => v
       }
       toast.success(`Order #${order.orderNumber} delivered.`);
       onChanged();
+    } catch {
+      toast.error(NO_SIGNAL);
     } finally {
       setSubmitting(false);
     }
@@ -107,13 +118,15 @@ function OrderCard({ order, onChanged }: { order: RiderOrder; onChanged: () => v
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         toast.error(data.error ?? "Incorrect code.");
         return;
       }
       toast.success(`Order #${order.orderNumber} delivered.`);
       onChanged();
+    } catch {
+      toast.error(NO_SIGNAL);
     } finally {
       setSubmitting(false);
     }

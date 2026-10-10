@@ -121,7 +121,7 @@ export function PaymentDialog({
   // the page loaded, which the cart total already lives with.
   const localTotals = useMemo(() => {
     if (!order) return null;
-    const lines = order.lines.filter((l) => l.unitPricePaisa != null);
+    const lines = (order.lines ?? []).filter((l) => l.unitPricePaisa != null);
     // A locally-queued order that has never reached the server has no stored line prices to price
     // from. Nothing to fall back to but its own total, which is what it was created with.
     if (lines.length === 0) return null;

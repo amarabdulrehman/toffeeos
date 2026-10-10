@@ -64,6 +64,8 @@ export function DeleteOrderDialog({
       toast.success(`Order #${order.orderNumber} deleted. It's in the Deleted orders log.`);
       reset();
       onDeleted();
+    } catch {
+      toast.error("Can't reach the server, so the order wasn't deleted. Try again once you're back online.");
     } finally {
       setBusy(false);
     }

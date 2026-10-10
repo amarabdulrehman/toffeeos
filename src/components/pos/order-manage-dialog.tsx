@@ -71,7 +71,15 @@ export function OrderManageDialog({
 
   const reload = useCallback(async () => {
     if (!orderId) return null;
-    const res = await fetch(`/api/orders/${orderId}`);
+    let res: Response;
+    try {
+      res = await fetch(`/api/orders/${orderId}`);
+    } catch {
+      // Offline this threw unhandled (found by e2e/pos-resilience.spec.ts). Every change here
+      // needs the server anyway, so say so rather than show nothing.
+      toast.error("Can't reach the server, so this order can't be changed right now. Try again once you're back online.");
+      return null;
+    }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       toast.error(data.error ?? "Could not load the order.");
