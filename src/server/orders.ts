@@ -570,6 +570,11 @@ export async function addLinesToOrder(
   ];
   const totals = computeProvisionalTotal(allPricingLines, orderDiscount, taxRules, settings);
 
+  // The next send to the kitchen, so its ticket can carry these lines alone. An order the kitchen
+  // hasn't been sent yet takes them into the round it will go with.
+  const lastRound = Math.max(1, ...order.lines.map((l) => l.kitchenRound));
+  const kitchenRound = order.sentToKitchenAt ? lastRound + 1 : lastRound;
+
   return runInTenantTransaction(tenantId, async (tx) => {
     for (const line of resolvedNewLines) {
       await tx.orderLine.create({
@@ -577,6 +582,7 @@ export async function addLinesToOrder(
           id: line.id,
           tenantId,
           orderId,
+          kitchenRound,
           menuItemId: line.menuItemId,
           variantId: line.variantId,
           nameSnapshot: line.nameSnapshot,

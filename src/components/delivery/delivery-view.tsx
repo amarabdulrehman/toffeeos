@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
+import { useSession } from "next-auth/react";
 import { Truck, PackageCheck, Bike } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -241,16 +242,28 @@ function BoardColumn({
   );
 }
 
+/** What a rider needs to sign in, shown once: only the password's hash is kept. */
+interface IssuedSignIn {
+  name: string;
+  phone: string;
+  password: string;
+}
+
 function RidersTab() {
+  const { data: session } = useSession();
+  const tenantSlug = session?.user && "tenantSlug" in session.user ? session.user.tenantSlug : "";
   const [riders, setRiders] = useState<Rider[]>([]);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [employeeId, setEmployeeId] = useState("");
+  const [issued, setIssued] = useState<IssuedSignIn | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
     fetch("/api/riders")
       .then((r) => r.json())
-      .then((d) => setRiders(d.riders ?? []));
+      .then((d) => setRiders(d.riders ?? []))
+      .catch(() => toast.error("Could not load riders — check your connection."));
   }, []);
 
   useEffect(load, [load]);
@@ -260,34 +273,61 @@ function RidersTab() {
       toast.error("Name and phone are required.");
       return;
     }
-    const res = await fetch("/api/riders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, phone, employeeId: employeeId || undefined }),
-    });
-    if (!res.ok) {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/riders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, phone, employeeId: employeeId || undefined }),
+      });
       const data = await res.json().catch(() => ({}));
-      toast.error(data.error ?? "Could not add rider.");
-      return;
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not add rider.");
+        return;
+      }
+      setIssued({ name: data.rider.name, phone: data.rider.phone, password: data.password });
+      toast.success("Rider added.");
+      setName("");
+      setPhone("");
+      setEmployeeId("");
+      load();
+    } catch {
+      toast.error("Could not add rider — check your connection.");
+    } finally {
+      setBusy(false);
     }
-    toast.success("Rider added. They can sign in at /rider/login with this phone number.");
-    setName("");
-    setPhone("");
-    setEmployeeId("");
-    load();
+  }
+
+  async function resetPassword(rider: Rider) {
+    if (!window.confirm(`Give ${rider.name} a new password? Their old one stops working and they are signed out.`)) return;
+    try {
+      const res = await fetch(`/api/riders/${rider.userId}/reset-password`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not reset the password.");
+        return;
+      }
+      setIssued({ name: rider.name, phone: rider.phone ?? "", password: data.password });
+    } catch {
+      toast.error("Could not reset the password — check your connection.");
+    }
   }
 
   async function toggleActive(rider: Rider) {
-    const res = await fetch(`/api/riders/${rider.userId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: !rider.isActive }),
-    });
-    if (!res.ok) {
-      toast.error("Could not update rider.");
-      return;
+    try {
+      const res = await fetch(`/api/riders/${rider.userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !rider.isActive }),
+      });
+      if (!res.ok) {
+        toast.error("Could not update rider.");
+        return;
+      }
+      load();
+    } catch {
+      toast.error("Could not update rider — check your connection.");
     }
-    load();
   }
 
   return (
@@ -298,21 +338,45 @@ function RidersTab() {
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
           <div className="space-y-1">
-            <Label>Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <Label htmlFor="rider-name">Name</Label>
+            <Input id="rider-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label>Phone</Label>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="03xxxxxxxxx" />
+            <Label htmlFor="rider-phone">Phone</Label>
+            <Input id="rider-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="03xxxxxxxxx" />
           </div>
           <div className="space-y-1">
-            <Label>Employee ID (optional)</Label>
-            <Input value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} />
+            <Label htmlFor="rider-employee-id">Employee ID (optional)</Label>
+            <Input id="rider-employee-id" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} />
           </div>
-          <Button onClick={create} className="self-end">
+          <Button onClick={create} disabled={busy} className="self-end">
             Add rider
           </Button>
         </div>
+
+        {issued && (
+          <div role="status" className="space-y-2 rounded-xl border-2 border-primary/40 bg-primary/5 p-4 text-sm">
+            <div className="font-semibold">Give these to {issued.name} to sign in</div>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+              <dt className="text-muted-foreground">Sign in at</dt>
+              <dd className="font-medium">{typeof window !== "undefined" ? window.location.host : ""}/rider/login</dd>
+              <dt className="text-muted-foreground">Restaurant URL</dt>
+              <dd className="font-mono font-medium">{tenantSlug}</dd>
+              <dt className="text-muted-foreground">Phone</dt>
+              <dd className="font-mono font-medium">{issued.phone}</dd>
+              <dt className="text-muted-foreground">Password</dt>
+              <dd className="font-mono text-base font-bold tracking-wider" data-testid="rider-password">
+                {issued.password}
+              </dd>
+            </dl>
+            <p className="text-muted-foreground">
+              This password won&apos;t be shown again. If it&apos;s lost, use Reset password to make a new one.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => setIssued(null)}>
+              Done
+            </Button>
+          </div>
+        )}
 
         <div className="space-y-2">
           {riders.map((r) => (
@@ -327,6 +391,11 @@ function RidersTab() {
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant={r.isActive ? "success" : "outline"}>{r.isActive ? "Active" : "Inactive"}</Badge>
+                {r.isActive && (
+                  <Button size="sm" variant="outline" onClick={() => resetPassword(r)}>
+                    Reset password
+                  </Button>
+                )}
                 <Button size="sm" variant="outline" onClick={() => toggleActive(r)}>
                   {r.isActive ? "Deactivate" : "Reactivate"}
                 </Button>

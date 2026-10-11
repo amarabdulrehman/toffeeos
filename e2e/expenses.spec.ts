@@ -474,7 +474,7 @@ test.describe("Expenses — the actual UI", () => {
 
     await page.getByRole("tab", { name: /Add expense/i }).click();
     await page.waitForTimeout(500);
-    await page.getByRole("combobox").first().click();
+    await page.locator("main").getByRole("combobox").first().click();
     await page.waitForTimeout(400);
     await page.getByRole("option", { name }).click();
     // Deliberately not a round number — a *100 rounding slip would survive "1000" but not this.

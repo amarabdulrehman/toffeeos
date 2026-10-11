@@ -39,7 +39,8 @@ export function LowStockBanner() {
         <div className="mt-1 text-muted-foreground">
           {alerts
             .slice(0, 3)
-            .map((a) => `${a.item.name} at ${a.location.name} (${a.quantityAtTrigger} ${a.item.unitOfMeasure})`)
+            // The quantity is the branch's total across its storerooms, which is what the alert is judged on.
+            .map((a) => `${a.item.name} (${a.quantityAtTrigger} ${a.item.unitOfMeasure} left)`)
             .join(" · ")}
           {alerts.length > 3 ? ` · +${alerts.length - 3} more` : ""}
         </div>

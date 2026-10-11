@@ -403,7 +403,7 @@ export const FEATURES: Feature[] = [
     limits: [
       "There's no live map of where riders are.",
       "It doesn't connect to third-party delivery apps.",
-      "Riders sign in with an email address and a password; signing in with a phone number isn't available yet.",
+      "Riders sign in with their phone number and a password from the Riders screen; there are no sign-in codes by text message.",
     ],
     modules: ["delivery"],
     related: ["restaurant-online-ordering-system", "restaurant-pos-system"],
@@ -619,8 +619,8 @@ export const FEATURES: Feature[] = [
       },
     ],
     limits: [
-      "Each person works in one branch at a time: signing in takes them to the first branch they were added to, and there's no switching between branches in the app.",
-      "A branch's own settings are changed by someone signed in to that branch, usually its manager; owners see every branch in the reports.",
+      "Each person works in one branch at a time, and switches to another from the menu; staff only to branches they've been added to, owners to any.",
+      "A branch's own settings are changed from inside that branch, so an owner switches to it first.",
     ],
     modules: [],
     branches: 2,

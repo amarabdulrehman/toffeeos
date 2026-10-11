@@ -7,6 +7,7 @@ import { hashPassword, generateTempPassword } from "@/lib/password";
 import { SEED_ROLES } from "@/server/permissions/registry";
 import { defaultModulesForTier, type TierKey } from "@/server/tier";
 import { defaultExpenseCategoryRows } from "@/lib/expense-categories";
+import { defaultTaxRuleRows } from "@/lib/default-tax-rules";
 import { sendEmail } from "@/server/email/adapter";
 import { env } from "@/lib/env";
 import { BRAND_NAME } from "@/config/brand";
@@ -98,18 +99,7 @@ async function provisionTenant(
 
     // Punjab PRA split-rate seed (16% cash / 8% card & digital) — see the plan doc's tax decision.
     // Fully editable per-branch afterward in Settings; this is just the day-one default.
-    await tx.taxRule.createMany({
-      data: [
-        { tenantId, branchId, name: "Cash (PRA)", paymentMethods: ["CASH"], rateBasisPoints: 1600 },
-        {
-          tenantId,
-          branchId,
-          name: "Card & digital (PRA)",
-          paymentMethods: ["CARD", "JAZZCASH", "EASYPAISA", "BANK_TRANSFER"],
-          rateBasisPoints: 800,
-        },
-      ],
-    });
+    await tx.taxRule.createMany({ data: defaultTaxRuleRows(tenantId, branchId) });
 
     /**
      * A stock location, because without one inventory silently does nothing.

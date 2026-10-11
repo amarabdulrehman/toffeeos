@@ -137,6 +137,7 @@ export async function voidOrderLine(
           isVoided: true,
           kitchenReady: line.kitchenReady,
           notes: line.notes,
+          kitchenRound: line.kitchenRound,
         },
       });
       if (line.modifiers.length > 0) {

@@ -57,6 +57,12 @@ export async function stockReport(tenantId: string, branchId: string, opts: { be
   // applyStockDelta landed — old rows can still carry accumulated float drift (e.g. -2.8e-15).
   const levelByKey = new Map(levels.map((l) => [`${l.locationId}:${l.itemId}`, Math.round(l.quantity * 1000) / 1000]));
   const keptInBranch = new Set(levels.map((l) => l.itemId));
+  // Low stock is judged on the branch's total, not storeroom by storeroom. One level per
+  // ingredient, held against each storeroom, flagged a kitchen stocked each morning from the main
+  // store as low every day, while the store behind it was full. The question the level answers is
+  // "do we need to buy?", and the branch total is what answers it.
+  const branchTotal = new Map<string, number>();
+  for (const l of levels) branchTotal.set(l.itemId, (branchTotal.get(l.itemId) ?? 0) + l.quantity);
 
   // An ingredient is listed in each storeroom it's kept in (has a stock level there). One never
   // received anywhere in the branch is listed once, in the branch's first storeroom, so it can
@@ -73,8 +79,9 @@ export async function stockReport(tenantId: string, branchId: string, opts: { be
         itemName: item.name,
         unitOfMeasure: item.unitOfMeasure,
         quantity: levelByKey.get(`${location.id}:${item.id}`) ?? 0,
+        branchQuantity: Math.round((branchTotal.get(item.id) ?? 0) * 1000) / 1000,
         thresholdQty: item.lowStockThresholdQty,
-        belowThreshold: (levelByKey.get(`${location.id}:${item.id}`) ?? 0) < item.lowStockThresholdQty,
+        belowThreshold: Math.round((branchTotal.get(item.id) ?? 0) * 1000) / 1000 < item.lowStockThresholdQty,
       }))
   );
 
@@ -125,20 +132,29 @@ export async function applyStockDelta(
     level = await tx.stockLevel.update({ where: { id: level.id }, data: { quantity: rounded } });
   }
 
-  const isBelow = level.quantity < item.lowStockThresholdQty;
-  const activeAlert = await tx.lowStockAlert.findFirst({
-    where: { tenantId, itemId, locationId, status: "ACTIVE" },
+  // Judged on the branch's total across its storerooms, the same as the stock report, so moving
+  // stock from the main store to the kitchen neither raises nor clears an alert. One alert per
+  // ingredient per branch; locationId records where the movement that crossed the level happened.
+  const totals = await tx.stockLevel.aggregate({
+    where: { tenantId, itemId, location: { branchId } },
+    _sum: { quantity: true },
+  });
+  const branchQuantity = Math.round((totals._sum.quantity ?? 0) * 1000) / 1000;
+  const isBelow = branchQuantity < item.lowStockThresholdQty;
+  const activeAlerts = await tx.lowStockAlert.findMany({
+    where: { tenantId, itemId, branchId, status: "ACTIVE" },
+    select: { id: true },
   });
 
   let newAlert: NewLowStockAlert | null = null;
-  if (isBelow && !activeAlert) {
+  if (isBelow && activeAlerts.length === 0) {
     await tx.lowStockAlert.create({
       data: {
         tenantId,
         branchId,
         itemId,
         locationId,
-        quantityAtTrigger: level.quantity,
+        quantityAtTrigger: branchQuantity,
         thresholdAtTrigger: item.lowStockThresholdQty,
       },
     });
@@ -148,12 +164,13 @@ export async function applyStockDelta(
       unitOfMeasure: item.unitOfMeasure,
       locationId,
       branchId,
-      quantityAtTrigger: level.quantity,
+      quantityAtTrigger: branchQuantity,
       thresholdAtTrigger: item.lowStockThresholdQty,
     };
-  } else if (!isBelow && activeAlert) {
-    await tx.lowStockAlert.update({
-      where: { id: activeAlert.id },
+  } else if (!isBelow && activeAlerts.length > 0) {
+    // All of them: alerts raised per storeroom before this change can still be open side by side.
+    await tx.lowStockAlert.updateMany({
+      where: { id: { in: activeAlerts.map((a) => a.id) } },
       data: { status: "RESOLVED", resolvedAt: new Date() },
     });
   }

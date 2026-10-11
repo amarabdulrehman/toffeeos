@@ -19,7 +19,7 @@ export const POST = defineHandler(
     audit: (input) => ({ action: "branch.create", entityType: "Branch", metadata: { name: input.name } }),
   },
   async ({ session, input }) => {
-    const branch = await createBranch(session.tenantId, input);
+    const branch = await createBranch(session.tenantId, input, session.id);
     return { branch };
   }
 );

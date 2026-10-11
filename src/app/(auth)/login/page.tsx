@@ -14,7 +14,7 @@ import { ForgotPasswordDialog } from "@/components/auth/forgot-password-dialog";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? "/app/dashboard";
+  const nextParam = searchParams.get("next");
 
   const [tenantSlug, setTenantSlug] = useState("");
   const [email, setEmail] = useState("");
@@ -42,8 +42,20 @@ function LoginForm() {
       }
       return;
     }
-    router.push(next);
+    router.push(nextParam ?? (await landingFor()));
     router.refresh();
+  }
+
+  /** A rider's work is the rider app, not the back office; everyone else starts on the dashboard.
+   * The rider app sends anyone it won't serve back to the dashboard, so this can't loop. */
+  async function landingFor(): Promise<string> {
+    try {
+      const session = await fetch("/api/auth/session").then((r) => r.json());
+      if (session?.user?.roleKey === "rider") return "/rider/orders";
+    } catch {
+      // Fall through to the dashboard.
+    }
+    return "/app/dashboard";
   }
 
   return (

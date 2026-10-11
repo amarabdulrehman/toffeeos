@@ -72,6 +72,8 @@ interface StockRow {
   itemName: string;
   unitOfMeasure: string;
   quantity: number;
+  /** The ingredient's total across this branch's storerooms, which is what low stock is judged on. */
+  branchQuantity: number;
   thresholdQty: number;
   belowThreshold: boolean;
 }
@@ -180,7 +182,8 @@ export function InventoryView({ perms = NO_PERMS }: { perms?: InventoryPerms }) 
                 <StatCard label="Items tracked" value={report.length} icon={Package} hero />
                 <StatCard
                   label="Below threshold"
-                  value={report.filter((r) => r.belowThreshold).length}
+                  // Ingredients, not rows: one kept in two storerooms is one thing to buy.
+                  value={new Set(report.filter((r) => r.belowThreshold).map((r) => r.itemId)).size}
                   icon={TriangleAlert}
                   tone={report.some((r) => r.belowThreshold) ? "warning" : undefined}
                   hero={report.some((r) => r.belowThreshold)}
@@ -201,7 +204,7 @@ export function InventoryView({ perms = NO_PERMS }: { perms?: InventoryPerms }) 
                       <TableHead>Item</TableHead>
                       <TableHead>Location</TableHead>
                       <TableHead>Quantity</TableHead>
-                      <TableHead>Threshold</TableHead>
+                      <TableHead>Low below (all storerooms)</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -222,6 +225,11 @@ export function InventoryView({ perms = NO_PERMS }: { perms?: InventoryPerms }) 
                         <TableCell className="text-muted-foreground">{r.locationName}</TableCell>
                         <TableCell className="tabular-nums">
                           {r.quantity} {r.unitOfMeasure}
+                          {r.branchQuantity !== r.quantity && (
+                            <span className="block text-xs text-muted-foreground">
+                              {r.branchQuantity} {r.unitOfMeasure} across all storerooms
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="tabular-nums text-muted-foreground">
                           {r.thresholdQty} {r.unitOfMeasure}
@@ -476,7 +484,7 @@ function ItemsTab({ items, onChanged, canSetAlertLevels }: { items: Item[]; onCh
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Unit</TableHead>
-              <TableHead>Threshold</TableHead>
+              <TableHead>Low below (all storerooms)</TableHead>
               <TableHead className="w-px" />
             </TableRow>
           </TableHeader>

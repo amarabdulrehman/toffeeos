@@ -11,6 +11,8 @@ import { ClockOutButton } from "@/components/clock-out-button";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { AppSidebarNav } from "@/components/app-sidebar-nav";
 import { AccountSuspended } from "@/components/tier/account-suspended";
+import { BranchSwitcher } from "@/components/branch-switcher";
+import { listMyBranches } from "@/server/branches";
 
 // Dark navy "chrome" sidebar, same --sidebar tokens as the POS/KDS headers — this is the one nav
 // every back-office screen shares, so unifying it here means every screen behind it (Dashboard,
@@ -54,7 +56,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
     );
   }
-  const kdsEnabled = await getBranchKdsEnabled(user.tenantId, user.branchId);
+  const [kdsEnabled, myBranches] = await Promise.all([
+    getBranchKdsEnabled(user.tenantId, user.branchId),
+    listMyBranches(user.tenantId, user.id),
+  ]);
 
   // Purely a notice — never gates anything. A tenant whose paid period has lapsed keeps working
   // normally until a platform admin manually suspends them; this just tells them to renew.
@@ -78,6 +83,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
       <AppSidebarNav permissions={user.permissions} enabledModules={enabledModules} kdsEnabled={kdsEnabled} />
       <div className="mt-auto space-y-2 border-t border-sidebar-border pt-4">
+        {myBranches.length > 1 ? (
+          <BranchSwitcher branches={myBranches} currentBranchId={user.branchId} />
+        ) : (
+          <div className="truncate px-1 text-xs text-sidebar-foreground/55">{user.branchName}</div>
+        )}
         <div className="px-1 text-xs">
           <div className="font-medium">{user.name}</div>
           <div className="text-sidebar-foreground/55">{user.roleKey.replace("_", " ")}</div>

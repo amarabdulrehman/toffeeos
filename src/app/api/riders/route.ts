@@ -16,7 +16,7 @@ const createSchema = z.object({
 export const POST = defineHandler(
   { permission: "delivery.manageRiders", input: createSchema },
   async ({ session, input }) => {
-    const rider = await createRider(session.tenantId, session.branchId, input);
-    return { rider };
+    // The password comes back this once, for the manager to hand to the rider.
+    return createRider(session.tenantId, session.branchId, input);
   }
 );

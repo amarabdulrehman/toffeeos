@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { authFile, uniqueSuffix } from "./fixtures/test-data";
-import { getAvailableTable } from "./fixtures/api";
+import { authFile, uniqueSuffix, SEED_MENU_CATEGORY, SEED_MENU_ITEM, SEED_MENU_ITEM_2 } from "./fixtures/test-data";
+import { createOrder, getAvailableTable, getMenuItemId } from "./fixtures/api";
 
 /**
  * Printing a kitchen ticket from the till.
@@ -145,5 +145,74 @@ test.describe("Kitchen ticket from the POS", () => {
     ).toHaveCount(0);
 
     await ctx.close();
+  });
+
+  test("items added to an order already in the kitchen print on a ticket of their own", async ({ page, request }) => {
+    /**
+     * A table orders a kebab, it goes to the kitchen, then they ask for a dahi bhalla. The ticket
+     * for that second round used to list the whole order again, so the kitchen either made the
+     * kebab twice or had to work out by eye which line was new. The add-on ticket carries only the
+     * new items, under the order number, and says the rest has already gone.
+     */
+    const firstId = await getMenuItemId(request, SEED_MENU_ITEM.name);
+    const order = await createOrder(request, { type: "TAKEAWAY", lines: [{ menuItemId: firstId, quantity: 1 }] });
+    const sent = await request.post(`/api/orders/${order.id}/send-to-kitchen`, { data: {} });
+    expect(sent.ok(), await sent.text()).toBeTruthy();
+
+    try {
+      await page.goto("/pos");
+      await expect(page.getByText("Online — all orders synced").first()).toBeVisible({ timeout: 15_000 });
+      await page.getByRole("button", { name: "Order Queue" }).click();
+      const card = page.locator("div.rounded-xl.border").filter({ hasText: `#${order.orderNumber} · ` }).last();
+      await card.getByRole("button", { name: "Add items" }).click();
+
+      await page.getByRole("button", { name: SEED_MENU_CATEGORY, exact: false }).first().click();
+      await page.getByRole("button", { name: SEED_MENU_ITEM_2.name, exact: false }).first().click();
+      await page.getByRole("button", { name: "Send to Kitchen" }).click();
+      await expect(page.getByText(`Added to order #${order.orderNumber}.`)).toBeVisible({ timeout: 30_000 });
+
+      await page.getByRole("button", { name: "Print ticket" }).click();
+      const dialog = page.getByRole("dialog", { name: /Kitchen ticket/ });
+      const ticket = dialog.locator("#printable-kot");
+      await expect(ticket.getByText("ADD-ON TICKET")).toBeVisible({ timeout: 15_000 });
+      await expect(ticket.getByText(`#${order.orderNumber}`, { exact: true }), "the order it belongs to").toBeVisible();
+      await expect(ticket.getByText(`1× ${SEED_MENU_ITEM_2.name}`), "what was added").toBeVisible();
+      await expect(ticket.getByText(SEED_MENU_ITEM.name), "and not what the kitchen already has").toHaveCount(0);
+
+      // The whole order is still a tap away, for a kitchen that lost the first slip.
+      await dialog.getByRole("button", { name: "Whole order" }).click();
+      await expect(ticket.getByText("KITCHEN TICKET")).toBeVisible();
+      await expect(ticket.getByText(`1× ${SEED_MENU_ITEM.name}`)).toBeVisible();
+      await expect(ticket.getByText(`1× ${SEED_MENU_ITEM_2.name}`)).toBeVisible();
+      await page.keyboard.press("Escape");
+
+      // Reprinting from the queue starts on the whole order, with the add-ons one tap away.
+      await card.getByRole("button", { name: "Ticket", exact: true }).click();
+      await expect(ticket.getByText("KITCHEN TICKET")).toBeVisible({ timeout: 15_000 });
+      await dialog.getByRole("button", { name: "Added items only" }).click();
+      await expect(ticket.getByText(SEED_MENU_ITEM.name)).toHaveCount(0);
+      await expect(ticket.getByText(`1× ${SEED_MENU_ITEM_2.name}`)).toBeVisible();
+    } finally {
+      await request.post(`/api/orders/${order.id}/void`, { data: { reason: "E2E add-on ticket cleanup" } });
+    }
+  });
+
+  test("an order with nothing added offers no add-on choice", async ({ page, request }) => {
+    const firstId = await getMenuItemId(request, SEED_MENU_ITEM.name);
+    const order = await createOrder(request, { type: "TAKEAWAY", lines: [{ menuItemId: firstId, quantity: 2 }] });
+    const sent = await request.post(`/api/orders/${order.id}/send-to-kitchen`, { data: {} });
+    expect(sent.ok(), await sent.text()).toBeTruthy();
+    try {
+      await page.goto("/pos");
+      await expect(page.getByText("Online — all orders synced").first()).toBeVisible({ timeout: 15_000 });
+      await page.getByRole("button", { name: "Order Queue" }).click();
+      const card = page.locator("div.rounded-xl.border").filter({ hasText: `#${order.orderNumber} · ` }).last();
+      await card.getByRole("button", { name: "Ticket", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: /Kitchen ticket/ });
+      await expect(dialog.getByText(`2× ${SEED_MENU_ITEM.name}`)).toBeVisible({ timeout: 15_000 });
+      await expect(dialog.getByRole("button", { name: "Added items only" })).toHaveCount(0);
+    } finally {
+      await request.post(`/api/orders/${order.id}/void`, { data: { reason: "E2E add-on ticket cleanup" } });
+    }
   });
 });

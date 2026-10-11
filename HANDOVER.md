@@ -360,26 +360,36 @@ or could hurt a paying client.
   from the Order Queue now, and to leave card and other methods for the connection, which the
   payment dialog now enforces (above). `e2e/offline-sync.spec.ts` covers the path: an order punched offline, paid
   in cash from the queue while still offline, synced at exactly its total.
-- **Riders added from the riders screen can't sign in in production.** They get a name and phone
-  number only. Phone sign-in is refused wherever no SMS or WhatsApp sender exists
-  (`otpDeliveryAvailable`), which is production today, and the rider sign-in page is phone-only.
-
-  What works: invite the rider by link with the Rider role. They set a password, sign in with
-  email, and open `/rider/orders` themselves, since email sign-in lands on the dashboard.
+- **Riders added from the riders screen couldn't sign in in production. Fixed 11 October.** They
+  got a name and phone number only, and the rider page offered only a texted code, which
+  production can't send (`otpDeliveryAvailable`). Now the Riders screen issues a password, shown
+  once to the manager with the restaurant URL and phone, and "Reset password" makes a new one and
+  signs the rider out. The rider page signs in with restaurant, phone and password (the
+  `rider-password` provider; phones match on their digits, so +92 and 0 forms are the same rider);
+  the code option shows only where codes can be sent. One phone per staff member, so sign-in is
+  unambiguous. Deactivating a rider now ends their session too. Riders who sign in by email land
+  on `/rider/orders`. Existing riders have no password until a manager presses Reset password.
+  `e2e/rider-sign-in.spec.ts`.
 - **Staff PINs can't be set anywhere,** so PIN sign-in, and the automatic clock-in that rides on
   it, never happen for a real restaurant. `hashPin` is used only by the seed, and the sign-in page
   has no PIN option.
 
   Attendance is manual entries only, and the "Clock out" button has nothing to close unless a
   manager left a record open.
-- **Nobody can switch branch.** Email sign-in always lands on a person's first branch
-  (`session-user.ts`). Branch settings and tax rates are saved for the signed-in branch only
-  (`/api/branch-settings`). So an owner can't set up their second branch themselves; someone
-  invited to that branch has to. Reports are the exception: owners see every branch.
-- **A new branch starts with no tax rates, and charges 0% until it gets some.** `createBranch`
-  creates the branch's settings but no `TaxRule` rows (only sign-up seeds the Punjab rates), and
-  `resolveTaxRate` falls back to 0. Combined with the point above, the owner can't add them. Every
-  second branch should be checked before it takes a sale.
+- **Nobody could switch branch, and a new branch started at 0% tax. Fixed 11 October.**
+  - The back-office sidebar has a Branch picker for anyone with more than one branch. It posts to
+    the session endpoint, and the JWT callback rebuilds the session for a membership the person
+    holds. Refused while the device has offline actions waiting to sync, since they replay against
+    the session's branch.
+  - Owners can open every active branch: switching to one they were never added to joins it as
+    owner (`joinBranchAsOwner`), so branches made before this fix work without touching data.
+  - A new branch copies the tax rates of the restaurant's oldest branch that has any (PRA defaults
+    if none), gets a "Main Store" stock location, and takes every owner and its creator as members.
+  - **Branches that already exist with no tax rates still charge 0%.** Nothing was changed in live
+    data; an owner should switch to each second branch and check Settings → Tax before it trades.
+  - The session rebuild now refuses a token that was already signed out. Before, any revoked
+    cookie could call the session update and be re-stamped as new (proved: 200 without the check).
+  `e2e/branch-switching.spec.ts`.
 - **The delivery handoff code never reaches the customer.** It's generated on assignment and
   checked in the rider app's "Enter code", but no page, receipt or message ever shows it. In
   practice every delivery is proved by photo, which is what the site now says.

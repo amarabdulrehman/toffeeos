@@ -27,6 +27,8 @@ interface KdsLine {
   /** Taken off the order after the kitchen had it. Shown struck through, not hidden — the cook may
    * already be making it and needs to see that it's no longer wanted. */
   isVoided?: boolean;
+  /** Which send to the kitchen the line came in; above 1 means it was added to the order later. */
+  kitchenRound?: number;
 }
 
 interface KdsOrder {
@@ -181,6 +183,10 @@ function OrderCard({
               className="mt-0.5 size-6 rounded-[6px] [&_svg]:size-4.5"
             />
             <span className={`min-w-0 ${line.kitchenReady ? "text-muted-foreground/50 line-through" : ""}`}>
+              {/* Added after the order first came through, so it isn't mistaken for food already made. */}
+              {(line.kitchenRound ?? 1) > 1 && (
+                <span className="mr-1.5 rounded bg-info/25 px-1.5 align-middle text-xs font-bold text-info">ADDED</span>
+              )}
               <span className={line.kitchenReady ? "" : "font-semibold"}>
                 {line.quantity}× {line.nameSnapshot}
               </span>

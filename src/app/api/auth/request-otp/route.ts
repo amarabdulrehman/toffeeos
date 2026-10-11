@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   // the { ok: true } response below exists to close.
   if (!otpDeliveryAvailable()) {
     return NextResponse.json(
-      { error: "Phone sign-in isn't available yet. Please sign in with your email and password." },
+      { error: "Sign-in codes by text message aren't available. Riders sign in with their phone number and password; other staff with email and password." },
       { status: 503 }
     );
   }

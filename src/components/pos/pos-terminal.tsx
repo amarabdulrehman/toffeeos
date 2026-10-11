@@ -171,6 +171,8 @@ export function PosTerminal({
   const [paying, setPaying] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState<OrderDto | null>(null);
   const [kotOrder, setKotOrder] = useState<OrderDto | null>(null);
+  /** The ticket opens on the items just added, not the whole order (see KotDialog). */
+  const [kotAddedOnly, setKotAddedOnly] = useState(false);
   const [billOrderId, setBillOrderId] = useState<string | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState<OrderDto | null>(null);
   const [managingOrderId, setManagingOrderId] = useState<string | null>(null);
@@ -651,7 +653,11 @@ export function PosTerminal({
         if (showQueue) loadQueue();
         return;
       }
-      toast.success(`Added to order #${target.orderNumber}.`);
+      // The added items get their own ticket, so the kitchen makes only those, not the order again.
+      toast.success(`Added to order #${target.orderNumber}.`, {
+        duration: canPrintKot ? 10_000 : undefined,
+        action: canPrintKot ? { label: "Print ticket", onClick: () => void openKotFor(target.id, true) } : undefined,
+      });
       // addLinesToOrder's response is the bare updated Order row (no .lines — see
       // src/server/orders.ts) — refetch the full order the same way the order queue already does,
       // rather than teaching that endpoint a response shape nothing else needs.
@@ -736,14 +742,21 @@ export function PosTerminal({
   // refetches the full order the same way the order queue and the add-items flow already do.
   /** The create/send responses are bare Order rows — no lines, no table — so the ticket is built
    * from the same full refetch the receipt uses. */
-  async function openKotFor(orderId: string) {
+  /** `fallback` is the copy to print when the fresh one can't be fetched — offline, a reprint from
+   * the queue's own copy beats none. */
+  async function openKotFor(orderId: string, addedOnly = false, fallback?: OrderDto) {
+    let full: OrderDto | undefined;
     try {
       const data = await fetch("/api/orders").then((r) => r.json());
-      const full: OrderDto | undefined = (data.orders ?? []).find((o: OrderDto) => o.id === orderId);
-      if (full) setKotOrder(full);
+      full = (data.orders ?? []).find((o: OrderDto) => o.id === orderId);
     } catch {
       // The order is already with the kitchen; failing to show a ticket is not worth an error on
       // top of a successful send. It can be reprinted from the Order Queue.
+    }
+    const order = full ?? fallback;
+    if (order) {
+      setKotAddedOnly(addedOnly);
+      setKotOrder(order);
     }
   }
 
@@ -778,7 +791,9 @@ export function PosTerminal({
             : `More items added to order #${approval.orderNumber} and sent to kitchen.`,
           {
             duration: canPrintKot ? 10_000 : undefined,
-            action: canPrintKot ? { label: "Print ticket", onClick: () => void openKotFor(orderId) } : undefined,
+            action: canPrintKot
+              ? { label: "Print ticket", onClick: () => void openKotFor(orderId, approval.kind !== "NEW_ORDER") }
+              : undefined,
           }
         );
       } else {
@@ -1102,7 +1117,13 @@ export function PosTerminal({
             onCancel={(o) => setCancellingOrder(o)}
             canCancel={canCancel}
             onReprintReceipt={canReprintReceipt ? (o) => openReceiptFor(o.id) : undefined}
-            onReprintKot={canReprintKot ? (o) => setKotOrder(o) : undefined}
+            onReprintKot={
+              canReprintKot
+                ? // Fetched fresh, not the queue's copy: the queue may not have reloaded since
+                  // items were added, and a reprint missing them is the wrong thing to cook from.
+                  (o) => void openKotFor(o.id, false, o)
+                : undefined
+            }
             onPrintBill={canPrintBill ? (o) => setBillOrderId(o.id) : undefined}
             onManage={canManage ? (o) => setManagingOrderId(o.id) : undefined}
             canRefund={canRefund}
@@ -1255,10 +1276,12 @@ export function PosTerminal({
                       notes: l.notes ?? null,
                       modifiers: l.modifiers,
                       isVoided: l.isVoided,
+                      kitchenRound: l.kitchenRound,
                     })),
                   }
                 : null
             }
+            addedOnly={kotAddedOnly}
             branchName={branchName}
             onClose={() => setKotOrder(null)}
           />

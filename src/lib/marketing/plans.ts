@@ -50,7 +50,6 @@ const MODULE_DETAIL: Record<string, string> = {
   crm: "Customer profiles and loyalty points.",
   finance: "Expenses by category, and profit and loss.",
   reports: "Discount and void audit, cancellations and inventory valuation.",
-  // Not "a rider app": riders added from the Riders screen can't sign in to it in production.
   delivery: "Delivery board, rider assignment and photo proof of delivery, plus rider performance.",
   online: "Your own ordering site and QR ordering at the table, with no per-order fee.",
   hr: "Employee records, shifts, attendance, payroll and payslips.",

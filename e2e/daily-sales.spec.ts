@@ -201,7 +201,7 @@ test.describe("Daily Sales", () => {
     test.skip(!empty, "every branch has sales on the quiet day");
 
     await page.goto("/app/sales");
-    const picker = page.getByRole("combobox", { name: "Branch" });
+    const picker = page.getByRole("combobox", { name: "Branch", exact: true });
     await expect(picker).toContainText(`All ${branches.length} branches`);
     await page.getByLabel("Pick a day").fill(QUIET_DAY);
 
@@ -211,7 +211,7 @@ test.describe("Daily Sales", () => {
     await expect.poll(heroDigits, { timeout: 20_000 }).toBe(String(Math.round(all / 100)));
 
     await picker.click();
-    await page.getByRole("option", { name: empty!.name }).click();
+    await page.getByRole("listbox").getByRole("option", { name: empty!.name }).click();
     await expect(picker).toContainText(empty!.name);
     await expect(page.getByText(new RegExp(`^${empty!.name} · each day ends at`))).toBeVisible();
     await expect.poll(heroDigits, { message: "that branch sold nothing that day", timeout: 20_000 }).toBe("0");

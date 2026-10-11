@@ -162,7 +162,7 @@ const PANELS: Panel[] = [
   {
     room: "In the office",
     title: "One branch or six, same numbers.",
-    // Reports only: nobody can switch branch, and a branch's tax is set from inside that branch.
+    // Reports, not more: a branch's tax and settings are set from inside that branch.
     body: "Sales, items, staff, discounts and voids, profit and loss — for each branch, and across all your branches in one report.",
     covers: ["Full report suite", "Multi-branch", "Staff & roles", "Payroll & HR"],
     visual: <RevenueBars />,

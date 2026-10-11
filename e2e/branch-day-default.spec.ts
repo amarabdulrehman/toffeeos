@@ -36,6 +36,11 @@ test("a branch added to a restaurant ends its day at 3am", async ({ browser, bas
     await ctx.close();
     if (branchId) {
       await withDb(async (c) => {
+        // A new branch comes with its tax rates, a stock location and its owners' memberships.
+        await c.query('UPDATE "BranchSettings" SET "defaultStockLocationId" = NULL WHERE "branchId" = $1', [branchId]);
+        await c.query('DELETE FROM "StockLocation" WHERE "branchId" = $1', [branchId]);
+        await c.query('DELETE FROM "TaxRule" WHERE "branchId" = $1', [branchId]);
+        await c.query('DELETE FROM "Membership" WHERE "branchId" = $1', [branchId]);
         await c.query('DELETE FROM "BranchSettings" WHERE "branchId" = $1', [branchId]);
         await c.query('DELETE FROM "Branch" WHERE id = $1', [branchId]);
       });

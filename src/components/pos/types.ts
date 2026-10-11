@@ -125,6 +125,8 @@ export interface OrderDto {
     /** Taken off the order (pos.order.voidLine). Kept, not deleted, so the kitchen and the voids
      * report can see it — but never charged, counted, or printed on a bill or receipt. */
     isVoided?: boolean;
+    /** Which send to the kitchen it came in (1 = with the order); see KotDialog's add-on ticket. */
+    kitchenRound?: number;
   }[];
   /** The rest of these are already returned by GET /api/orders (no `select`, so every scalar
    * column comes back) — just never modeled on the client before there was a reason to read them.

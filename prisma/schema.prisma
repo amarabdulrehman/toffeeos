@@ -1175,6 +1175,10 @@ model OrderLine {
   isVoided       Boolean       @default(false)
   kitchenReady   Boolean       @default(false)
   notes          String?
+  /// Which send to the kitchen this line came in: 1 for the items the order was punched with, 2
+  /// for the first lot added afterwards, and so on. Lets a kitchen ticket carry only what was
+  /// added, so the kitchen doesn't make the first round again.
+  kitchenRound   Int           @default(1)
 
   modifiers OrderLineModifier[]
 

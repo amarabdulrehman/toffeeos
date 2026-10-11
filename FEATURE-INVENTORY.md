@@ -71,16 +71,11 @@ commit makes `e2e/public-claims.spec.ts` fail on each of them. It also found a s
    payments wait too.
 2. **Online ordering page: "each dish with its description and photo".** Nothing in the app can
    set a dish photo (see 4.6), so no real restaurant's storefront shows one.
-3. **"A rider app"** (pricing page, delivery module line). It exists, but riders added from the
-   Riders screen can't sign in to it in production (see 7.3). The delivery feature page states
-   email sign-in, which only works for riders invited by link.
-4. **Multi-branch wording** ("One branch or six, same numbers", "each branch with its own …
-   tax setup and staff", "Multi-branch management" in the structured data).
-   - True of the data, but nobody can switch branch, and a branch's settings can only be changed
-     from inside that branch (see 13.2).
-   - A new branch starts with **no tax rates** and charges 0% until someone signed in there adds
-     them (see 13.3).
-   - The multi-branch feature page states the switching limit; the homepage and pricing page don't.
+3. **"A rider app"**: resolved 11 October 2026. Riders added from the Riders screen sign in
+   with phone and password (see 7.3), and the delivery page says so.
+4. **Multi-branch wording**: resolved 11 October 2026. Staff switch branch from the menu, owners
+   can open every branch, and a new branch copies the restaurant's tax rates (see 13.2, 13.3).
+   Branches created before then with no tax rates still charge 0% until an owner adds them.
 5. **The client PDF built from the phase plans** gives WhatsApp Business Messaging a page as a
    shipped feature (it's **Stubbed**, see 9.1) and says riders are "tracked" (**not built**, see 7.8).
 
@@ -101,8 +96,7 @@ Two qualifications:
   KRIMSOLS can switch any module on or off for one restaurant (`setTenantFeatures`,
   `src/server/platform.ts`), so a restaurant can differ from its plan.
 - **WhatsApp Messaging is gated to Complete but isn't advertised,** correctly, since it's Stubbed.
-- **Complete's Delivery & Rider Management is Partial** (rider sign-in, 7.3), and **its Payroll &
-  HR attendance is manual only** (12.3).
+- **Complete's Payroll & HR attendance is manual only** (12.3).
 
 ### Settings that exist but do nothing, or can't be changed
 
@@ -229,7 +223,8 @@ Check this list before promising a client they can change something:
     `src/components/branches/branches-view.tsx`; `src/server/tenant-signup.ts`.
 - **Doesn't:**
   - No FBR, PRA or other tax-authority reporting or integration.
-  - **A branch with no tax rules charges 0%.** New branches get none (13.3).
+  - **A branch with no tax rules charges 0%.** New branches copy the restaurant's rates (13.3);
+    older branches made without any still need them added.
 - **Configurable:** Per branch, from inside that branch.
 
 ### 1.11 Service charge — Live · Every plan
@@ -294,8 +289,13 @@ Check this list before promising a client they can change something:
 
 ### 1.17 Kitchen tickets at the till — Live · Every plan
 - **What it is:** Print the kitchen ticket from the counter, for kitchens without a screen.
-- **Does:** Print or reprint any order's kitchen ticket from the Order Queue.
-  `src/components/kds/kot-dialog.tsx`.
+- **Does:**
+  - Print or reprint any order's kitchen ticket from the Order Queue.
+  - **Add-on tickets.** Items added to an order already in the kitchen print on their own
+    ticket, headed "ADD-ON TICKET … ADDED ITEMS ONLY" with the order number, so the first round
+    isn't made again. It's offered when the items are added; a reprint can choose "Added items
+    only" or "Whole order". The kitchen screen marks those lines ADDED.
+  - `OrderLine.kitchenRound` counts each send; `src/components/kds/kot-dialog.tsx`.
 - **Configurable:** No.
 
 ### 1.18 Printing and paper width — Partial · Every plan
@@ -496,16 +496,17 @@ QR codes per table are covered under online ordering (8.2).
 
 ### 5.6 Low-stock alerts — Partial · Growth
 - **What it is:** Know when something is running low.
-- **Does:** A low-stock level per ingredient; crossing it raises an alert on the dashboard.
-  `applyStockDelta`, `src/components/dashboard/low-stock-banner.tsx`.
+- **Does:**
+  - A low-stock level per ingredient, judged on the **branch's total across its storerooms**
+    (since 11 October 2026). Crossing it raises one alert on the dashboard; a delivery clears it.
+  - Moving stock between storerooms (main store to kitchen) neither raises nor clears an alert.
+  - The stock report lists an ingredient in each storeroom that keeps it, with the branch total.
+  - `applyStockDelta`, `stockReport` (`src/server/inventory.ts`),
+    `src/components/dashboard/low-stock-banner.tsx`; `e2e/low-stock-storerooms.spec.ts`.
 - **Doesn't:**
   - **No message is sent.** The WhatsApp low-stock alert is Stubbed (9.1).
-  - **A branch with two or more storerooms sees false "Low stock" rows.** The stock report pairs
-    every ingredient with every storeroom and holds each pair to the one per-ingredient level
-    (`stockReport`, `src/server/inventory.ts`). Keep chicken only in the cold room, and the main
-    store shows chicken at 0 kg, "Low stock". With a main store and a cold room, the demo showed
-    24 of 44 rows below threshold when 2 really were. The dashboard alerts aren't affected: they
-    only fire when a stock movement crosses the level.
+  - No separate level per storeroom (e.g. "keep 3 kg in the kitchen").
+  - Changing an ingredient's level doesn't re-check it until stock next moves.
 - **Configurable:** Level per ingredient.
 
 ### 5.7 Stock count stocktake sheet — Not built
@@ -554,17 +555,14 @@ QR codes per table are covered under online ordering (8.2).
   permission. `assignRider`.
 - **Configurable:** No.
 
-### 7.3 Rider app — Partial · Complete
+### 7.3 Rider app — Live · Complete
 - **What it is:** The rider's own screen on their phone.
 - **Does:** Only their orders, oldest first, with items, customer name, tap-to-call number and
   address; mark picked up, then delivered. `src/components/rider/rider-orders-view.tsx`.
 - **Doesn't:**
-  - **Riders added from the Riders screen can't sign in in production.** They get a name and phone
-    only, and phone sign-in is refused where no SMS or WhatsApp sender exists (`otpDeliveryAvailable`).
-  - Workaround: invite the rider by link with the Rider role. They sign in with email and password,
-    then open `/rider/orders` themselves, since email sign-in lands on the dashboard.
-  - To make it real: an SMS or WhatsApp sender for codes, or a password or PIN set on the Riders
-    screen, plus a redirect to `/rider/orders`.
+  - No sign-in codes by text message in production (no sender). Riders sign in at `/rider/login`
+    with restaurant, phone and a password the Riders screen issues (shown once; Reset password
+    makes a new one and signs them out). Riders added before 11 October 2026 need a reset first.
   - An order handed to a rider says **"Ready for pickup"** on their screen as soon as it's
     assigned, even while the kitchen is still cooking it.
 - **Configurable:** No.
@@ -861,25 +859,23 @@ QR codes per table are covered under online ordering (8.2).
   - `createBranch` (`src/server/branches.ts`).
 - **Configurable:** Limit per plan (`TIER_MAX_BRANCHES`).
 
-### 13.2 Working across branches — Partial · Growth and Complete
+### 13.2 Working across branches — Live · Growth and Complete
 - **What it is:** Owners and managers running several branches.
 - **Does:**
   - Staff hold a role at each branch they work at.
   - Reports show all branches together or one at a time.
   - Stock transfers between branches (Growth).
-- **Doesn't:**
-  - **No switching branch in the app.** Email sign-in always lands on a person's first branch
-    (`src/server/auth/session-user.ts`).
-  - Branch settings and tax rates save to the signed-in branch only (`/api/branch-settings`), so an
-    owner can't set up a second branch themselves.
-- **Needed:** A branch switcher in the session, and settings screens that take a branch.
+  - A Branch picker in the back-office sidebar for anyone in more than one branch
+    (`src/components/branch-switcher.tsx`). Owners can open every active branch, joining it as
+    owner the first time (`joinBranchAsOwner`). Blocked while offline actions wait to sync.
+- **Doesn't:** Sign-in still opens a person's first branch, and settings and tax rates save to the
+  branch the session is on, so an owner switches there first.
 
-### 13.3 A new branch's starting setup — Partial
-- **Does:** A new branch gets default settings.
-- **Doesn't:**
-  - **No tax rates, so it charges 0%**, until someone signed in to it adds them.
-  - No staff; nobody (not even the owner) is a member until invited.
-- **Needed:** Copy the first branch's tax rules on creation, and add the owner.
+### 13.3 A new branch's starting setup — Live
+- **Does:** Default settings; the tax rates of the restaurant's oldest branch that has any (PRA
+  defaults otherwise); a "Main Store" stock location; every owner and its creator as members.
+- **Doesn't:** Branches created before 11 October 2026 with no tax rates still charge 0% until
+  someone adds them.
 
 ### 13.4 Per-branch settings — Live · Every plan
 - **Does:**

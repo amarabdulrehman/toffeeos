@@ -6,6 +6,8 @@ interface TicketLine {
   /** What was added to this line. The kitchen has to see these or it makes the wrong thing. */
   modifiers?: { id: string; nameSnapshot: string }[];
   isVoided?: boolean;
+  /** Which send to the kitchen the line came in (OrderLine.kitchenRound); 1 when absent. */
+  kitchenRound?: number;
 }
 
 interface TicketOrder {
@@ -22,11 +24,22 @@ interface TicketOrder {
  * whom. The `print-area` class is what printTicket (src/lib/print-ticket.ts) looks for: it prints
  * this element alone, on a page exactly its length. `data-paper="kitchen"` sends it to the kitchen
  * printer's paper width rather than the receipt printer's, which is often a different roll. */
-export function KitchenTicket({ order, branchName }: { order: TicketOrder; branchName: string }) {
+export function KitchenTicket({
+  order,
+  branchName,
+  onlyRound,
+}: {
+  order: TicketOrder;
+  branchName: string;
+  /** Print only the lines added in this round, as an add-on ticket: items added to an order that
+   * is already with the kitchen, so the first round isn't made twice. */
+  onlyRound?: number;
+}) {
+  const lines = order.lines.filter((l) => !l.isVoided && (onlyRound == null || (l.kitchenRound ?? 1) === onlyRound));
   return (
     <div id="printable-kot" data-paper="kitchen" className="print-area mx-auto w-[300px] font-mono text-[15px] leading-snug text-black">
       <div className="text-center">
-        <div className="text-lg font-bold">KITCHEN TICKET</div>
+        <div className="text-lg font-bold">{onlyRound != null ? "ADD-ON TICKET" : "KITCHEN TICKET"}</div>
         <div>{branchName}</div>
       </div>
       <div className="my-2 border-t-2 border-dashed border-black" />
@@ -39,10 +52,16 @@ export function KitchenTicket({ order, branchName }: { order: TicketOrder; branc
         {order.table ? ` · Table ${order.table.label}` : ""}
         {order.source !== "POS" ? ` · ${order.source}` : ""}
       </div>
+      {onlyRound != null && (
+        <div className="mt-1 border-2 border-black text-center font-bold">
+          ADDED ITEMS ONLY
+          <div className="text-sm font-normal">The rest of #{order.orderNumber} has already gone</div>
+        </div>
+      )}
       <div className="my-2 border-t-2 border-dashed border-black" />
       <div className="space-y-1.5">
         {/* What to make: a voided item is struck through on the kitchen screen, and left off paper. */}
-        {order.lines.filter((l) => !l.isVoided).map((l) => (
+        {lines.map((l) => (
           <div key={l.id}>
             <div className="font-bold">
               {l.quantity}× {l.nameSnapshot}

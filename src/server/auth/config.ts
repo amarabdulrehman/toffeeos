@@ -12,6 +12,8 @@ import { verifyOtp } from "./otp-store";
 import { verifyTotpOrBackupCode } from "@/server/platform-mfa";
 import { consumeImpersonationToken } from "./impersonation-store";
 import { clockIn } from "@/server/hr";
+import { findRiderForSignIn, phoneKey } from "@/server/riders";
+import { joinBranchAsOwner } from "@/server/branches";
 import type { PlatformSessionUser, SessionUser } from "./types";
 
 // NextAuth's `authorize()` return type is nominally `User`, but our sessions carry a much richer,
@@ -36,6 +38,12 @@ const otpSchema = z.object({
   tenantSlug: slugInput(),
   phone: z.string().min(1),
   code: z.string().min(4).max(8),
+});
+
+const riderPasswordSchema = z.object({
+  tenantSlug: slugInput(),
+  phone: z.string().min(1).max(30),
+  password: z.string().min(1),
 });
 
 const platformCredentialsSchema = z.object({
@@ -154,6 +162,34 @@ export const authConfig = {
       },
     }),
 
+    // Riders: restaurant code, phone and the password the Riders screen gave them. The phone-code
+    // provider above needs an SMS sender, which production doesn't have.
+    Credentials({
+      id: "rider-password",
+      name: "Rider phone & password",
+      credentials: {
+        tenantSlug: { label: "Restaurant", type: "text" },
+        phone: { label: "Phone", type: "text" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(raw): Promise<LooseUser | null> {
+        const parsed = riderPasswordSchema.safeParse(raw);
+        if (!parsed.success) return null;
+        const { tenantSlug, phone, password } = parsed.data;
+
+        const tenant = await findTenantBySlug(tenantSlug);
+        if (!tenant || !tenantAcceptsLogin(tenant.status)) return null;
+        // Same per-account limit as email sign-in: an 8-character password, guessed one phone at a time.
+        if (!(await checkRateLimit(`rider-login:${tenant.id}:${phoneKey(phone)}`, 8, 15 * 60 * 1000))) return null;
+
+        const rider = await findRiderForSignIn(tenant.id, phone);
+        if (!rider || !(await verifyPassword(password, rider.passwordHash))) return null;
+
+        const sessionUser = await buildTenantSessionUser(tenant.id, rider.userId, rider.branchId);
+        return sessionUser as unknown as LooseUser;
+      },
+    }),
+
     Credentials({
       id: "platform-credentials",
       name: "Platform Admin",
@@ -227,6 +263,12 @@ export const authConfig = {
         // the new watermark, so "changing my password logs out my other devices" behaves the way
         // people expect instead of ejecting them mid-flow.
         const targetBranchId = requested?.branchId ?? (requested?.refresh ? token.user.branchId : undefined);
+        // Only a session that is still valid may be rebuilt. Rebuilding re-stamps the token with the
+        // current sessionsValidFrom, so without this a signed-out or stolen cookie could call
+        // update() and come back to life. The password-change flow signs in again with the new
+        // password before it refreshes, so its token passes.
+        if (targetBranchId && !(await tokenStillValid(token.user))) return token;
+        if (requested?.branchId) await joinBranchAsOwner(token.user.tenantId, token.user.id, requested.branchId);
         if (targetBranchId) {
           const rebuilt = await buildTenantSessionUser(token.user.tenantId, token.user.id, targetBranchId);
           if (rebuilt) {
@@ -240,3 +282,11 @@ export const authConfig = {
     },
   },
 } satisfies NextAuthConfig;
+
+/** Same test defineHandler applies on every request: the account's revocation watermark must not
+ * be newer than the stamp this token was issued with. */
+async function tokenStillValid(user: { tenantId: string; id: string; sessionsValidFrom?: number }) {
+  if (user.sessionsValidFrom === undefined) return false;
+  const row = await tenantDb(user.tenantId).user.findUnique({ where: { id: user.id }, select: { sessionsValidFrom: true, isActive: true } });
+  return !!row && row.isActive && row.sessionsValidFrom.getTime() <= user.sessionsValidFrom;
+}
