@@ -32,6 +32,7 @@ export const PERMISSIONS: PermissionDef[] = [
   perm("pos", "order.changeType", "Switch an order between dine-in and takeaway"),
   perm("pos", "order.void", "Void an entire order"),
   perm("pos", "order.voidLine", "Void a single line item"),
+  perm("pos", "order.comp", "Give items or a whole bill complimentary, with a reason"),
   perm("pos", "discount.applyLine", "Apply a line-level discount"),
   perm("pos", "discount.applyOrder", "Apply an order-level discount"),
   perm("pos", "discount.exceedMax", "Apply a discount beyond the configured max"),
@@ -39,6 +40,7 @@ export const PERMISSIONS: PermissionDef[] = [
   perm("pos", "payment.take", "Take payment on an order"),
   perm("pos", "payment.split", "Split payment across multiple methods"),
   perm("pos", "payment.refund", "Issue a refund"),
+  perm("pos", "payment.correct", "Correct how a paid bill was paid (today, drawer still open)"),
   perm("pos", "cashDrawer.openNoSale", "Open the cash drawer without a sale"),
   perm("pos", "cashDrawer.correctClose", "Correct a closed cash drawer day's counted amount"),
   perm("pos", "shift.open", "Open a POS shift"),
@@ -194,11 +196,17 @@ export const SEED_ROLES: Record<string, { name: string; permissions: string[] }>
       "pos.order.editItems",
       "pos.order.changeType",
       "pos.order.voidLine",
+      // Asked for by a café: cashiers are the ones at the counter when a guest is given something.
+      // Every comp needs a reason and records who gave it; see src/server/complimentary.ts.
+      "pos.order.comp",
       "orders.cancel",
       "pos.discount.applyLine",
       "pos.discount.applyOrder",
       "pos.payment.take",
       "pos.payment.split",
+      // Fixing their own slip (Cash pressed for a card) on the same day; an earlier or counted day
+      // also needs pos.cashDrawer.correctClose. See src/server/paid-order-edits.ts.
+      "pos.payment.correct",
       "pos.cashDrawer.openNoSale",
       "pos.shift.open",
       "pos.shift.close",

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatPkr } from "@/lib/money";
+import { itemRefundAmount } from "@/lib/item-refund";
 import type { OrderDto, PaymentMethod } from "./types";
 
 /**
@@ -73,6 +74,9 @@ function RefundBody({
   const [method, setMethod] = useState<PaymentMethod>(order.payments?.[0]?.method ?? "CASH");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // "Items": pick what came back and the amount is worked out from them, exactly as the server will.
+  const [mode, setMode] = useState<"amount" | "items">("amount");
+  const [picked, setPicked] = useState<Record<string, number>>({});
   // Refunds are only ever taken online: the server checks what is left to give back. Without the
   // connection the earlier refunds can't be read, so the window says so instead of offering a
   // figure it can't stand behind. (Offline, this fetch used to throw unhandled and leave the
@@ -103,7 +107,47 @@ function RefundBody({
     })();
   }, [order.id, paidPaisa]);
 
+  // Only lines the till knows the price of (every synced order) can be refunded by item.
+  const refundable = (order.lines ?? []).filter(
+    (l) => !l.isVoided && !l.isComplimentary && l.unitPricePaisa != null && l.quantity - (l.refundedQuantity ?? 0) > 0
+  );
+  const pickedItems = Object.entries(picked)
+    .filter(([, q]) => q > 0)
+    .map(([lineId, quantity]) => ({ lineId, quantity }));
+  const worked =
+    mode === "items" && pickedItems.length > 0
+      ? itemRefundAmount(
+          { paidPaisa, refundedPaisa },
+          (order.lines ?? [])
+            .filter((l) => l.unitPricePaisa != null)
+            .map((l) => ({
+              id: l.id,
+              nameSnapshot: l.nameSnapshot,
+              unitPricePaisa: l.unitPricePaisa as number,
+              quantity: l.quantity,
+              isVoided: l.isVoided ?? false,
+              isComplimentary: l.isComplimentary ?? false,
+              refundedQuantity: l.refundedQuantity ?? 0,
+              discountType: l.discountType ?? null,
+              discountValue: l.discountValue ?? null,
+            })),
+          pickedItems
+        )
+      : null;
+
   async function submit() {
+    if (mode === "items") {
+      if (!worked || !worked.ok) {
+        toast.error(worked && !worked.ok ? worked.error : "Pick the items to refund.");
+        return;
+      }
+      if (!reason.trim()) {
+        toast.error("Give a reason for the refund.");
+        return;
+      }
+      await send({ items: pickedItems }, worked.amountPaisa);
+      return;
+    }
     const paisa = Math.round(Number(amount) * 100);
     if (!Number.isFinite(paisa) || paisa <= 0) {
       toast.error("Enter an amount to refund.");
@@ -118,13 +162,17 @@ function RefundBody({
       return;
     }
 
+    await send({ amountPaisa: paisa }, paisa);
+  }
+
+  async function send(what: { amountPaisa: number } | { items: { lineId: string; quantity: number }[] }, paisa: number) {
     setSubmitting(true);
     let res: Response;
     try {
       res = await fetch(`/api/orders/${order.id}/refund`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountPaisa: paisa, method, reason: reason.trim() }),
+        body: JSON.stringify({ ...what, method, reason: reason.trim() }),
       });
     } catch {
       toast.error("Couldn't reach the server, so no refund was recorded. Try again once you're back online.");
@@ -138,7 +186,7 @@ function RefundBody({
       toast.error(body.error ?? "Could not record that refund.");
       return;
     }
-    toast.success(`Refunded ${formatPkr(paisa)}`);
+    toast.success(`Refunded ${formatPkr(body.refund?.amountPaisa ?? paisa)}`);
     onRefunded();
     onClose();
   }
@@ -181,18 +229,74 @@ function RefundBody({
           <p className="text-sm text-muted-foreground">This order has been fully refunded.</p>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="refund-amount">Amount (Rs)</Label>
-                <Input
-                  id="refund-amount"
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
+            {refundable.length > 0 && (
+              <div role="group" aria-label="Refund by" className="grid grid-cols-2 gap-2">
+                <Button variant={mode === "amount" ? "default" : "outline"} aria-pressed={mode === "amount"} onClick={() => setMode("amount")}>
+                  An amount
+                </Button>
+                <Button variant={mode === "items" ? "default" : "outline"} aria-pressed={mode === "items"} onClick={() => setMode("items")}>
+                  Items
+                </Button>
               </div>
+            )}
+
+            {mode === "items" && (
+              <div className="space-y-1.5">
+                <ul className="space-y-1.5">
+                  {refundable.map((l) => {
+                    const left = l.quantity - (l.refundedQuantity ?? 0);
+                    const q = picked[l.id] ?? 0;
+                    const set = (n: number) => setPicked((p) => ({ ...p, [l.id]: Math.max(0, Math.min(left, n)) }));
+                    return (
+                      <li key={l.id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm">
+                        <span className="min-w-0">
+                          {l.quantity}× {l.nameSnapshot}
+                          {(l.refundedQuantity ?? 0) > 0 && (
+                            <span className="ml-1.5 text-xs text-muted-foreground">({l.refundedQuantity} refunded)</span>
+                          )}
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <Button size="sm" variant="outline" aria-label={`One less ${l.nameSnapshot} to refund`} disabled={q === 0} onClick={() => set(q - 1)}>
+                            −
+                          </Button>
+                          <span className="w-6 text-center tabular-nums">{q}</span>
+                          <Button size="sm" variant="outline" aria-label={`One more ${l.nameSnapshot} to refund`} disabled={q === left} onClick={() => set(q + 1)}>
+                            +
+                          </Button>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="text-sm" data-testid="item-refund-amount">
+                  {worked?.ok ? (
+                    <>
+                      Refund <span className="font-semibold tabular-nums">{formatPkr(worked.amountPaisa)}</span>
+                      <span className="text-muted-foreground"> — their share of what was paid, tax included</span>
+                    </>
+                  ) : worked && !worked.ok ? (
+                    <span className="text-destructive">{worked.error}</span>
+                  ) : (
+                    <span className="text-muted-foreground">Pick what came back.</span>
+                  )}
+                </p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {mode === "amount" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="refund-amount">Amount (Rs)</Label>
+                  <Input
+                    id="refund-amount"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                  />
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label>Given back as</Label>
                 <Select value={method} onValueChange={(v) => v && setMethod(v as PaymentMethod)}>

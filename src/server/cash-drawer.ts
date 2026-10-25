@@ -41,6 +41,17 @@ export interface CashDrawerDayView {
   note: string | null;
   /** Every time the drawer was opened with no sale this day: who, when, and why. */
   noSales: { at: string; byName: string | null; reason: string }[];
+  /**
+   * The day's takings by every way of paying, side by side, for closing up. Shown beside the
+   * drawer, never counted in it: only cash is in the drawer. The card figure is the one to check
+   * against the card machine's end-of-day slip. Only on a single day's view, not the history list.
+   */
+  takings?: {
+    byMethod: { method: string; amountPaisa: number }[];
+    refundsByMethod: { method: string; amountPaisa: number }[];
+    /** Given free today, at menu value. Not money taken. */
+    complimentary: { itemCount: number; valuePaisa: number };
+  };
 }
 
 async function branchOrThrow(tenantId: string, branchId: string) {
@@ -100,6 +111,38 @@ async function cashMovement(tenantId: string, branchId: string, day: string, tim
   };
 }
 
+/** Everything taken on a business day, by method, with refunds and what was given free. Dated the
+ * same way as the drawer: payments by paidAt, refunds by when they happened. */
+async function takingsOn(tenantId: string, branchId: string, from: Date, to: Date): Promise<NonNullable<CashDrawerDayView["takings"]>> {
+  const db = tenantDb(tenantId);
+  const [payments, refunds, comps] = await Promise.all([
+    db.payment.groupBy({
+      by: ["method"],
+      where: { order: { branchId, status: "PAID", paidAt: { gte: from, lte: to } } },
+      _sum: { amountPaisa: true },
+    }),
+    db.refund.groupBy({
+      by: ["method"],
+      where: { createdAt: { gte: from, lte: to }, order: { branchId, status: { not: "DELETED" } } },
+      _sum: { amountPaisa: true },
+    }),
+    db.orderLine.aggregate({
+      where: { isComplimentary: true, isVoided: false, order: { branchId, status: "PAID", paidAt: { gte: from, lte: to } } },
+      _sum: { quantity: true, compValuePaisa: true },
+    }),
+  ]);
+  const rows = (g: { method: string; _sum: { amountPaisa: number | null } }[]) =>
+    g
+      .map((r) => ({ method: r.method, amountPaisa: r._sum.amountPaisa ?? 0 }))
+      .filter((r) => r.amountPaisa > 0)
+      .sort((a, b) => b.amountPaisa - a.amountPaisa);
+  return {
+    byMethod: rows(payments),
+    refundsByMethod: rows(refunds),
+    complimentary: { itemCount: comps._sum.quantity ?? 0, valuePaisa: comps._sum.compValuePaisa ?? 0 },
+  };
+}
+
 /**
  * The drawer for one branch on one business day. Returns a fully-formed view even when no drawer
  * has been opened yet — the UI needs to show the day's cash movement either way, and "nobody has
@@ -112,10 +155,11 @@ export async function getDrawerDay(tenantId: string, branchId: string, day?: str
 
   const db = tenantDb(tenantId);
   const { from, to } = businessDayRange(businessDate, branch.timezone, branch.dayStartMinutes);
-  const [row, movement, noSales] = await Promise.all([
+  const [row, movement, noSales, takings] = await Promise.all([
     db.cashDrawerDay.findUnique({ where: { branchId_businessDate: { branchId, businessDate } } }),
     cashMovement(tenantId, branchId, businessDate, branch.timezone, branch.dayStartMinutes),
     db.noSaleOpening.findMany({ where: { branchId, createdAt: { gte: from, lte: to } }, orderBy: { createdAt: "asc" } }),
+    takingsOn(tenantId, branchId, from, to),
   ]);
 
   const names = await resolveNames(tenantId, [row?.openedById, row?.closedById, row?.correctedById, ...noSales.map((n) => n.openedById)]);
@@ -146,6 +190,7 @@ export async function getDrawerDay(tenantId: string, branchId: string, day?: str
     correctedAt: row?.correctedAt?.toISOString() ?? null,
     note: row?.note ?? null,
     noSales: noSales.map((n) => ({ at: n.createdAt.toISOString(), byName: names.get(n.openedById) ?? null, reason: n.reason })),
+    takings,
   };
 }
 

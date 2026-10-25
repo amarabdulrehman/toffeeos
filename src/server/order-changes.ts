@@ -3,7 +3,7 @@ import { runInTenantTransaction, tenantDb, type TenantTransactionClient } from "
 import { newId, newOrderLineId } from "@/lib/ids";
 import { publish } from "@/server/realtime";
 import { HttpError } from "@/server/handler";
-import { TERMINAL_ORDER_STATUSES, findOpenOrderForTable, getBranchPricingContext, pricingLinesFromStored } from "@/server/orders";
+import { TERMINAL_ORDER_STATUSES, findOpenOrderForTable, getBranchPricingContext, pricingLinesFromStored, takePayment } from "@/server/orders";
 import { computeProvisionalTotal, type DiscountInput } from "@/lib/pricing";
 
 /**
@@ -119,7 +119,10 @@ export async function voidOrderLine(
       const remaining = line.quantity - quantity;
       await tx.orderLine.update({
         where: { id: line.id },
-        data: { quantity: remaining, lineTotalPaisa: line.unitPricePaisa * remaining },
+        // What's left of a complimentary line stays free; only its given-away value shrinks.
+        data: line.isComplimentary
+          ? { quantity: remaining, lineTotalPaisa: 0, compValuePaisa: line.unitPricePaisa * remaining }
+          : { quantity: remaining, lineTotalPaisa: line.unitPricePaisa * remaining },
       });
       await tx.orderLine.create({
         data: {
@@ -180,6 +183,149 @@ export async function voidOrderLine(
 
   await announce(tenantId, branchId, order, "order_updated");
   return updated;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Complimentary
+// ---------------------------------------------------------------------------------------------
+
+export interface CompInput {
+  orderId: string;
+  /** The items to give free, with how many of each; omitted gives the whole bill. */
+  items?: { lineId: string; quantity?: number }[];
+  reason: string;
+}
+
+/**
+ * Gives items, or the whole bill, free.
+ *
+ * Not a payment method, deliberately. A "Complimentary" tender beside Cash and Card would record
+ * money that never came in: the day's takings, the P&L and the closing slip would all show sales
+ * that weren't, and tax would be worked out on them. Instead the item is priced at nothing
+ * (lineTotalPaisa 0, left out by the pricing engine like a void) and what it would have cost is
+ * kept in compValuePaisa, so the reports can say what was given away without counting it as sold.
+ *
+ * Unlike a void, the food was made and eaten: the line stays live, stock still comes out at
+ * payment, and the kitchen keeps it.
+ *
+ * Giving part of a quantity splits the line, as voiding part of one does. When nothing is left to
+ * pay — the whole bill, or every item on it — the order is settled there and then at Rs 0, so the
+ * cashier isn't left taking a payment of nothing.
+ */
+export async function compOrderItems(tenantId: string, branchId: string, actorId: string, input: CompInput) {
+  const reason = input.reason.trim();
+  if (reason.length < 2) throw new HttpError(400, "Say why it's complimentary.");
+  const order = await loadOrder(tenantId, branchId, input.orderId);
+  assertChangeable(order, "given complimentary");
+
+  const live = order.lines.filter((l) => !l.isVoided && !l.isComplimentary);
+  const wanted = input.items ?? live.map((l) => ({ lineId: l.id, quantity: l.quantity }));
+  if (wanted.length === 0) throw new HttpError(400, "There's nothing on this order left to give.");
+
+  type Plan = { line: (typeof live)[number]; quantity: number; compedLineId: string };
+  const plans: Plan[] = [];
+  for (const w of wanted) {
+    const line = live.find((l) => l.id === w.lineId);
+    if (!line) throw new HttpError(404, "That item isn't on this order, or is already voided or complimentary.");
+    if (plans.some((p) => p.line.id === line.id)) throw new HttpError(400, `${line.nameSnapshot} is listed twice.`);
+    const quantity = w.quantity ?? line.quantity;
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > line.quantity) {
+      throw new HttpError(400, `Give between 1 and ${line.quantity} of ${line.nameSnapshot}.`);
+    }
+    plans.push({ line, quantity, compedLineId: quantity < line.quantity ? newOrderLineId() : line.id });
+  }
+
+  // The order as it will stand, priced before anything is written.
+  const afterLines = order.lines.flatMap((l) => {
+    const plan = plans.find((p) => p.line.id === l.id);
+    if (!plan) return [l];
+    if (plan.compedLineId === l.id) return [{ ...l, isComplimentary: true }];
+    return [
+      { ...l, quantity: l.quantity - plan.quantity },
+      { ...l, id: plan.compedLineId, quantity: plan.quantity, isComplimentary: true },
+    ];
+  });
+  const totals = await provisionalTotals(tenantId, branchId, order, afterLines);
+  const compedAt = new Date();
+
+  const updated = await runInTenantTransaction(tenantId, async (tx) => {
+    await guardVersion(tx, order);
+    for (const { line, quantity, compedLineId } of plans) {
+      const comp = {
+        isComplimentary: true,
+        compValuePaisa: line.unitPricePaisa * quantity,
+        compReason: reason,
+        compedById: actorId,
+        compedAt,
+        lineTotalPaisa: 0,
+        // A line discount on something given free means nothing, and would only confuse the bill.
+        discountType: null,
+        discountValue: null,
+      };
+      if (compedLineId === line.id) {
+        await tx.orderLine.update({ where: { id: line.id }, data: comp });
+        continue;
+      }
+      const remaining = line.quantity - quantity;
+      await tx.orderLine.update({
+        where: { id: line.id },
+        data: { quantity: remaining, lineTotalPaisa: line.unitPricePaisa * remaining },
+      });
+      await tx.orderLine.create({
+        data: {
+          ...comp,
+          id: compedLineId,
+          tenantId,
+          orderId: order.id,
+          menuItemId: line.menuItemId,
+          variantId: line.variantId,
+          nameSnapshot: line.nameSnapshot,
+          unitPricePaisa: line.unitPricePaisa,
+          quantity,
+          kitchenReady: line.kitchenReady,
+          kitchenRound: line.kitchenRound,
+          notes: line.notes,
+        },
+      });
+      if (line.modifiers.length > 0) {
+        await tx.orderLineModifier.createMany({
+          data: line.modifiers.map((m) => ({
+            id: newId(),
+            tenantId,
+            orderLineId: compedLineId,
+            modifierId: m.modifierId,
+            nameSnapshot: m.nameSnapshot,
+            priceDeltaPaisa: m.priceDeltaPaisa,
+          })),
+        });
+      }
+    }
+
+    const saved = await tx.order.update({ where: { id: order.id }, data: { ...totals, version: { increment: 1 } } });
+    await tx.orderEvent.create({
+      data: {
+        tenantId,
+        orderId: order.id,
+        type: "LINE_COMPED",
+        actorId,
+        payload: {
+          wholeBill: !input.items,
+          reason,
+          items: plans.map((p) => ({ name: p.line.nameSnapshot, quantity: p.quantity, valuePaisa: p.line.unitPricePaisa * p.quantity })),
+        },
+      },
+    });
+    return saved;
+  });
+
+  await announce(tenantId, branchId, order, "order_updated");
+
+  // Nothing left to pay: settle it now, at nothing, rather than leave a Rs 0 bill open on the queue.
+  if (updated.totalPaisa === 0 && order.lines.some((l) => !l.isVoided)) {
+    const paid = await takePayment(tenantId, branchId, order.id, actorId, { tenders: [] });
+    return { order: paid, settled: true };
+  }
+  return { order: updated, settled: false };
 }
 
 // ---------------------------------------------------------------------------------------------

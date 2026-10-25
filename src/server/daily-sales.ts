@@ -31,7 +31,18 @@ const ORDER_SELECT = {
   discountedSubtotalPaisa: true,
   paidAt: true,
   createdById: true,
-  lines: { select: { menuItemId: true, variantId: true, nameSnapshot: true, quantity: true, lineTotalPaisa: true, isVoided: true } },
+  lines: {
+    select: {
+      menuItemId: true,
+      variantId: true,
+      nameSnapshot: true,
+      quantity: true,
+      lineTotalPaisa: true,
+      isVoided: true,
+      isComplimentary: true,
+      compValuePaisa: true,
+    },
+  },
   payments: { select: { method: true, amountPaisa: true } },
 } as const;
 
@@ -45,7 +56,16 @@ type PaidOrder = {
   discountedSubtotalPaisa: number;
   paidAt: Date | null;
   createdById: string | null;
-  lines: { menuItemId: string; variantId: string | null; nameSnapshot: string; quantity: number; lineTotalPaisa: number; isVoided: boolean }[];
+  lines: {
+    menuItemId: string;
+    variantId: string | null;
+    nameSnapshot: string;
+    quantity: number;
+    lineTotalPaisa: number;
+    isVoided: boolean;
+    isComplimentary: boolean;
+    compValuePaisa: number | null;
+  }[];
   payments: { method: string; amountPaisa: number }[];
 };
 
@@ -67,8 +87,16 @@ function totalsOf(orders: PaidOrder[]): SalesTotals {
   let taxPaisa = 0;
   let serviceChargePaisa = 0;
   let discountPaisa = 0;
+  // Given free: counted at menu value, apart from sales, so it never inflates what was taken.
+  const comp = { itemCount: 0, orderCount: 0, valuePaisa: 0 };
 
   for (const o of orders) {
+    const comped = o.lines.filter((l) => l.isComplimentary && !l.isVoided);
+    if (comped.length > 0) comp.orderCount += 1;
+    for (const l of comped) {
+      comp.itemCount += l.quantity;
+      comp.valuePaisa += l.compValuePaisa ?? 0;
+    }
     grossPaisa += o.totalPaisa;
     refundedPaisa += o.refundedPaisa;
     taxPaisa += o.taxPaisa;
@@ -82,12 +110,15 @@ function totalsOf(orders: PaidOrder[]): SalesTotals {
   }
 
   const netPaisa = grossPaisa - refundedPaisa;
+  // A bill given away whole was settled at nothing; counting it would drag the average down.
+  const charged = orders.filter((o) => o.totalPaisa > 0).length;
   return {
     orderCount: orders.length,
     grossPaisa,
     refundedPaisa,
     netPaisa,
-    averageOrderPaisa: orders.length > 0 ? Math.round(netPaisa / orders.length) : 0,
+    averageOrderPaisa: charged > 0 ? Math.round(netPaisa / charged) : 0,
+    complimentary: comp,
     taxPaisa,
     serviceChargePaisa,
     discountPaisa,

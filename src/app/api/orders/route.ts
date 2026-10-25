@@ -51,6 +51,9 @@ const LIST_INCLUDE = {
   table: true,
   payments: true,
   discounts: true,
+  // Who it's for, so a bill paid without a customer can be given one afterwards (see the queue's
+  // Edit on a paid order) and one that has a customer says so.
+  customer: { select: { id: true, name: true, phone: true, loyaltyPoints: true } },
 } as const;
 
 export const GET = defineHandler({ permission: "orders.view", input: listSchema }, async ({ session, db, input }) => {

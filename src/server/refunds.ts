@@ -3,6 +3,7 @@ import { tenantDb, runInTenantTransaction } from "@/server/db";
 import { HttpError } from "@/server/handler";
 import { assertInt } from "@/lib/money";
 import type { PaymentMethodKey } from "@/lib/pricing";
+import { itemRefundAmount } from "@/lib/item-refund";
 import { reverseForRefund } from "@/server/loyalty-ledger";
 
 /**
@@ -33,9 +34,12 @@ import { reverseForRefund } from "@/server/loyalty-ledger";
  */
 
 export interface RefundInput {
+  /** Ignored when `items` is given: the server works the amount out from the items. */
   amountPaisa: number;
   method: PaymentMethodKey;
   reason: string;
+  /** Refund these items (and how many of each) rather than a typed amount. */
+  items?: { lineId: string; quantity: number }[];
 }
 
 export interface RefundView {
@@ -80,16 +84,34 @@ export async function refundOrder(
   actorId: string | null,
   input: RefundInput
 ) {
-  assertInt(input.amountPaisa, "amountPaisa");
-  if (input.amountPaisa <= 0) throw new HttpError(400, "A refund has to be for more than zero.");
-
-  const reason = input.reason.trim();
-  if (!reason) throw new HttpError(400, "Give a reason for the refund.");
-  if (reason.length > MAX_REASON) throw new HttpError(400, `Keep the reason under ${MAX_REASON} characters.`);
+  const typedReason = input.reason.trim();
+  if (!typedReason) throw new HttpError(400, "Give a reason for the refund.");
+  if (typedReason.length > MAX_REASON) throw new HttpError(400, `Keep the reason under ${MAX_REASON} characters.`);
+  if (!input.items) {
+    assertInt(input.amountPaisa, "amountPaisa");
+    if (input.amountPaisa <= 0) throw new HttpError(400, "A refund has to be for more than zero.");
+  } else if (input.items.length === 0) {
+    throw new HttpError(400, "Pick at least one item to refund.");
+  }
 
   return runInTenantTransaction(tenantId, async (tx) => {
-    const order = await tx.order.findFirst({ where: { id: orderId, branchId } });
+    const order = await tx.order.findFirst({ where: { id: orderId, branchId }, include: { lines: true } });
     if (!order) throw new HttpError(404, "That order doesn't exist at this branch.");
+
+    // Item refunds: the amount is worked out here, never taken from the till, and the items are
+    // written into the reason so the refund list and the reports say what went back.
+    let amountPaisa = input.amountPaisa;
+    let reason = typedReason;
+    if (input.items) {
+      const worked = itemRefundAmount(order, order.lines, input.items);
+      if (!worked.ok) throw new HttpError(400, worked.error);
+      if (worked.amountPaisa <= 0) throw new HttpError(400, "Those items come to nothing left to refund.");
+      amountPaisa = worked.amountPaisa;
+      reason = `${worked.described}: ${typedReason}`.slice(0, MAX_REASON);
+      for (const it of input.items) {
+        await tx.orderLine.update({ where: { id: it.lineId }, data: { refundedQuantity: { increment: it.quantity } } });
+      }
+    }
 
     // You cannot give back money that was never taken. An unpaid order is corrected by voiding it,
     // which is a different action with different bookkeeping.
@@ -99,7 +121,7 @@ export async function refundOrder(
 
     const remaining = order.paidPaisa - order.refundedPaisa;
     if (remaining <= 0) throw new HttpError(400, "This order has already been fully refunded.");
-    if (input.amountPaisa > remaining) {
+    if (amountPaisa > remaining) {
       throw new HttpError(
         400,
         `That is more than is left to refund on this order — at most ${remaining / 100} can be returned.`
@@ -110,7 +132,7 @@ export async function refundOrder(
       data: {
         tenantId,
         orderId,
-        amountPaisa: input.amountPaisa,
+        amountPaisa: amountPaisa,
         method: input.method,
         reason,
         refundedById: actorId,
@@ -119,7 +141,7 @@ export async function refundOrder(
 
     const updated = await tx.order.update({
       where: { id: orderId },
-      data: { refundedPaisa: { increment: input.amountPaisa }, version: { increment: 1 } },
+      data: { refundedPaisa: { increment: amountPaisa }, version: { increment: 1 } },
     });
 
     // On the order's own timeline as well as in the Refund table, so the history a manager reads
@@ -130,7 +152,7 @@ export async function refundOrder(
         orderId,
         type: "REFUNDED",
         actorId,
-        payload: { amountPaisa: input.amountPaisa, method: input.method, reason },
+        payload: { amountPaisa: amountPaisa, method: input.method, reason },
       },
     });
 

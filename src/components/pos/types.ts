@@ -127,6 +127,12 @@ export interface OrderDto {
     isVoided?: boolean;
     /** Which send to the kitchen it came in (1 = with the order); see KotDialog's add-on ticket. */
     kitchenRound?: number;
+    /** Given free (pos.order.comp): priced at nothing, still made. */
+    isComplimentary?: boolean;
+    compValuePaisa?: number | null;
+    compReason?: string | null;
+    /** Refunded item by item after payment; bounds the refund dialog's "items" mode. */
+    refundedQuantity?: number;
   }[];
   /** The rest of these are already returned by GET /api/orders (no `select`, so every scalar
    * column comes back) — just never modeled on the client before there was a reason to read them.
@@ -148,6 +154,8 @@ export interface OrderDto {
   payments?: { method: PaymentMethod; amountPaisa: number; tenderedPaisa?: number | null; changePaisa?: number | null }[];
   /** Why this order is sold without tax (pos.tax.exempt); null or absent for every ordinary order. */
   taxExemptReason?: string | null;
+  /** Money handed back so far (refunds). Returned with every order; read by the paid-order edit. */
+  refundedPaisa?: number;
   /** Only on GET /api/orders/[orderId]. */
   customer?: { id: string; name: string | null; phone: string | null; loyaltyPoints: number } | null;
   discounts?: { type: "PERCENT" | "FIXED"; value: number; reason: string | null; loyaltyPointsRedeemed: number | null }[];

@@ -393,6 +393,8 @@ export function pricingLinesFromStored(
     unitPricePaisa: number;
     quantity: number;
     isVoided: boolean;
+    /** Given free: priced like a voided line (nothing), though it was made and still counts in stock. */
+    isComplimentary?: boolean;
     discountType: "PERCENT" | "FIXED" | null;
     discountValue: number | null;
   }[]
@@ -401,7 +403,7 @@ export function pricingLinesFromStored(
     id: l.id,
     unitPricePaisa: l.unitPricePaisa,
     quantity: l.quantity,
-    isVoided: l.isVoided,
+    isVoided: l.isVoided || !!l.isComplimentary,
     discount: l.discountType && l.discountValue != null ? { type: l.discountType, value: l.discountValue } : undefined,
   }));
 }

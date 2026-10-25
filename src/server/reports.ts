@@ -498,8 +498,8 @@ export async function discountVoidReport(tenantId: string, branchIds: string[], 
       where: {
         tenantId,
         // A whole order voided, or one item taken off it. The second is the likelier way a till
-        // loses money quietly, so it belongs in the same list.
-        type: { in: ["VOIDED", "LINE_VOIDED"] },
+        // loses money quietly, so it belongs in the same list — as does food given away free.
+        type: { in: ["VOIDED", "LINE_VOIDED", "LINE_COMPED"] },
         createdAt: { gte: range.from, lte: range.to },
         order: { branchId: { in: branchIds } },
       },
@@ -522,6 +522,19 @@ export async function discountVoidReport(tenantId: string, branchIds: string[], 
     }));
 
   const voidRows = voidEvents.map((e) => {
+    if (e.type === "LINE_COMPED") {
+      const comp = e.payload as { reason?: string; wholeBill?: boolean; items?: { name: string; quantity: number; valuePaisa: number }[] } | null;
+      const items = comp?.items ?? [];
+      const value = items.reduce((a, i) => a + i.valuePaisa, 0);
+      return {
+        kind: "complimentary" as const,
+        orderNumber: e.order.orderNumber,
+        actorName: e.actorId ? (userName.get(e.actorId) ?? "Unknown") : "Unknown",
+        detail: `${comp?.wholeBill ? "Whole bill free" : items.map((i) => `${i.quantity}× ${i.name}`).join(", ") + " free"} (Rs ${(value / 100).toFixed(0)})`,
+        reason: comp?.reason ?? null,
+        createdAt: e.createdAt,
+      };
+    }
     const payload = e.payload as { reason?: string; name?: string; quantity?: number; valuePaisa?: number; afterKitchen?: boolean } | null;
     return {
       kind: "void" as const,

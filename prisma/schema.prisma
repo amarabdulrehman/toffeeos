@@ -1179,6 +1179,16 @@ model OrderLine {
   /// for the first lot added afterwards, and so on. Lets a kitchen ticket carry only what was
   /// added, so the kitchen doesn't make the first round again.
   kitchenRound   Int           @default(1)
+  /// Given free: priced at nothing (lineTotalPaisa 0), but still made, so stock still comes out.
+  /// compValuePaisa is what it would have cost at menu price, for the "given away" figures.
+  isComplimentary Boolean      @default(false)
+  compValuePaisa Int?
+  compReason     String?
+  compedById     String?
+  compedAt       DateTime?
+  /// How many of `quantity` have been refunded item by item after payment. Bounds item refunds so
+  /// the same item can't be refunded twice.
+  refundedQuantity Int         @default(0)
 
   modifiers OrderLineModifier[]
 

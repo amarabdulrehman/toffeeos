@@ -102,7 +102,15 @@ export function Receipt({
               <span className="flex-1">
                 {l.quantity}× {l.nameSnapshot}
               </span>
-              <span className="tabular-nums">{formatPkr(l.lineTotalPaisa, { showPaisa: true })}</span>
+              {/* Given free: printed as such, with what it would have cost, so the customer sees
+                  the gesture and the bill still adds up. */}
+              {l.isComplimentary ? (
+                <span className="tabular-nums">
+                  FREE{l.compValuePaisa ? ` (${formatPkr(l.compValuePaisa)})` : ""}
+                </span>
+              ) : (
+                <span className="tabular-nums">{formatPkr(l.lineTotalPaisa, { showPaisa: true })}</span>
+              )}
             </div>
             {/* What the extra money was for. The line total already includes these, so they are
                 listed rather than priced again — a second column of numbers that do not add up to

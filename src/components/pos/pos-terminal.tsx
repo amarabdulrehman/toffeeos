@@ -24,6 +24,7 @@ import { ApprovalsSection, type PendingApproval } from "./approvals-section";
 import { setSoundOn, useSoundOn } from "@/lib/chime";
 import { TablesDialog, ResumedOrderPanel, AddItemsPanel } from "./tables-dialog";
 import { OfflineBanner } from "./offline-banner";
+import { PaidOrderEditDialog } from "./paid-order-edit-dialog";
 import { PanelBoundary } from "@/components/errors/panel-boundary";
 import { useSync } from "@/lib/offline/use-sync";
 import { cacheMenu, cacheOpenOrders, getCachedMenu, getCachedOpenOrders, listQueue, type CreateOrderAction } from "@/lib/offline/db";
@@ -84,6 +85,8 @@ export function PosTerminal({
   canReprintKot,
   canPrintBill,
   canRefund,
+  canComp,
+  canCorrectPayment,
   managePermissions,
   canNoSale,
   approvalsOn,
@@ -113,6 +116,10 @@ export function PosTerminal({
   canReprintKot: boolean;
   canPrintBill: boolean;
   canRefund: boolean;
+  /** pos.order.comp: give items, or a whole bill, free from the payment dialog. */
+  canComp: boolean;
+  /** pos.payment.correct: change how a paid bill was paid (see PaidOrderEditDialog). */
+  canCorrectPayment: boolean;
   /** Voiding one item, switching type, merging tables, tax exemption — see OrderManageDialog. */
   managePermissions: ManagePermissions;
   /** pos.cashDrawer.openNoSale. */
@@ -176,6 +183,7 @@ export function PosTerminal({
   const [billOrderId, setBillOrderId] = useState<string | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState<OrderDto | null>(null);
   const [managingOrderId, setManagingOrderId] = useState<string | null>(null);
+  const [editingPaid, setEditingPaid] = useState<OrderDto | null>(null);
   const [noSaleOpen, setNoSaleOpen] = useState(false);
   const canManage = canManageAnything(managePermissions);
   const idempotencyKey = useRef(crypto.randomUUID());
@@ -691,6 +699,60 @@ export function PosTerminal({
     });
   }
 
+  /** Void one item from the table's order panel, then show the order as it now stands. */
+  async function voidLineOnTable(orderId: string, lineId: string, quantity: number, reason: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/orders/${orderId}/lines/${lineId}/void`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity, reason }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? "Couldn't void that item.");
+        return false;
+      }
+    } catch {
+      toast.error("Couldn't reach the server — check the connection.");
+      return false;
+    }
+    toast.success("Item voided.");
+    try {
+      const data = await fetch("/api/orders").then((r) => r.json());
+      const fresh: OrderDto | undefined = (data.orders ?? []).find((o: OrderDto) => o.id === orderId);
+      if (fresh) setResumed((r) => (r && r.order.id === orderId ? { table: r.table, order: fresh } : r));
+    } catch {
+      // The void is saved; the panel refreshes on the next queue load.
+    }
+    loadQueue();
+    return true;
+  }
+
+  /** After items were given free from the payment dialog. Settled: the whole bill was free and the
+   * order is closed, so the dialog goes and the receipt comes up. Otherwise the dialog stays open on
+   * the order as it now stands, to take payment for the rest. */
+  async function handleComped(orderId: string, settled: boolean) {
+    const number = payingOrder?.orderNumber;
+    if (settled) {
+      toast.success(`Order #${number} given free.`);
+      setPayingOrder(null);
+      setResumed(null);
+      loadQueue();
+      await openReceiptFor(orderId);
+      return;
+    }
+    toast.success("Given free. Take payment for the rest.");
+    try {
+      const data = await fetch("/api/orders").then((r) => r.json());
+      const fresh: OrderDto | undefined = (data.orders ?? []).find((o: OrderDto) => o.id === orderId);
+      if (fresh) setPayingOrder(fresh);
+    } catch {
+      // The comp is saved; the dialog just shows the old figure until it is reopened.
+      toast.error("Couldn't refresh the bill — close it and open it again.");
+    }
+    loadQueue();
+  }
+
   async function handleConfirmPayment(tenders: { method: PaymentMethod; amountPaisa: number }[], cashTenderedPaisa?: number) {
     if (!payingOrder) return;
     setPaying(true);
@@ -1073,6 +1135,7 @@ export function PosTerminal({
               onTakePayment={canTakePayment ? () => setPayingOrder(resumed.order) : undefined}
               onPrintBill={canPrintBill ? () => setBillOrderId(resumed.order.id) : undefined}
               onManage={canManage ? () => setManagingOrderId(resumed.order.id) : undefined}
+              onVoidLine={managePermissions.canVoidLine ? (lineId, quantity, reason) => voidLineOnTable(resumed.order.id, lineId, quantity, reason) : undefined}
               onAddItems={() => {
                 setLines([]);
                 setAddingTo(resumed.order);
@@ -1126,8 +1189,10 @@ export function PosTerminal({
             }
             onPrintBill={canPrintBill ? (o) => setBillOrderId(o.id) : undefined}
             onManage={canManage ? (o) => setManagingOrderId(o.id) : undefined}
+            onVoidItem={managePermissions.canVoidLine ? (o) => setManagingOrderId(o.id) : undefined}
             canRefund={canRefund}
             onRefund={(o) => setRefundingOrder(o)}
+            onEditPaid={canCorrectPayment || canTakePayment ? (o) => setEditingPaid(o) : undefined}
             onClose={() => {
               setShowQueue(false);
               setPaneOpen(false);
@@ -1210,6 +1275,16 @@ export function PosTerminal({
           <NoSaleDialog open={noSaleOpen} branchName={branchName} onClose={() => setNoSaleOpen(false)} />
         </PanelBoundary>
 
+        <PanelBoundary name="Edit paid order" fallback={null} resetKeys={[editingPaid]} onCaught={closeAfterFailure("edit window", () => setEditingPaid(null))}>
+          <PaidOrderEditDialog
+            order={editingPaid}
+            canCorrectPayment={canCorrectPayment}
+            canAddCustomer={canTakePayment}
+            onClose={() => setEditingPaid(null)}
+            onChanged={() => void loadQueue()}
+          />
+        </PanelBoundary>
+
         <PanelBoundary name="Refund" fallback={null} resetKeys={[refundingOrder]} onCaught={closeAfterFailure("refund window", () => setRefundingOrder(null))}>
           <RefundDialog
             order={refundingOrder}
@@ -1244,6 +1319,8 @@ export function PosTerminal({
             onConfirm={handleConfirmPayment}
             submitting={paying}
             offline={!sync.isOnline}
+            canComp={canComp}
+            onComped={handleComped}
           />
         </PanelBoundary>
 

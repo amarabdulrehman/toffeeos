@@ -36,6 +36,8 @@ export function OrderQueuePanel({
   onReprintKot,
   onPrintBill,
   onManage,
+  onVoidItem,
+  onEditPaid,
   canRefund,
   onRefund,
   onClose,
@@ -76,6 +78,11 @@ export function OrderQueuePanel({
   /** Omit to hide it — shown when the role allows any of voiding an item, changing type, merging
    * tables or tax exemption. */
   onManage?: (order: OrderDto) => void;
+  /** pos.order.voidLine: take one item off. Opens the order's item list; it was only in Manage, where
+   * a café told us they couldn't find it. */
+  onVoidItem?: (order: OrderDto) => void;
+  /** Change how a paid bill was paid, or add its customer. See PaidOrderEditDialog. */
+  onEditPaid?: (order: OrderDto) => void;
   /** pos.payment.refund. Absent for a cashier whose role does not grant it. */
   canRefund?: boolean;
   onRefund?: (order: OrderDto) => void;
@@ -133,6 +140,11 @@ export function OrderQueuePanel({
               Bill
             </Button>
           )}
+          {onVoidItem && o.status !== "PAID" && (
+            <Button variant="outline" className="text-destructive" onClick={() => onVoidItem(o)}>
+              Void item
+            </Button>
+          )}
           {onManage && (
             <Button variant="outline" onClick={() => onManage(o)}>
               Manage
@@ -170,6 +182,11 @@ export function OrderQueuePanel({
           )}
           {/* Only shown to staff whose role grants it. Paid is the only status a refund makes
               sense on: an unpaid order is corrected by voiding, which is different money. */}
+          {onEditPaid && (
+            <Button variant="outline" onClick={() => onEditPaid(o)}>
+              Edit
+            </Button>
+          )}
           {canRefund && onRefund && (
             <Button variant="outline" className="text-destructive" onClick={() => onRefund(o)}>
               Refund

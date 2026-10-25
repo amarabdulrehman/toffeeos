@@ -11,6 +11,7 @@ import { useChannel } from "@/lib/realtime-client";
 import { topic } from "@/lib/realtime-topics";
 import { cacheTables, getCachedTables } from "@/lib/offline/db";
 import { CartRow } from "./cart-panel";
+import { VoidLine } from "./void-line";
 import type { CartLine, FloorDto, OrderDto, RestaurantTableDto } from "./types";
 
 type StatusFilter = "ALL" | "AVAILABLE" | "RESERVED" | "BOOKED";
@@ -207,6 +208,7 @@ export function ResumedOrderPanel({
   onAddItems,
   onPrintBill,
   onManage,
+  onVoidLine,
 }: {
   table: RestaurantTableDto;
   order: OrderDto;
@@ -218,7 +220,12 @@ export function ResumedOrderPanel({
   onPrintBill?: () => void;
   /** Omit to hide it — void an item, switch to takeaway, merge a table, tax exemption. */
   onManage?: () => void;
+  /** Omit to hide the Void beside each item — gated by pos.order.voidLine. Resolves true when done. */
+  onVoidLine?: (lineId: string, quantity: number, reason: string) => Promise<boolean>;
 }) {
+  const [busy, setBusy] = useState(false);
+  const live = order.lines.filter((l) => !l.isVoided);
+  const unpaid = order.status !== "PAID";
   return (
     <div className="space-y-4 rounded-xl border bg-card p-4 shadow-xs">
       <div className="flex items-center justify-between">
@@ -234,11 +241,28 @@ export function ResumedOrderPanel({
       </div>
       <div className="space-y-1 text-sm">
         {order.lines.map((l) => (
-          <div key={l.id} className={`flex justify-between ${l.isVoided ? "text-muted-foreground line-through" : ""}`}>
+          <div key={l.id} className={`flex flex-wrap items-center justify-between gap-x-2 gap-y-1 ${l.isVoided ? "text-muted-foreground line-through" : ""}`}>
             <span>
               {l.quantity}× {l.nameSnapshot}
             </span>
-            <span className="tabular-nums">{formatPkr(l.lineTotalPaisa)}</span>
+            <span className="flex items-center gap-2">
+              <span className="tabular-nums">{l.isComplimentary && !l.isVoided ? "Free" : formatPkr(l.lineTotalPaisa)}</span>
+              {onVoidLine && unpaid && !l.isVoided && (
+                <VoidLine
+                  line={l}
+                  isLastItem={live.length === 1 && l.quantity === 1}
+                  busy={busy}
+                  onVoid={async (quantity, reason) => {
+                    setBusy(true);
+                    try {
+                      return await onVoidLine(l.id, quantity, reason);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                />
+              )}
+            </span>
           </div>
         ))}
         {order.taxExemptReason && <div className="text-xs text-warning-foreground">Tax exempt: {order.taxExemptReason}</div>}

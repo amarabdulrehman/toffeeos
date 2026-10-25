@@ -5,11 +5,11 @@ import { toast } from "sonner";
 import { Ban, Gift, Merge, Receipt, Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatPkr } from "@/lib/money";
 import type { FloorDto, OrderDto } from "./types";
+import { VoidLine } from "./void-line";
 
 export interface ManagePermissions {
   canVoidLine: boolean;
@@ -159,7 +159,6 @@ function Section({ icon: Icon, title, children }: { icon: typeof Ban; title: str
 }
 
 function ItemsSection({ order, canVoid, busy, act }: { order: OrderDto; canVoid: boolean; busy: boolean; act: Act }) {
-  const [voiding, setVoiding] = useState<{ lineId: string; quantity: number; max: number; reason: string } | null>(null);
   const live = order.lines.filter((l) => !l.isVoided);
 
   return (
@@ -167,78 +166,26 @@ function ItemsSection({ order, canVoid, busy, act }: { order: OrderDto; canVoid:
       <ul className="space-y-1.5 text-sm">
         {order.lines.map((l) => (
           <li key={l.id} className={l.isVoided ? "text-muted-foreground line-through" : ""}>
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="min-w-0">
                 {l.quantity}× {l.nameSnapshot}
                 {l.isVoided && <span className="ml-1.5 text-xs no-underline">(voided)</span>}
+                {l.isComplimentary && !l.isVoided && <span className="ml-1.5 text-xs text-muted-foreground">(free)</span>}
               </span>
               <span className="flex shrink-0 items-center gap-2">
                 <span className="tabular-nums">{formatPkr(l.lineTotalPaisa)}</span>
                 {canVoid && !l.isVoided && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-destructive"
-                    disabled={busy || live.length === 1 && l.quantity === 1}
-                    title={live.length === 1 && l.quantity === 1 ? "The last item — void the whole order instead" : undefined}
-                    onClick={() => setVoiding({ lineId: l.id, quantity: 1, max: l.quantity, reason: "" })}
-                    aria-label={`Void ${l.nameSnapshot}`}
-                  >
-                    Void
-                  </Button>
+                  <VoidLine
+                    line={l}
+                    isLastItem={live.length === 1 && l.quantity === 1}
+                    busy={busy}
+                    onVoid={(quantity, reason) =>
+                      act(`/api/orders/${order.id}/lines/${l.id}/void`, "POST", { quantity, reason }, `${quantity}× ${l.nameSnapshot} voided`)
+                    }
+                  />
                 )}
               </span>
             </div>
-            {voiding?.lineId === l.id && (
-              <div className="mt-2 space-y-2 rounded-lg border bg-muted/40 p-3 no-underline">
-                {voiding.max > 1 && (
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="void-qty" className="text-xs">
-                      How many
-                    </Label>
-                    <Input
-                      id="void-qty"
-                      type="number"
-                      min={1}
-                      max={voiding.max}
-                      value={voiding.quantity}
-                      onChange={(e) =>
-                        setVoiding({ ...voiding, quantity: Math.max(1, Math.min(voiding.max, Number(e.target.value) || 1)) })
-                      }
-                      className="h-9 w-20"
-                    />
-                    <span className="text-xs text-muted-foreground">of {voiding.max}</span>
-                  </div>
-                )}
-                <Input
-                  placeholder="Why? e.g. customer changed their mind"
-                  aria-label="Reason for voiding"
-                  value={voiding.reason}
-                  onChange={(e) => setVoiding({ ...voiding, reason: e.target.value })}
-                />
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setVoiding(null)}>
-                    Keep it
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={busy || voiding.reason.trim().length < 2}
-                    onClick={async () => {
-                      const ok = await act(
-                        `/api/orders/${order.id}/lines/${l.id}/void`,
-                        "POST",
-                        { quantity: voiding.quantity, reason: voiding.reason },
-                        `${voiding.quantity}× ${l.nameSnapshot} voided`
-                      );
-                      if (ok) setVoiding(null);
-                    }}
-                  >
-                    {voiding.quantity > 1 ? `Yes, void ${voiding.quantity}` : "Yes, void it"}
-                  </Button>
-                </div>
-              </div>
-            )}
           </li>
         ))}
       </ul>

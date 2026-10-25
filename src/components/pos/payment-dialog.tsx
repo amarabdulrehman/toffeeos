@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Gift, Plus, X } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,8 @@ export function PaymentDialog({
   onConfirm,
   submitting,
   offline = false,
+  canComp = false,
+  onComped,
 }: {
   open: boolean;
   /** Null while the dialog is closed/unmounting — the live preview fetch below is skipped then. */
@@ -74,7 +76,12 @@ export function PaymentDialog({
    * the customer owes whether the line is up or down.
    */
   offline?: boolean;
+  /** pos.order.comp: may give items, or the whole bill, free. */
+  canComp?: boolean;
+  /** After items were given free. `settled`: nothing was left to pay, and the order is closed. */
+  onComped?: (orderId: string, settled: boolean) => void;
 }) {
+  const [comping, setComping] = useState(false);
   // Defaulting the cash tender to the full amount only works if this component remounts for
   // every new order — the caller passes key={order.id} on <PaymentDialog> for exactly that
   // reason, so this initializer runs fresh each time instead of only on the very first render.
@@ -84,7 +91,12 @@ export function PaymentDialog({
   // (Punjab PRA's higher 16% rate) — it's only a placeholder until this resolves. Cash and card
   // are genuinely different totals (16% vs 8%), so "Amount due" must reflect whatever the cashier
   // currently has selected, not the number the order happened to be created with.
-  const [preview, setPreview] = useState<PreviewTotals | null>(null);
+  // Tagged with the order version it priced. After items are given free the order changes under the
+  // open dialog, and an answer for the old version would charge the old total: confirming quickly
+  // took Rs 1,137 for a Rs 847 bill. Until the server answers for this version, the on-device total
+  // (priced from the order as it now stands) is used.
+  const [previewFor, setPreviewFor] = useState<{ version: number | undefined; totals: PreviewTotals } | null>(null);
+  const preview = previewFor && previewFor.version === order?.version ? previewFor.totals : null;
 
   // Tenders is a plain array of primitives per entry; comparing it by value keeps the pricing
   // below from re-running on every render.
@@ -92,6 +104,7 @@ export function PaymentDialog({
 
   useEffect(() => {
     if (!orderId) return;
+    const pricedVersion = order?.version;
     const controller = new AbortController();
     const handle = setTimeout(() => {
       fetch(`/api/orders/${orderId}/pay-preview`, {
@@ -105,7 +118,7 @@ export function PaymentDialog({
         }),
       })
         .then((r) => r.json())
-        .then((d) => d.totals && setPreview(d.totals))
+        .then((d) => d.totals && setPreviewFor({ version: pricedVersion, totals: d.totals }))
         .catch(() => {});
     }, 150);
     return () => {
@@ -113,7 +126,7 @@ export function PaymentDialog({
       controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId, tendersKey]);
+  }, [orderId, tendersKey, order?.version]);
 
   // The same pass the server's pay-preview makes, run here. Not an estimate and not a parallel
   // implementation: identical engine (finalizeOrder), identical line builder (pricingLinesFromStored),
@@ -132,6 +145,7 @@ export function PaymentDialog({
         unitPricePaisa: l.unitPricePaisa as number,
         quantity: l.quantity,
         isVoided: l.isVoided ?? false,
+        isComplimentary: l.isComplimentary ?? false,
         discountType: l.discountType ?? null,
         discountValue: l.discountValue ?? null,
       }))
@@ -211,12 +225,38 @@ export function PaymentDialog({
     );
   }
 
+  const comped = (order?.lines ?? []).filter((l) => l.isComplimentary && !l.isVoided);
+
+  if (comping && order) {
+    return (
+      <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+        <DialogContent>
+          <CompPanel
+            order={order}
+            onCancel={() => setComping(false)}
+            onDone={(settled) => {
+              setComping(false);
+              onComped?.(order.id, settled);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="font-heading">Take payment</DialogTitle>
         </DialogHeader>
+
+        {comped.length > 0 && (
+          <div className="rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground" data-testid="comped-items">
+            <span className="font-medium text-foreground">Complimentary:</span>{" "}
+            {comped.map((l) => `${l.quantity}× ${l.nameSnapshot}`).join(", ")}
+          </div>
+        )}
 
         <div className="rounded-xl bg-primary/10 px-4 py-3.5 text-center shadow-xs">
           <div className="text-xs font-medium text-muted-foreground">Amount due</div>
@@ -269,13 +309,29 @@ export function PaymentDialog({
               )}
             </div>
           ))}
-          <button
-            onClick={addTender}
-            className="flex items-center gap-1.5 rounded-full border border-dashed border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
-          >
-            <Plus className="size-3.5" />
-            Split payment
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={addTender}
+              className="flex items-center gap-1.5 rounded-full border border-dashed border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+            >
+              <Plus className="size-3.5" />
+              Split payment
+            </button>
+            {/* Beside the ways of paying, because that's where a cashier reaches for it, but not one
+                of them: giving food free isn't money taken. See compOrderItems. Online only, like
+                adding items: it changes what the order is. */}
+            {canComp && order && (
+              <button
+                onClick={() => setComping(true)}
+                disabled={offline}
+                title={offline ? "Needs a connection" : undefined}
+                className="flex items-center gap-1.5 rounded-full border border-dashed border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary disabled:opacity-50"
+              >
+                <Gift className="size-3.5" />
+                Complimentary
+              </button>
+            )}
+          </div>
 
           {tenders.some((t) => t.method === "CASH") && (
             <div className="flex items-center justify-between rounded-xl border bg-muted/40 px-3 py-2.5 text-sm">
@@ -328,5 +384,134 @@ export function PaymentDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const COMP_REASONS = ["Owner's guest", "Sorry for the wait", "Regular customer", "Staff meal"];
+
+/**
+ * Give the whole bill, or some items, free. A reason is required; it goes on the order with who
+ * gave it, and into the reports beside the value given away.
+ */
+function CompPanel({ order, onCancel, onDone }: { order: OrderDto; onCancel: () => void; onDone: (settled: boolean) => void }) {
+  const live = (order.lines ?? []).filter((l) => !l.isVoided && !l.isComplimentary);
+  const [mode, setMode] = useState<"all" | "items">("all");
+  const [picked, setPicked] = useState<Record<string, number>>({});
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const items = Object.entries(picked)
+    .filter(([, q]) => q > 0)
+    .map(([lineId, quantity]) => ({ lineId, quantity }));
+  const priceOf = (lineId: string) => live.find((l) => l.id === lineId)?.unitPricePaisa ?? 0;
+  const value =
+    mode === "all"
+      ? live.reduce((a, l) => a + (l.unitPricePaisa ?? 0) * l.quantity, 0)
+      : items.reduce((a, it) => a + priceOf(it.lineId) * it.quantity, 0);
+  const ready = reason.trim().length >= 2 && (mode === "all" || items.length > 0) && !busy;
+
+  async function give() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/comp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim(), ...(mode === "items" ? { items } : {}) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "Couldn't give that complimentary.");
+        return;
+      }
+      onDone(Boolean(data.settled));
+    } catch {
+      setError("Couldn't reach the server — check the connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="font-heading">Complimentary — order #{order.orderNumber}</DialogTitle>
+      </DialogHeader>
+      <div className="space-y-4">
+        <div role="group" aria-label="What to give" className="grid grid-cols-2 gap-2">
+          <Button variant={mode === "all" ? "default" : "outline"} aria-pressed={mode === "all"} onClick={() => setMode("all")}>
+            Whole bill
+          </Button>
+          <Button variant={mode === "items" ? "default" : "outline"} aria-pressed={mode === "items"} onClick={() => setMode("items")}>
+            Some items
+          </Button>
+        </div>
+
+        {mode === "items" && (
+          <ul className="space-y-1.5">
+            {live.map((l) => {
+              const q = picked[l.id] ?? 0;
+              const set = (n: number) => setPicked((p) => ({ ...p, [l.id]: Math.max(0, Math.min(l.quantity, n)) }));
+              return (
+                <li key={l.id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm">
+                  <span className="min-w-0">
+                    {l.quantity}× {l.nameSnapshot}
+                    <span className="ml-1.5 text-muted-foreground">{formatPkr((l.unitPricePaisa ?? 0) * l.quantity)}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Button size="sm" variant="outline" aria-label={`One less ${l.nameSnapshot} free`} disabled={q === 0} onClick={() => set(q - 1)}>
+                      −
+                    </Button>
+                    <span className="w-6 text-center tabular-nums" data-testid={`comp-qty-${l.nameSnapshot}`}>
+                      {q}
+                    </span>
+                    <Button size="sm" variant="outline" aria-label={`One more ${l.nameSnapshot} free`} disabled={q === l.quantity} onClick={() => set(q + 1)}>
+                      +
+                    </Button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <div className="space-y-1.5">
+          <label htmlFor="comp-reason" className="text-sm font-medium">
+            Reason (required)
+          </label>
+          <Input id="comp-reason" value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="Why is it free?" />
+          <div className="flex flex-wrap gap-1.5">
+            {COMP_REASONS.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setReason(r)}
+                className="rounded-full border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <p className="text-sm text-muted-foreground">
+          {formatPkr(value)} at menu price, given free. It isn&apos;t counted as a sale; stock still comes out.
+        </p>
+        {error && (
+          <p role="alert" className="text-sm font-medium text-destructive">
+            {error}
+          </p>
+        )}
+      </div>
+      <DialogFooter>
+        <Button variant="outline" size="lg" onClick={onCancel}>
+          Back
+        </Button>
+        <Button size="lg" onClick={give} disabled={!ready}>
+          {busy ? "Giving…" : mode === "all" ? "Give whole bill free" : "Give free"}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }

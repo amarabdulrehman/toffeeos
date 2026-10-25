@@ -85,6 +85,9 @@ function TotalsBlock({ t }: { t: SalesTotals }) {
         <Row label="Discounts given" value={formatPkr(t.discountPaisa)} />
         <Row label="Tax collected" value={formatPkr(t.taxPaisa)} />
         {t.serviceChargePaisa > 0 && <Row label="Service charge" value={formatPkr(t.serviceChargePaisa)} />}
+        {t.complimentary.valuePaisa > 0 && (
+          <Row label={`Complimentary (${t.complimentary.itemCount}, not charged)`} value={formatPkr(t.complimentary.valuePaisa)} />
+        )}
       </div>
       <Rule />
       <Heading>PAYMENTS</Heading>

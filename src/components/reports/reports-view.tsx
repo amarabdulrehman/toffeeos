@@ -606,7 +606,7 @@ function StaffTab({ qs }: { qs: string }) {
 }
 
 interface DiscountVoidRow {
-  kind: "discount" | "void";
+  kind: "discount" | "void" | "complimentary";
   orderNumber: number;
   actorName: string;
   detail: string;
@@ -644,7 +644,7 @@ function DiscountVoidTab({ qs }: { qs: string }) {
               {!loading && rows.map((r, i) => (
                 <TableRow key={i}>
                   <TableCell>
-                    <Badge variant={r.kind === "void" ? "destructive" : "warning"} className="capitalize">{r.kind}</Badge>
+                    <Badge variant={r.kind === "void" ? "destructive" : r.kind === "complimentary" ? "secondary" : "warning"} className="capitalize">{r.kind}</Badge>
                   </TableCell>
                   <TableCell className="tabular-nums">#{r.orderNumber}</TableCell>
                   <TableCell className="font-medium">{r.actorName}</TableCell>

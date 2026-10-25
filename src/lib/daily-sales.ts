@@ -19,6 +19,8 @@ export interface SalesTotals {
   serviceChargePaisa: number;
   /** Every discount given, per item and on whole orders. */
   discountPaisa: number;
+  /** Given free, at menu value. Not part of gross or net: nothing was paid for it. */
+  complimentary: { itemCount: number; orderCount: number; valuePaisa: number };
   byPaymentMethod: { method: string; amountPaisa: number }[];
   byOrderType: { type: string; orderCount: number; grossPaisa: number }[];
 }

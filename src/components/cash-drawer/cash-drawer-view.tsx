@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatPkr, paisaToRupees, rupeesToPaisa } from "@/lib/money";
+import { METHOD_LABEL } from "@/lib/daily-sales";
 
 interface DrawerDay {
   id: string | null;
@@ -36,6 +37,60 @@ interface DrawerDay {
   note: string | null;
   /** The drawer opened with no sale this day — who, when, why. Absent from the history list. */
   noSales?: { at: string; byName: string | null; reason: string }[];
+  /** The day's takings by every way of paying. Absent from the history list. */
+  takings?: {
+    byMethod: { method: string; amountPaisa: number }[];
+    refundsByMethod: { method: string; amountPaisa: number }[];
+    complimentary: { itemCount: number; valuePaisa: number };
+  };
+}
+
+/**
+ * Every way of paying side by side, for closing up. Beside the drawer, never part of it: only the
+ * cash is in the drawer, and the card figure is the one to check against the card machine's slip.
+ */
+function TakingsCard({ takings }: { takings: NonNullable<DrawerDay["takings"]> }) {
+  const taken = takings.byMethod.reduce((a, r) => a + r.amountPaisa, 0);
+  const refunded = new Map(takings.refundsByMethod.map((r) => [r.method, r.amountPaisa]));
+  const methods = [...new Set([...takings.byMethod.map((r) => r.method), ...takings.refundsByMethod.map((r) => r.method)])];
+  return (
+    <Card className="shadow-sm">
+      <CardHeader>
+        <CardTitle className="font-heading">Today&apos;s takings by payment method</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Only cash is in the drawer. Check the card total against the card machine&apos;s end-of-day slip.
+        </p>
+      </CardHeader>
+      <CardContent>
+        {methods.length === 0 && takings.complimentary.valuePaisa === 0 ? (
+          <p className="text-sm text-muted-foreground">Nothing taken yet today.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5" data-testid="takings-by-method">
+            {methods.map((m) => {
+              const amount = takings.byMethod.find((r) => r.method === m)?.amountPaisa ?? 0;
+              const back = refunded.get(m) ?? 0;
+              return (
+                <Figure
+                  key={m}
+                  label={METHOD_LABEL[m] ?? m}
+                  value={formatPkr(amount, { showPaisa: true })}
+                  hint={back > 0 ? `${formatPkr(back, { showPaisa: true })} refunded` : undefined}
+                />
+              );
+            })}
+            <Figure label="Total taken" value={formatPkr(taken, { showPaisa: true })} strong />
+            {takings.complimentary.valuePaisa > 0 && (
+              <Figure
+                label="Complimentary"
+                value={formatPkr(takings.complimentary.valuePaisa, { showPaisa: true })}
+                hint={`${takings.complimentary.itemCount} item${takings.complimentary.itemCount === 1 ? "" : "s"}, not charged`}
+              />
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 /** Over, short, or exact — the three things a variance can be, and the only number anyone acts on. */
@@ -292,6 +347,8 @@ export function CashDrawerView({ canClose, canCorrect }: { canClose: boolean; ca
           )}
         </CardContent>
       </Card>
+
+      {today.takings && <TakingsCard takings={today.takings} />}
 
       <Card className="shadow-sm">
         <CardHeader>

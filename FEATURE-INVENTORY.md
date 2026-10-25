@@ -193,6 +193,9 @@ Check this list before promising a client they can change something:
 - **What it is:** Take an item or order off, with a reason.
 - **Does:**
   - Void a line or a whole order with a reason.
+  - One item (or some of a quantity) is voided straight from the table's order panel, or from
+    **Void item** on its Order Queue card (24 October 2026); before, only inside Manage.
+    `src/components/pos/void-line.tsx`.
   - Cancel an order the kitchen already has, with a reason a manager reviews on the dashboard.
   - Voided items stay on the kitchen ticket, struck through.
   - `voidOrder`, `cancelSentOrder` (`src/server/orders.ts`); `OrderCancellation`;
@@ -265,10 +268,44 @@ Check this list before promising a client they can change something:
   - An "Other" method exists in the data but isn't offered at the till.
 - **Configurable:** No.
 
+### 1.14b Editing a paid bill — Live · Every plan
+- **What it is:** Correct the record of a paid bill without touching its items or amounts
+  (24 October 2026). **Edit** on a paid order in the Order Queue.
+- **Does:**
+  - **Payment method:** re-records how it was paid, priced again at that method's tax rate, with a
+    reason. Says what to give back or collect. Cashiers can do it for today while the drawer is
+    open (`pos.payment.correct`); an earlier or counted day also needs
+    `pos.cashDrawer.correctClose`.
+  - **Customer:** adds one to a bill paid without one, with the points it earned (once only).
+  - Both go on the order's history and the audit log. `src/server/paid-order-edits.ts`.
+- **Doesn't:** Split-payment bills and bills with refunds can't have their method changed (refund
+  and re-take instead). Items, prices and amounts never change after payment; that's Refund.
+- **Configurable:** Permission-gated.
+
+### 1.14a Complimentary — Live · Every plan
+- **What it is:** Give items, or a whole bill, free (asked for by a café, 24 October 2026).
+- **Does:**
+  - A **Complimentary** button in the payment window, next to Split payment. Whole bill, or chosen
+    items and how many of each; a reason is required (quick choices offered).
+  - Not a payment method: a free item is priced at nothing and its menu value is kept apart
+    (`OrderLine.compValuePaisa`). It's never counted as a sale or taxed, but stock still comes out.
+  - A whole bill given free is settled at Rs 0 straight away, with no payment rows.
+  - Shown as "FREE (Rs x)" on bills and receipts. Daily Sales, the closing slip and the cash
+    drawer's takings show a "Complimentary" figure. The discounts & voids report lists who gave
+    it and why.
+  - Cashiers, branch managers and owners hold `pos.order.comp` by default.
+  - `compOrderItems` (`src/server/order-changes.ts`), `/api/orders/[orderId]/comp`.
+- **Doesn't:** Online only. No per-person limit on how much can be given.
+- **Configurable:** Permission-gated.
+
 ### 1.15 Refunds — Live · Every plan
 - **What it is:** Give money back on a paid bill.
 - **Does:**
   - Any amount up to what was paid, by method, with a reason.
+  - **Or by item** (24 October 2026): pick what came back and the amount is worked out on the
+    server as those items' share of what was paid, discount, service charge and tax included. The
+    dialog shows the figure first. An item can't be refunded twice (`OrderLine.refundedQuantity`).
+    `src/lib/item-refund.ts`.
   - Refunds come off the sales figures, the P&L (with their tax) and, for cash, the drawer.
   - Loyalty points earned on the bill are taken back.
   - `src/app/api/orders/[orderId]/refund/route.ts`, `src/server/refunds.ts`.
@@ -314,6 +351,9 @@ Check this list before promising a client they can change something:
   - Every no-sale opening is recorded with a reason.
   - A closed day's count can be corrected by an owner or branch manager (by default), each
     correction logged with the figure it replaced.
+  - **The day's takings by every payment method side by side** (24 October 2026): cash, card,
+    wallets, refunds per method, and complimentary. Shown beside the drawer, not counted in it; the
+    card figure is for checking against the card machine's slip.
   - `src/server/cash-drawer.ts`, `src/app/api/cash-drawer/route.ts`.
 - **Doesn't:** One drawer per branch, not per till.
 - **Configurable:** No.

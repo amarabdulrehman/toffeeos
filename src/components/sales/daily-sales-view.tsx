@@ -288,6 +288,16 @@ function MoneyCard({ totals }: { totals: SalesTotals }) {
     { label: "Discounts given (already taken off)", value: totals.discountPaisa, tone: "part" },
     { label: "Tax collected (included)", value: totals.taxPaisa, tone: "part" },
     { label: "Service charge (included)", value: totals.serviceChargePaisa, tone: "part" },
+    // Given free, at menu value: not part of any figure above, since nobody paid for it.
+    ...(totals.complimentary.valuePaisa > 0
+      ? [
+          {
+            label: `Complimentary (${totals.complimentary.itemCount} item${totals.complimentary.itemCount === 1 ? "" : "s"}, not charged)`,
+            value: totals.complimentary.valuePaisa,
+            tone: "part" as const,
+          },
+        ]
+      : []),
   ];
   return (
     <Card>
