@@ -3,7 +3,14 @@ import { runInTenantTransaction, tenantDb, type TenantTransactionClient } from "
 import { newId, newOrderLineId } from "@/lib/ids";
 import { publish } from "@/server/realtime";
 import { HttpError } from "@/server/handler";
-import { TERMINAL_ORDER_STATUSES, findOpenOrderForTable, getBranchPricingContext, pricingLinesFromStored, takePayment } from "@/server/orders";
+import {
+  TERMINAL_ORDER_STATUSES,
+  assertDiscountsWithinCap,
+  findOpenOrderForTable,
+  getBranchPricingContext,
+  pricingLinesFromStored,
+  takePayment,
+} from "@/server/orders";
 import { computeProvisionalTotal, type DiscountInput } from "@/lib/pricing";
 
 /**
@@ -175,6 +182,86 @@ export async function voidOrderLine(
           // Voided after the kitchen had it: the food may already be made, which is a different
           // conversation from taking an item off a bill before anyone started on it.
           afterKitchen: order.sentToKitchenAt !== null,
+        },
+      },
+    });
+    return saved;
+  });
+
+  await announce(tenantId, branchId, order, "order_updated");
+  return updated;
+}
+
+// ---------------------------------------------------------------------------------------------
+// A discount after the order is punched
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Sets, changes or takes off the whole-bill discount on an order that hasn't been paid.
+ *
+ * A discount could only be given while the order was being rung up, so a table told "10% off for
+ * the wait" after its food had gone to the kitchen couldn't have it. Same rules as at the till: the
+ * order-discount permission, the branch's discount ceiling unless the person may exceed it, and a
+ * reason on the order's history. Points already spent on the bill are a discount the customer paid
+ * for with their own points, so they are never replaced here.
+ */
+export async function setOrderDiscount(
+  tenantId: string,
+  branchId: string,
+  actorId: string,
+  input: { orderId: string; discount: DiscountInput | null; reason?: string },
+  mayExceedCap: boolean
+) {
+  const order = await loadOrder(tenantId, branchId, input.orderId);
+  assertChangeable(order, "discounted");
+  const existing = order.discounts[0] ?? null;
+  if (existing?.loyaltyPointsRedeemed) {
+    throw new HttpError(409, "Loyalty points were spent on this bill, so another discount can't replace them.");
+  }
+  const next = input.discount;
+  if (!next && !existing) throw new HttpError(400, "There's no discount on this order to take off.");
+  if (next) {
+    if (!Number.isInteger(next.value) || next.value <= 0) throw new HttpError(400, "Enter a discount above zero.");
+    if (next.type === "PERCENT" && next.value > 10_000) throw new HttpError(400, "A discount can't be more than 100%.");
+  }
+  const reason = input.reason?.trim() || null;
+
+  const { maxDiscountBasisPoints } = await getBranchPricingContext(tenantId, branchId, order.type, order.taxExemptReason !== null);
+  const live = order.lines.filter((l) => !l.isVoided && !l.isComplimentary);
+  if (next) {
+    assertDiscountsWithinCap(
+      live.map((l) => ({
+        unitPricePaisa: l.unitPricePaisa,
+        quantity: l.quantity,
+        discount: l.discountType && l.discountValue != null ? { type: l.discountType, value: l.discountValue } : undefined,
+      })),
+      next,
+      maxDiscountBasisPoints,
+      mayExceedCap
+    );
+  }
+
+  const totals = await provisionalTotals(tenantId, branchId, { ...order, discounts: next ? [next] : [] }, order.lines);
+
+  const updated = await runInTenantTransaction(tenantId, async (tx) => {
+    await guardVersion(tx, order);
+    await tx.orderDiscount.deleteMany({ where: { orderId: order.id, loyaltyPointsRedeemed: null } });
+    if (next) {
+      await tx.orderDiscount.create({
+        data: { tenantId, orderId: order.id, type: next.type, value: next.value, reason, appliedById: actorId },
+      });
+    }
+    const saved = await tx.order.update({ where: { id: order.id }, data: { ...totals, version: { increment: 1 } } });
+    await tx.orderEvent.create({
+      data: {
+        tenantId,
+        orderId: order.id,
+        type: "DISCOUNT_CHANGED",
+        actorId,
+        payload: {
+          from: existing ? { type: existing.type, value: existing.value } : null,
+          to: next ? { type: next.type, value: next.value } : null,
+          reason,
         },
       },
     });

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Ban, Gift, Merge, Receipt, Repeat } from "lucide-react";
+import { Ban, Gift, Merge, Percent, Receipt, Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatPkr } from "@/lib/money";
 import type { FloorDto, OrderDto } from "./types";
 import { VoidLine } from "./void-line";
+import { OrderDiscountForm } from "./order-discount-form";
 
 export interface ManagePermissions {
   canVoidLine: boolean;
@@ -18,11 +19,13 @@ export interface ManagePermissions {
   canTaxExempt: boolean;
   /** Spend the customer's loyalty points on the bill — whoever takes payment. */
   canRedeemPoints?: boolean;
+  /** pos.discount.applyOrder: give or change a whole-bill discount after the order is punched. */
+  canDiscount?: boolean;
 }
 
 /** True when the person can do anything in this dialog at all — otherwise the button isn't shown. */
 export function canManageAnything(p: ManagePermissions): boolean {
-  return p.canVoidLine || p.canChangeType || p.canMerge || p.canTaxExempt || !!p.canRedeemPoints;
+  return p.canVoidLine || p.canChangeType || p.canMerge || p.canTaxExempt || !!p.canRedeemPoints || !!p.canDiscount;
 }
 
 async function send(url: string, method: string, body?: unknown): Promise<boolean> {
@@ -129,6 +132,17 @@ export function OrderManageDialog({
               <TypeSection order={current} busy={busy} act={act} />
             )}
             {permissions.canMerge && current.type === "DINE_IN" && <MergeSection order={current} busy={busy} act={act} />}
+            {permissions.canDiscount && (
+              <Section icon={Percent} title="Discount">
+                <OrderDiscountForm
+                  order={current}
+                  onDone={async () => {
+                    const fresh = await reload();
+                    if (fresh) onChanged(fresh);
+                  }}
+                />
+              </Section>
+            )}
             {permissions.canTaxExempt && <TaxSection order={current} busy={busy} act={act} />}
             {permissions.canRedeemPoints && <PointsSection order={current} busy={busy} act={act} />}
             <div className="flex items-center justify-between border-t pt-3 font-heading font-semibold">

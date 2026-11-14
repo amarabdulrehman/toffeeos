@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Gift, Plus, X } from "lucide-react";
+import { Gift, Percent, Plus, X } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import {
   type DiscountInput,
 } from "@/lib/pricing";
 import type { OrderDto, PaymentMethod } from "./types";
+import { OrderDiscountForm } from "./order-discount-form";
 
 interface PreviewTotals {
   totalPaisa: number;
@@ -47,6 +48,8 @@ export function PaymentDialog({
   offline = false,
   canComp = false,
   onComped,
+  canDiscount = false,
+  onOrderChanged,
 }: {
   open: boolean;
   /** Null while the dialog is closed/unmounting — the live preview fetch below is skipped then. */
@@ -80,8 +83,13 @@ export function PaymentDialog({
   canComp?: boolean;
   /** After items were given free. `settled`: nothing was left to pay, and the order is closed. */
   onComped?: (orderId: string, settled: boolean) => void;
+  /** pos.discount.applyOrder: give or change a whole-bill discount from here, before paying. */
+  canDiscount?: boolean;
+  /** The order changed here (a discount): re-read it so the amount due follows. */
+  onOrderChanged?: (orderId: string) => void | Promise<void>;
 }) {
   const [comping, setComping] = useState(false);
+  const [discounting, setDiscounting] = useState(false);
   // Defaulting the cash tender to the full amount only works if this component remounts for
   // every new order — the caller passes key={order.id} on <PaymentDialog> for exactly that
   // reason, so this initializer runs fresh each time instead of only on the very first render.
@@ -227,6 +235,30 @@ export function PaymentDialog({
 
   const comped = (order?.lines ?? []).filter((l) => l.isComplimentary && !l.isVoided);
 
+  if (discounting && order) {
+    return (
+      <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading">Discount — order #{order.orderNumber}</DialogTitle>
+          </DialogHeader>
+          <OrderDiscountForm
+            order={order}
+            onDone={async () => {
+              await onOrderChanged?.(order.id);
+              setDiscounting(false);
+            }}
+          />
+          <DialogFooter>
+            <Button variant="outline" size="lg" onClick={() => setDiscounting(false)}>
+              Back
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   if (comping && order) {
     return (
       <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -320,6 +352,18 @@ export function PaymentDialog({
             {/* Beside the ways of paying, because that's where a cashier reaches for it, but not one
                 of them: giving food free isn't money taken. See compOrderItems. Online only, like
                 adding items: it changes what the order is. */}
+            {/* After the order is punched, which is when "10% off for the wait" usually comes up. */}
+            {canDiscount && order && (
+              <button
+                onClick={() => setDiscounting(true)}
+                disabled={offline}
+                title={offline ? "Needs a connection" : undefined}
+                className="flex items-center gap-1.5 rounded-full border border-dashed border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary disabled:opacity-50"
+              >
+                <Percent className="size-3.5" />
+                {(order.discounts ?? []).length > 0 ? "Change discount" : "Discount"}
+              </button>
+            )}
             {canComp && order && (
               <button
                 onClick={() => setComping(true)}

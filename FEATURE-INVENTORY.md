@@ -186,7 +186,12 @@ Check this list before promising a client they can change something:
   - Going past it needs its own permission (`pos.discount.exceedMax`), and the server enforces
     the cap.
   - `exceedsDiscountCap` in `src/lib/pricing.ts`; `e2e/discount-cap.spec.ts`.
-- **Doesn't:** No automatic promotions, happy hours or coupon codes.
+  - **After the order is punched, before payment** (November 2026): give, change or take off a
+    whole-bill discount from the order's Manage window, or **Discount** in the payment window. Same
+    permission and ceiling, optional reason, on the order's history. Not over loyalty points
+    already spent on the bill. `setOrderDiscount` (`src/server/order-changes.ts`).
+- **Doesn't:** No automatic promotions, happy hours or coupon codes. No discount after payment
+  (that's a refund).
 - **Configurable:** Ceiling per branch (`BranchSettings.maxDiscountBasisPoints`).
 
 ### 1.8 Voids and cancellations — Live · Every plan

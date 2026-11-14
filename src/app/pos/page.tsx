@@ -91,6 +91,7 @@ export default async function PosPage() {
         canMerge: user.permissions.includes("tables.merge"),
         canTaxExempt: user.permissions.includes("pos.tax.exempt"),
         canRedeemPoints: user.permissions.includes("pos.payment.take"),
+        canDiscount: user.permissions.includes("pos.discount.applyOrder"),
       }}
       canNoSale={user.permissions.includes("pos.cashDrawer.openNoSale")}
       approvalsOn={settings?.waiterOrdersNeedApproval ?? false}

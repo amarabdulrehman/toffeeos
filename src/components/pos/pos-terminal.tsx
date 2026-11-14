@@ -742,12 +742,18 @@ export function PosTerminal({
       return;
     }
     toast.success("Given free. Take payment for the rest.");
+    await refreshPayingOrder(orderId);
+  }
+
+  /** The order being paid changed under the payment window (a comp, a discount): re-read it so
+   * the amount due is the server's for the order as it now stands. */
+  async function refreshPayingOrder(orderId: string) {
     try {
       const data = await fetch("/api/orders").then((r) => r.json());
       const fresh: OrderDto | undefined = (data.orders ?? []).find((o: OrderDto) => o.id === orderId);
       if (fresh) setPayingOrder(fresh);
     } catch {
-      // The comp is saved; the dialog just shows the old figure until it is reopened.
+      // The change is saved; the dialog just shows the old figure until it is reopened.
       toast.error("Couldn't refresh the bill — close it and open it again.");
     }
     loadQueue();
@@ -1321,6 +1327,8 @@ export function PosTerminal({
             offline={!sync.isOnline}
             canComp={canComp}
             onComped={handleComped}
+            canDiscount={canApplyDiscount}
+            onOrderChanged={refreshPayingOrder}
           />
         </PanelBoundary>
 

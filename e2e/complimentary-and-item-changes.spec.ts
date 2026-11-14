@@ -350,3 +350,75 @@ test.describe("Editing a paid order", () => {
     }
   });
 });
+
+test.describe("A discount after the order is punched", () => {
+  test.use({ storageState: authFile("cashier") });
+
+  test("a cashier gives 10% off from the payment window, and it's what gets charged", async ({ page, request }) => {
+    const kebab = await getMenuItemId(request, SEED_MENU_ITEM.name);
+    const order = await sentOrder(request, [{ menuItemId: kebab, quantity: 2 }]);
+    try {
+      await page.goto("/pos");
+      await expect(page.getByText("Online — all orders synced").first()).toBeVisible({ timeout: 15_000 });
+      await page.getByRole("button", { name: "Order Queue" }).click();
+      const card = page.locator("div.rounded-xl.border").filter({ hasText: `#${order.orderNumber} · ` }).last();
+      await card.getByRole("button", { name: "Payment", exact: true }).click();
+
+      await page.getByRole("button", { name: "Discount", exact: true }).click();
+      const panel = page.getByRole("dialog", { name: /Discount — order/ });
+      await panel.getByLabel("Discount percent").fill("10");
+      await panel.getByLabel("Reason for the discount").fill("Sorry for the wait");
+      await panel.getByRole("button", { name: "Give discount" }).click();
+
+      const pay = page.getByRole("dialog", { name: "Take payment" });
+      await expect(pay.getByRole("button", { name: "Change discount" })).toBeVisible({ timeout: 20_000 });
+      await pay.getByRole("button", { name: "Confirm payment" }).click();
+      await expect(page.getByText(`Order #${order.orderNumber} paid.`)).toBeVisible({ timeout: 30_000 });
+
+      const paid = (await fetchOrder(request, order.id)) as Order & {
+        discountedSubtotalPaisa: number;
+        discounts: { type: string; value: number; reason: string | null }[];
+      };
+      expect(paid.discounts).toEqual([expect.objectContaining({ type: "PERCENT", value: 1000, reason: "Sorry for the wait" })]);
+      expect(paid.discountedSubtotalPaisa).toBe(Math.round(2 * SEED_MENU_ITEM.pricePaisa * 0.9));
+      expect(paid.paidPaisa).toBe(paid.totalPaisa);
+    } finally {
+      await cleanup(request, order.id);
+    }
+  });
+
+  test("it can be changed or taken off, keeps to the branch's ceiling, and a waiter can't give one", async ({ request, baseURL }) => {
+    const kebab = await getMenuItemId(request, SEED_MENU_ITEM.name);
+    const order = await sentOrder(request, [{ menuItemId: kebab, quantity: 1 }]);
+    const before = await fetchOrder(request, order.id);
+    const waiter = await playwrightRequest.newContext({ baseURL, storageState: authFile("waiter") });
+    const branchCap = await withDb(async (c) => {
+      const row = (
+        await c.query('SELECT "branchId" FROM "Order" WHERE id = $1', [order.id])
+      ).rows[0];
+      const cap = (await c.query('SELECT "maxDiscountBasisPoints" FROM "BranchSettings" WHERE "branchId" = $1', [row.branchId])).rows[0]
+        .maxDiscountBasisPoints as number;
+      await c.query('UPDATE "BranchSettings" SET "maxDiscountBasisPoints" = 2000 WHERE "branchId" = $1', [row.branchId]);
+      return { branchId: row.branchId as string, cap };
+    });
+    try {
+      expect((await request.put(`/api/orders/${order.id}/discount`, { data: { type: "PERCENT", value: 1500 } })).ok()).toBeTruthy();
+      expect((await request.put(`/api/orders/${order.id}/discount`, { data: { type: "FIXED", value: 5000 } })).ok(), "changed").toBeTruthy();
+      const changed = (await fetchOrder(request, order.id)) as Order & { discounts: { type: string; value: number }[] };
+      expect(changed.discounts).toEqual([expect.objectContaining({ type: "FIXED", value: 5000 })]);
+
+      const over = await request.put(`/api/orders/${order.id}/discount`, { data: { type: "PERCENT", value: 5000 } });
+      expect(over.status(), "over the branch's 20% ceiling").toBe(403);
+
+      expect((await waiter.put(`/api/orders/${order.id}/discount`, { data: { type: "PERCENT", value: 1000 } })).status()).toBe(403);
+
+      expect((await request.delete(`/api/orders/${order.id}/discount`)).ok(), "taken off").toBeTruthy();
+      const after = await fetchOrder(request, order.id);
+      expect(after.totalPaisa).toBe(before.totalPaisa);
+    } finally {
+      await withDb((c) => c.query('UPDATE "BranchSettings" SET "maxDiscountBasisPoints" = $2 WHERE "branchId" = $1', [branchCap.branchId, branchCap.cap]));
+      await waiter.dispose();
+      await cleanup(request, order.id);
+    }
+  });
+});
