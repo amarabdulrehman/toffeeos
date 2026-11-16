@@ -39,6 +39,20 @@ export async function publish(
   type: string,
   payload: Record<string, unknown> = {}
 ): Promise<void> {
-  const ch = getServiceClient().channel(topic(tenantId, branchId, channel));
-  await ch.send({ type: "broadcast", event: "update", payload: { type, ...payload } });
+  // A live update is a nicety on top of an order that is already saved, and every screen also
+  // polls. It must never hold up or fail the request that saved it. Unbounded, the library waited up
+  // to 10 seconds per update when the realtime service didn't answer (as when the Supabase account
+  // was over its quota in November 2026), and a payment sends several: a till could stall for half
+  // a minute on every bill. So: a short limit, failures swallowed, and the channel let go after.
+  const client = getServiceClient();
+  const ch = client.channel(topic(tenantId, branchId, channel));
+  try {
+    await ch.send({ type: "broadcast", event: "update", payload: { type, ...payload } }, { timeout: PUBLISH_TIMEOUT_MS });
+  } catch {
+    // Nothing to do: the screens pick the change up on their next poll.
+  } finally {
+    void client.removeChannel(ch).catch(() => {});
+  }
 }
+
+const PUBLISH_TIMEOUT_MS = 1_500;

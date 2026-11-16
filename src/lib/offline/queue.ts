@@ -33,6 +33,11 @@ async function postJson(url: string, body: unknown): Promise<{ ok: boolean; stat
   } catch {
     throw new NetworkUnreachableError();
   }
+  // The server answered, but couldn't do it (5xx): its database unreachable, a deploy rolling over,
+  // a hosting limit. That isn't a verdict on the action, so it waits and is tried again like an
+  // unreachable network, rather than being marked failed for a manager to sort out by hand. Safe:
+  // every replayed action carries its idempotency key or action id.
+  if (res.status >= 500) throw new NetworkUnreachableError();
   const data = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, data };
 }

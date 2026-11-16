@@ -67,7 +67,11 @@ export function TablesDialog({
   const load = () => {
     setRefreshing(true);
     fetch("/api/tables")
-      .then((r) => r.json())
+      // An error answer isn't "no tables": fall back to the saved floor plan rather than replace it.
+      .then((r) => {
+        if (!r.ok) throw new Error(`tables ${r.status}`);
+        return r.json();
+      })
       .then((d) => {
         const loaded = d.floors ?? [];
         setFloors(loaded);

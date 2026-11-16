@@ -57,10 +57,20 @@ function drawable(o: OrderDto): OrderDto {
   return Array.isArray(o.lines) ? o : { ...o, lines: [] };
 }
 
-/** True only when fetch never reached the server at all — the signal that tells the POS to queue
- * the action locally instead of surfacing it as a business error. */
+/**
+ * The server answered but couldn't do it (5xx): its database unreachable, a deploy rolling over, a
+ * hosting limit. Not a judgement on the order, so it's treated like no connection at all: saved on
+ * the device and sent when the server is back. Taking orders must not stop because the back end has
+ * a bad minute; the order's id and idempotency key make the later send safe even if this attempt
+ * half-landed.
+ */
+class ServerUnavailableError extends Error {}
+
+/** True when the request never got a usable answer — no connection, or a server that couldn't do
+ * it — the signal that tells the POS to queue the action locally instead of surfacing it as a
+ * business error. */
 function isNetworkFailure(err: unknown): boolean {
-  return err instanceof TypeError || (typeof navigator !== "undefined" && !navigator.onLine);
+  return err instanceof TypeError || err instanceof ServerUnavailableError || (typeof navigator !== "undefined" && !navigator.onLine);
 }
 
 export function PosTerminal({
@@ -247,8 +257,14 @@ export function PosTerminal({
   }, [draftKey, lines, orderType, table, deliveryAddress, customer, discount, addingTo]);
 
   useEffect(() => {
+    // Only a real answer replaces the menu saved on this device. An error answer used to be read as
+    // an empty menu and saved over the good copy, so one bad minute on the server left the till with
+    // nothing to sell, even after a refresh.
     fetch("/api/menu")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`menu ${r.status}`);
+        return r.json();
+      })
       .then((d) => {
         const cats = d.categories ?? [];
         setCategories(cats);
@@ -283,6 +299,8 @@ export function PosTerminal({
       // Today's orders only — yesterday's paid bills don't belong in today's queue. An earlier
       // day's unpaid order comes back apart (see GET /api/orders).
       const res = await fetch("/api/orders?day=today");
+      // An error answer falls back to the saved queue below rather than replacing it with nothing.
+      if (!res.ok) throw new Error(`orders ${res.status}`);
       const data = await res.json();
       const serverOrders: OrderDto[] = (data.orders ?? []).map(drawable);
       setEarlierUnpaid((data.earlierUnpaid ?? []).map(drawable));
@@ -552,7 +570,8 @@ export function PosTerminal({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        const data = await res.json();
+        if (res.status >= 500) throw new ServerUnavailableError();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           toast.error(data.error ?? "Could not create order.");
           return;
@@ -779,7 +798,8 @@ export function PosTerminal({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ tenders, cashTenderedPaisa }),
         });
-        const data = await res.json();
+        if (res.status >= 500) throw new ServerUnavailableError();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           toast.error(data.error ?? "Payment failed.");
           return;
