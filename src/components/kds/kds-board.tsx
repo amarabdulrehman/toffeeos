@@ -356,8 +356,19 @@ export function KdsBoard({
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 15000);
-    return () => clearInterval(interval);
+    // Not while the screen is hidden (another tab, a sleeping tablet): nobody is reading it, and
+    // each look is database traffic. It looks again the moment it's shown.
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, 15000);
+    const onShown = () => {
+      if (!document.hidden) load();
+    };
+    document.addEventListener("visibilitychange", onShown);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onShown);
+    };
   }, [load]);
 
   useChannel(topic(tenantId, branchId, "kds"), () => load());

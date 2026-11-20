@@ -33,8 +33,18 @@ export function RiderOrdersView() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 20000);
-    return () => clearInterval(interval);
+    // Not while the phone's screen is off or the app is in the background; it looks again on return.
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, 20000);
+    const onShown = () => {
+      if (!document.hidden) load();
+    };
+    document.addEventListener("visibilitychange", onShown);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onShown);
+    };
   }, [load]);
 
   if (loading) return <p className="mt-16 text-center text-sm text-muted-foreground">Loading your deliveries…</p>;

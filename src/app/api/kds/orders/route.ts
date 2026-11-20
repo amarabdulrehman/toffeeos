@@ -14,13 +14,23 @@ import { defineHandler } from "@/server/handler";
 // order disappearing before the kitchen got to mark it ready, so a paid order still shows here as
 // long as readyAt is still null; markOrderReady preserves status "PAID" (rather than regressing it
 // to READY) precisely so this readyAt check keeps working after payment.
+// A paid order whose ticket was never marked ready stays on the board, but only for this long. With
+// no limit, a café that pays orders without tapping Ready had every such order since it opened on
+// its board, and every kitchen screen downloaded all of them again every 15 seconds — database
+// traffic that grew by the day (the hosting account went over its monthly quota in November 2026).
+// A kitchen doesn't cook from yesterday's tickets.
+const PAID_UNREADY_WINDOW_MS = 12 * 60 * 60 * 1000;
+
 export const GET = defineHandler({ permission: "kds.access" }, async ({ session, db }) => {
   const orders = await db.order.findMany({
     where: {
       branchId: session.branchId,
       sentToKitchenAt: { not: null },
       status: { notIn: ["DELIVERED", "VOIDED", "CANCELLED", "DELETED"] },
-      OR: [{ status: { in: ["SENT_TO_KITCHEN", "READY"] } }, { readyAt: null }],
+      OR: [
+        { status: { in: ["SENT_TO_KITCHEN", "READY"] } },
+        { readyAt: null, sentToKitchenAt: { gte: new Date(Date.now() - PAID_UNREADY_WINDOW_MS) } },
+      ],
     },
     orderBy: { sentToKitchenAt: "asc" },
     include: {
