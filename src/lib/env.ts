@@ -37,6 +37,10 @@ const envSchema = z.object({
   // reject every request rather than running unauthenticated.
   CRON_SECRET: z.string().min(1).optional(),
 
+  // Shared secret the portfolio site (amarabdurrehman.me) sends as `Authorization: Bearer <token>`
+  // to /api/public-pulse. Optional — unset means that endpoint rejects every request.
+  PULSE_TOKEN: z.string().min(1).optional(),
+
   // Optional — unset means src/server/email/adapter.ts falls back to its dev-stub (console.log)
   // instead of actually sending. Set both to activate real password-reset emails.
   /**
