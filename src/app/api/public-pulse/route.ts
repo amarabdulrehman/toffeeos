@@ -9,6 +9,7 @@ import { platformDb } from "@/server/db";
  * Returns platform-wide totals only, never per-restaurant figures, names or customer data:
  *   - dailyOrders: orders created in the last 24h across ACTIVE tenants (deleted, voided and
  *     cancelled ones excluded)
+ *   - avgDailyOrders30d: the same count over the last 30 days, divided by 30 (one decimal)
  *   - failedSyncs: SyncConflicts raised in the last 24h, i.e. offline replays the sync engine
  *     refused to apply automatically
  *
@@ -33,16 +34,25 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401, headers });
   }
 
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const DAY = 24 * 60 * 60 * 1000;
+  const since = new Date(Date.now() - DAY);
+  const since30 = new Date(Date.now() - 30 * DAY);
   try {
     const tenants = await platformDb.tenant.findMany({ where: { status: "ACTIVE" }, select: { id: true } });
     const tenantId = { in: tenants.map((t) => t.id) };
-    const [dailyOrders, failedSyncs] = await Promise.all([
+    const [dailyOrders, orders30d, failedSyncs] = await Promise.all([
       platformDb.order.count({ where: { tenantId, createdAt: { gte: since }, status: { notIn: [...EXCLUDED] } } }),
+      platformDb.order.count({ where: { tenantId, createdAt: { gte: since30 }, status: { notIn: [...EXCLUDED] } } }),
       platformDb.syncConflict.count({ where: { tenantId, createdAt: { gte: since } } }),
     ]);
     return NextResponse.json(
-      { status: "operational", dailyOrders, failedSyncs, updatedAt: new Date().toISOString() },
+      {
+        status: "operational",
+        dailyOrders,
+        avgDailyOrders30d: Math.round((orders30d / 30) * 10) / 10,
+        failedSyncs,
+        updatedAt: new Date().toISOString(),
+      },
       { headers },
     );
   } catch {
